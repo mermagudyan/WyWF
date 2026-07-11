@@ -1,40 +1,48 @@
-# gradle
+# Compiled class file
+*.class
 
+# Gradle
+build.gradle
 .gradle/
 build/
 out/
-classes/
+docs/
 
-# eclipse
+# Log file
+*.log
 
-*.launch
+# BlueJ files
+*.ctxt
 
-# idea
+# Mobile Tools for Java (J2ME)
+.mtj.tmp/
 
+# Package Files #
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# Not using
+VERIFICATION.md
+printcp.gradle
+
+# virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
+hs_err_pid*
+replay_pid*
+
+# IDE
 .idea/
 *.iml
 *.ipr
 *.iws
 
-# vscode
+# OS
+.DS_Store
+Thumbs.db
 
-.settings/
-.vscode/
-bin/
-.classpath
-.project
-
-# macos
-
-*.DS_Store
-
-# fabric
-
+# Fabric runs
 run/
-
-# java
-
-hs_err_*.log
-replay_*.log
-*.hprof
-*.jfr

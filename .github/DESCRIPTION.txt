@@ -1,0 +1,34 @@
+# Repository description (paste into GitHub "About" field)
+# Max 350 characters.
+
+A Fabric mod for Minecraft 26.x that turns the world creation Seed field into a natural-language search bar. Type "village near warm ocean" or "mansion dark forest" — the mod runs a multi-threaded seed search and spawns you next to the requested feature. Bilingual (RU + EN), extensible dictionary, atomic progress counters.
+
+---
+
+# Repository topics (add up to 20)
+
+minecraft | fabric | fabric-mod | minecraft-mod | minecraft-fabric |
+seed-finder | seed-search | natural-language | parser | multithreading |
+java | java-25 | minecraft-26 | client-side | open-source |
+apache-license | contributions-welcome | good-first-issue
+
+---
+
+# Repository homepage URL
+
+https://github.com/WYWTF/wywtf
+
+---
+
+# Suggested "About" tagline (short version, ~80 chars)
+
+Natural-language seed search for Minecraft 26.x — Fabric mod.
+
+---
+
+# Suggested "About" tagline (long version, ~200 chars)
+
+Type "village near warm ocean" in the Seed field. WYWTF parses your request,
+runs a multi-threaded seed search, and spawns you next to the feature you
+asked for. Bilingual dictionary (RU + EN), extensible, no Yarn mappings.
+Licensed under Apache 2.0.
