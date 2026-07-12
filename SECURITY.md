@@ -7,7 +7,7 @@ provided for the latest released version only.
 
 | Minecraft | Version  | Supported          | Notes                       |
 |-----------|----------|--------------------|-----------------------------|
-| 26.x      | 1.0.x    | :white_check_mark: | Tested on 26.2              |
+| 26.x      | 1.0.x    | :white_check_mark: | Tested on 26.x              |
 | other     | any      | :x:                | Build for 26.x only         |
 
 If you are running an unsupported version, please update to the latest
