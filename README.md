@@ -1,224 +1,164 @@
-# What You Want To Find (WYWTF)
+# What you Want to Find (WyWF)
 
-A Fabric mod for Minecraft 26.x (Loader 0.19.x+, Java 25) that turns the
-**Seed** field in the world creation menu into a natural-language search bar.
+A client-side Fabric mod for Minecraft 26.x (tested on 26.2; Fabric Loader 0.19+,
+Java 25) that turns the **Seed** field in the world-creation screen into a
+natural-language search bar. Instead of a number, you describe the world you want
+and the mod searches for a seed that matches — fully offline, without generating
+chunks.
 
 ## What it does
 
-Instead of typing a numeric seed, you can write:
+Type a description into the Seed field, for example:
 
 ```
 village near warm ocean
 деревня возле теплого океана
-spawn me next to a blacksmith by the ocean
 mansion dark forest
-jungle temple
-ancient city
+desert temple in desert
+near deep dark
 ```
 
-The mod recognizes keywords in **Russian and English**, runs a multi-threaded
-seed search, then creates the world with the found seed and shifts the spawn
-point as close as possible to the discovered location.
+When you press **Create New World**, the mod:
 
-If the Seed field contains a plain numeric seed or a string with no recognized
-keywords, the mod does not intervene.
+1. Parses the text. If it contains no recognized keywords (or is a plain number),
+   nothing happens and the world is created normally.
+2. Otherwise it opens a search screen and looks for a seed whose world — around
+   the origin `(0, 0)` — matches your description.
+3. When a seed is found, it fills the Seed field with that number and creates the
+   world as usual.
 
-## Features
+Keywords are recognized in **Russian and English**.
 
-- Natural-language seed search
-- Bilingual dictionary (RU + EN) with synonyms
-- Multi-threaded search via `ExecutorService`
-- Stride+offset distribution — threads never overlap
-  (`seed = threadIndex + i * threadCount`)
-- Atomic progress counters — no GC pressure in the hot loop
-- Daemon threads with reduced priority (don't starve the render thread)
-- Live search GUI with metrics:
-  - Query text
-  - Checked seeds count
-  - Discarded seeds count
-  - Active thread count
-  - Elapsed time
-  - Instant + average speed (seeds/sec)
-  - CPU usage estimate
-  - Progress bar
-  - Current best candidate
-  - Cancel button
-- Extensible dictionary — add biomes/structures/synonyms without touching the parser
-- Interface-driven architecture (BiomeChecker, StructureChecker, WorldContextFactory)
+## Query language
 
-## Architecture
+A query is a list of keywords, each optionally preceded by a modifier:
+
+| Modifier (EN / RU)                     | Meaning                                   |
+|----------------------------------------|-------------------------------------------|
+| *(none)*                               | present within the default radius         |
+| `near` / рядом, около, возле…          | within ~200 blocks                        |
+| `in`, `on` / в, на…                    | within ~64 blocks (right where you spawn) |
+| `far` / далеко, вдали…                 | far away (~1000–2000 blocks)              |
+| `some` / несколько, много…             | several of them nearby (structures)       |
+| `under` / под, снизу                   | the surface biome at that spot            |
+| `no`, `not`, `without` / нет, не, без  | must **not** be present                   |
+
+Keywords fall into three categories:
+
+- **Biomes** — `warm ocean`, `desert`, `dark forest`, `deep dark`, `lush caves`, …
+- **Structures** — `village`, `mansion`, `desert temple`, `monument`, …
+- **Objects** — `tree`, `water`, `lava` (recognized, but not searchable yet — ignored)
+
+The dictionary lives in `KeywordDictionary` and holds many synonyms per keyword.
+Multi-word keywords win over shorter ones (`dark forest` is matched as the
+dark-forest biome, not `forest`).
+
+## How the search works
+
+The search runs on a fixed thread pool (`SeedSearcher` + `SearchWorker`) and
+never blocks the game thread. For every seed a `WorldContext` is built and
+checked by `SeedValidator`:
+
+- **Structures** are located from placement math only
+  (`RandomSpreadStructurePlacement.getPotentialStructureChunk`) — no chunk
+  generation. Where a structure requires a specific biome (e.g. a plains
+  village), the biome at that spot is verified too.
+- **Biomes** are read from the vanilla `MultiNoiseBiomeSource` using a climate
+  sampler (see below). Cave biomes (`deep dark`, `lush caves`, `dripstone
+  caves`) are sampled underground; all others at the surface.
+
+### Two search strategies
+
+- **With a structure term** — structure placement depends only on the low 48
+  bits of the seed, so the space is split: an outer loop over the 48-bit base
+  and an inner loop over the high 16 bits. Before scanning the 65 536 inner
+  seeds, a cheap prefilter checks whether the required structure can be placed
+  near the origin at all, and skips the whole group if not.
+- **Biome-only** — a simple linear scan outward from seed `0`.
+
+Work is divided across threads with no overlap, and progress counters use atomics.
+
+### Fast climate sampling
+
+Biome lookups need a `Climate.Sampler`. Building the full vanilla `RandomState`
+per seed is expensive, so `ReusableClimateSampler` builds the (seed-independent)
+climate density-function graph **once per thread** and, for each new seed, only
+re-creates the six climate noises. The results are **bit-identical** to a real
+`RandomState` (verified by tests) while being several times faster.
+
+## Configuration
+
+Defaults (`SearchConfig`):
+
+- Threads: `MAX` (all CPU cores). Other modes: `HIGH` 75%, `AUTO` 65%,
+  `ECONOMY` 25%.
+- Structure search radius: 40 chunks.
+- Biome check radius: 16 chunks, sampled every 4 chunks.
+- Seed limit: unbounded.
+
+## Links
+
+- Source: https://github.com/mermagudyan/WyWF
+- Issues: https://github.com/mermagudyan/WyWF/issues
+
+## Project layout
 
 ```
-com.wywtf/
-├── WYWTFClient                — entry point (ClientModInitializer)
-├── core/                      — domain model, no Minecraft dependency
-│   ├── KeywordDictionary      — keyword dictionary + synonyms (RU+EN)
-│   ├── QueryParser            — natural-language parser → ParsedQuery
-│   ├── ParsedQuery            — immutable parse result
-│   ├── SearchConfig           — search settings (thread mode, radius, limit)
-│   ├── SearchResult           — result (seed + spawn coords)
-│   └── SearchProgress         — thread-safe metrics for GUI
-├── search/                    — seed search
-│   ├── WorldContext           — per-seed world context
-│   ├── WorldContextFactory    — context factory interface
-│   ├── BiomeChecker           — biome check interface
-│   ├── StructureChecker       — structure check interface
-│   ├── SpawnFinder            — final spawn point selector
-│   ├── SeedValidator          — atomic per-seed validation
-│   ├── SearchWorker           — single thread (stride+offset iteration)
-│   ├── SeedSearcher           — ExecutorService coordinator
-│   ├── VanillaBiomeChecker    — impl over BiomeSource
-│   ├── VanillaStructureChecker— impl over ChunkGenerator
-│   └── VanillaStructurePlacementAccess — accessor stub
-├── world/                     — world creation
-│   ├── PendingWorldCreation   — seed/spawn mailbox between GUI and mixins
-│   ├── WorldCreator           — public API for creating the world with a seed
-│   └── SpawnAdjuster          — spawn shift scheduler
-├── client/
-│   └── SearchScreen           — search metrics GUI
-└── mixin/
-    ├── CreateWorldScreenMixin           — intercepts onCreateWorld
-    └── WorldGenSettingsComponentMixin   — substitutes the seed
+com.wywf/
+├── WYWFClient                     — client entry point
+├── core/                          — parsing & model (no Minecraft dependency)
+│   ├── KeywordDictionary          — keywords + synonyms (RU + EN)
+│   ├── QueryParser / ParsedQuery  — text → structured query
+│   ├── Modifier                   — near / in / on / some / far / under / never
+│   ├── SearchConfig               — threads, radii, limits
+│   ├── SearchResult               — the found seed
+│   └── SearchProgress             — thread-safe metrics for the GUI
+├── search/                        — the seed search
+│   ├── SeedSearcher               — thread-pool coordinator
+│   ├── SearchWorker               — one worker (48/16 split or linear scan)
+│   ├── SeedValidator              — checks one seed against the query
+│   ├── WorldContext(+Factory)     — per-seed biome source + placements
+│   ├── BiomeChecker / VanillaBiomeChecker
+│   ├── StructureChecker / VanillaStructureChecker
+│   ├── MinecraftWorldContextFactory
+│   └── ReusableClimateSampler     — fast, exact climate sampler
+├── world/                         — WorldCreator, PendingWorldCreation
+├── client/SearchScreen            — live search GUI (progress + cancel)
+└── mixin/                         — CreateWorldScreen hook + seed-field length fix
 ```
 
-## Multi-threading
+## Limitations
 
-- Uses `Executors.newFixedThreadPool(N)`.
-- Each thread iterates its own arithmetic progression:
-  `seed = threadIndex + i * threadCount`, where `i = 0, 1, 2, ...`
-- Threads **never** overlap.
-- Thread count depends on `SearchConfig.Mode`:
-  - `AUTO` — 65% of CPU (default)
-  - `ECONOMY` — 25%
-  - `HIGH` — 75%
-  - `MAX` — 100%
-- All counters use `AtomicLong` / `AtomicInteger`.
-- The Minecraft main thread is never blocked.
-- Worker threads run at reduced priority to avoid preempting the render thread.
-
-## Search algorithm
-
-For each seed:
-
-1. Build a `WorldContext` (BiomeSource + ChunkGenerator for that seed).
-2. If the query contains structures — iterate chunks within
-   `searchRadiusChunks` (default 96) and for each chunk check
-   `structurePlacement.isStructureChunk(seed, cx, cz)`.
-   This is an O(1) hash — no chunk generation.
-3. If a structure is found — verify biomes around it within
-   `biomeCheckRadiusChunks` (default 16).
-4. If everything matches — `SpawnFinder` picks spawn coordinates
-   (center of the structure) and returns a `SearchResult`.
-
-## GUI
-
-After clicking "Create World", `SearchScreen` opens with metrics:
-
-- Query
-- Checked seeds count
-- Discarded seeds count
-- Thread count
-- Elapsed time
-- Instant speed (seeds/sec)
-- Average speed
-- CPU usage (estimate)
-- Progress bar (against seed limit)
-- Current candidate
-- **Cancel** button
+- **Strongholds are not supported.** They use concentric-ring placement, which
+  this mod does not compute yet — stronghold queries won't match.
+- **Objects** (`tree`, `water`, `lava`) are recognized but not searched.
+- Matches are found around the origin `(0, 0)`; the world spawn is not moved.
 
 ## Building
 
 ```bash
-gradle wrapper --gradle-version 8.10   # generate wrapper (not shipped in source archive)
 ./gradlew build
 ```
 
-The ready-to-use jar will appear at `build/libs/wywtf-1.0.0.jar`.
+Requires JDK 25. The jar is produced in `build/libs/`.
 
 ## Installation
 
-1. Install Fabric Loader 0.19.0+ for Minecraft 26.x.
-2. Install Fabric API.
-3. Copy the jar into your `mods/` folder.
+1. Install Fabric Loader 0.19+ for Minecraft 26.x (tested on 26.2) and Fabric API.
+2. Drop the jar into your `mods/` folder.
 
-## Extending
+## Extending the dictionary
 
-### Add a new biome
-
-```java
-WYWTFClient.dictionary()
-    .register(new KeywordDictionary.Entry(
-        "mymod:my_biome",
-        KeywordDictionary.Category.BIOME,
-        "my biome"
-    ), "synonym1", "synonym2");
-WYWTFClient.dictionary().rebuildIndex();
-```
-
-### Add a new structure
+Add keywords/synonyms via `KeywordDictionary` and call `rebuildIndex()`:
 
 ```java
-WYWTFClient.dictionary()
-    .register(new KeywordDictionary.Entry(
-        "mymod:my_structure",
-        KeywordDictionary.Category.STRUCTURE,
-        "my structure"
-    ), "synonym");
-WYWTFClient.dictionary().rebuildIndex();
+WYWFClient.dictionary().register(
+    new KeywordDictionary.Entry("minecraft:my_biome",
+        KeywordDictionary.Category.BIOME, "my biome"),
+    "synonym one", "synonym two");
+WYWFClient.dictionary().rebuildIndex();
 ```
-
-The structure must be present in `Registry<Structure>`.
-
-### Add a synonym
-
-```java
-WYWTFClient.dictionary()
-    .registerSynonym("sea", "minecraft:ocean");
-WYWTFClient.dictionary().rebuildIndex();
-```
-
-## Notes on 26.x
-
-In Minecraft 26.x and Fabric Loader 0.19.x+:
-
-- **Yarn mappings are no longer needed.** Official Mojang mappings are used
-  (`loom.officialMojangMappings()` in `build.gradle`).
-- **Java 25** is the minimum required version.
-- Some method names may slightly differ from those mentioned in comments —
-  spots marked with `// 26.x:` should be verified against the actual
-  Minecraft source.
-
-## Roadmap
-
-- [ ] JSON synonym dictionary (`assets/wywtf/dict.json`)
-- [ ] Localization (more languages)
-- [ ] Public API for other mods (Fabric Networking + custom events)
-- [ ] Favorite queries (saved in config)
-- [ ] History of found seeds
-- [ ] Real block check for objects (water/lava/tree)
-- [ ] Mixin-Accessor for `StructurePlacement.isStructureChunk`
-- [ ] Mixin on `ServerLevel` to shift spawn point
-- [ ] Config screen (AUTO/ECONOMY/HIGH/MAX mode switch)
-- [ ] Unit tests for QueryParser / KeywordDictionary
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md). Pull requests are welcome!
-
-## Code of Conduct
-
-See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
-
-## Security
-
-See [SECURITY.md](SECURITY.md).
 
 ## License
 
 Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
-
-This project is distributed under the Apache License, Version 2.0, which is a
-permissive license similar to MIT but includes an explicit grant of patent
-rights from contributors to users. See the full text in [LICENSE](LICENSE)
-for the terms and conditions. A human-readable summary is available at
-https://choosealicense.com/licenses/apache-2.0/.

@@ -1,4 +1,4 @@
-# Contributing to WYWTF
+# Contributing to WyWF
 
 First off, thanks for taking the time to contribute! ❤️
 
@@ -33,8 +33,8 @@ By participating in this project, you agree to abide by the
 
 ## Getting Started
 
-WYWTF is a Fabric mod for Minecraft 26.x, written in Java 25, built with
-Gradle. Make sure you have the following installed before you start:
+WYWTF is a Fabric mod for Minecraft 26.x (tested on 26.2), written in Java 25,
+built with Gradle. Make sure you have the following installed before you start:
 
 | Tool | Minimum Version |
 |------|-----------------|
@@ -45,9 +45,8 @@ Gradle. Make sure you have the following installed before you start:
 Fork the repository, then:
 
 ```bash
-git clone https://github.com/<your-username>/wywtf.git
-cd wywtf
-gradle wrapper --gradle-version 8.10   # generate wrapper (not in source archive)
+git clone https://github.com/mermagudyan/WyWF.git
+cd WyWF
 ./gradlew build
 ```
 
@@ -59,7 +58,8 @@ If the build succeeds, you're ready to start hacking.
 
 ### Reporting Bugs
 
-Bugs are tracked as [GitHub issues](../../issues). Before opening a new one:
+Bugs are tracked as [GitHub issues](https://github.com/mermagudyan/WyWF/issues).
+Before opening a new one:
 
 1. **Search existing issues** — your bug may already be reported.
 2. **Check the latest version** — the bug may have been fixed in `main`.
@@ -77,7 +77,8 @@ Bugs are tracked as [GitHub issues](../../issues). Before opening a new one:
 
 ### Suggesting Enhancements
 
-Enhancement suggestions are also tracked as GitHub issues. Before opening one:
+Enhancement suggestions are also tracked as
+[GitHub issues](https://github.com/mermagudyan/WyWF/issues). Before opening one:
 
 1. **Search existing issues** — your idea may already be under discussion.
 2. **Use the Feature Request template**.
@@ -104,7 +105,7 @@ implementation details. Implementation is the maintainers' job.
 
 WYWTF is a dictionary-driven mod. The easiest and most impactful way to
 contribute is to extend the synonym dictionary in
-`src/main/java/com/wywtf/core/KeywordDictionary.java`:
+`src/main/java/com/wywf/core/KeywordDictionary.java`:
 
 - Add a new synonym in another language
 - Add a missing colloquial term (e.g., "stash" for "village")
@@ -115,8 +116,8 @@ When contributing dictionary changes:
 
 1. Add the entry via `register()` / `registerSynonym()`.
 2. Call `rebuildIndex()` after batch changes.
-3. Add a test case in `KeywordDictionaryTest`.
-4. Document the new entry in the README synonym table.
+3. Add a test case in `QueryParserTest`.
+4. Document the new entry in the README.
 
 ---
 
@@ -257,9 +258,9 @@ The release process:
 
 ## Questions?
 
-- Open a [Discussion](../../discussions) for general questions.
-- Open an [Issue](../../issues) for bugs and feature requests.
-- Mention `@maintainers` in a PR if you need a review and nobody responds
+- Open a [Discussion](https://github.com/mermagudyan/WyWF/discussions) for general questions.
+- Open an [Issue](https://github.com/mermagudyan/WyWF/issues) for bugs and feature requests.
+- Mention `@mermagudyan` in a PR if you need a review and nobody responds
   within 3 days.
 
 Thanks again for contributing! 🎉

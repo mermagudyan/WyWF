@@ -1,27 +1,28 @@
 {
   "schemaVersion": 1,
-  "id": "wywtf",
+  "id": "wywf",
   "version": "${version}",
-  "name": "What You Want To Find",
-  "description": "Поле Seed в меню создания мира работает как поисковая строка на естественном языке: 'деревня возле теплого океана', 'особняк темный лес' и т.д.",
-  "authors": ["WYWTF"],
+  "name": "What you Want to Find",
+  "description": "Turn the world-creation Seed box into a natural-language search.",
+  "authors": ["mermagudyan"],
   "contact": {
-    "homepage": "https://example.com/wywtf",
-    "sources": "https://example.com/wywtf"
+    "homepage": "",
+    "sources": "https://github.com/mermagudyan/WyWF"
   },
   "license": "Apache-2.0",
-  "icon": "assets/wywtf/icon.png",
+  "icon": "assets/wywf/icon.png",
   "environment": "client",
+  "accessWidener": "wywf.accesswidener",
   "entrypoints": {
-    "client": ["com.wywtf.WYWTFClient"]
+    "client": ["com.wywf.WYWFClient"]
   },
   "mixins": [
-    "wywtf.mixins.json",
-    "wywtf.client.mixins.json"
+    "wywf.mixins.json",
+    "wywf.client.mixins.json"
   ],
   "depends": {
     "fabricloader": ">=0.19.0",
-    "minecraft": "~26.0",
+    "minecraft": ">=26.0 <27",
     "java": ">=25",
     "fabric-api": "*"
   },

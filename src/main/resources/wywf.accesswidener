@@ -1,0 +1,8 @@
+accessWidener v2 official
+
+# Reusable climate sampler needs to reference these leaf density-function types
+# (marked protected in the InnerClasses attribute) to swap them for mutable-noise
+# equivalents while reusing the seed-independent graph. See ReusableClimateSampler.
+accessible	class	net/minecraft/world/level/levelgen/DensityFunctions$ShiftA
+accessible	class	net/minecraft/world/level/levelgen/DensityFunctions$ShiftB
+accessible	class	net/minecraft/world/level/levelgen/DensityFunctions$ShiftedNoise

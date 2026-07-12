@@ -2,14 +2,13 @@
 
 ## Supported Versions
 
-WYWTF is a Minecraft client mod. Security updates are provided for the latest
-released version only, plus the immediately preceding minor version for a
-grace period of 30 days after a new minor release.
+WYWTF is a Minecraft **26.x** client mod (tested on 26.2). Security updates are
+provided for the latest released version only.
 
-| Version  | Supported          | Notes                                  |
-|----------|--------------------|----------------------------------------|
-| 1.0.x    | :white_check_mark: | Current release line                   |
-| < 1.0    | :x:                | Pre-release / development builds        |
+| Minecraft | Version  | Supported          | Notes                       |
+|-----------|----------|--------------------|-----------------------------|
+| 26.x      | 1.0.x    | :white_check_mark: | Tested on 26.2              |
+| other     | any      | :x:                | Build for 26.x only         |
 
 If you are running an unsupported version, please update to the latest
 release before reporting any security issue.
@@ -22,10 +21,11 @@ release before reporting any security issue.
 
 If you discover a security vulnerability in WYWTF, please report it privately:
 
-1. **Preferred:** Email the maintainers at **security@example.com**
-   with the subject line `[SECURITY] WYWTF — <short summary>`.
-2. **Alternative:** Use GitHub's private vulnerability reporting:
-   `Security` tab → `Report a vulnerability`.
+1. **Preferred:** Use GitHub's private vulnerability reporting:
+   https://github.com/mermagudyan/WyWF/security/advisories/new
+   (`Security` tab → `Report a vulnerability`).
+2. **Alternative:** Open a private security discussion on the repository:
+   https://github.com/mermagudyan/WyWF/discussions
 
 Please include the following in your report:
 
