@@ -4,7 +4,6 @@ public enum Modifier {
     DEFAULT,
     NEAR,
     IN,
-    ON,
     SOME,
     FAR,
     UNDER,

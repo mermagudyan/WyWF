@@ -7,7 +7,8 @@ public final class KeywordDictionary {
     public enum Category {
         BIOME,
         STRUCTURE,
-        OBJECT
+        OBJECT,
+        SPAWN
     }
 
     public static final class Entry {
@@ -29,6 +30,8 @@ public final class KeywordDictionary {
     private final Map<String, String> synonymToCanonical = new HashMap<>();
 
     private volatile List<String> sortedKeys = List.of();
+
+    private volatile List<String> blockSortedKeys = List.of();
 
     public KeywordDictionary() {
         registerDefaults();
@@ -76,11 +79,41 @@ public final class KeywordDictionary {
                     char c = text.charAt(next);
                     if (Character.isLetter(c) || c == '-' || c == '_') continue;
                 }
+                if (isSpawnKey(key)) continue;
                 outCanonical[0] = synonymToCanonical.get(key);
                 return len;
             }
         }
         return 0;
+    }
+
+    /** Matches only {@link Category#SPAWN} (block) keywords. Used when a spawn trigger precedes the word. */
+    public int matchBlockAt(String text, int start, String[] outCanonical) {
+        List<String> keys = blockSortedKeys;
+        for (String key : keys) {
+            int len = key.length();
+            if (start + len > text.length()) continue;
+            boolean ok = true;
+            for (int i = 0; i < len; i++) {
+                if (text.charAt(start + i) != key.charAt(i)) { ok = false; break; }
+            }
+            if (ok) {
+                int next = start + len;
+                if (next < text.length()) {
+                    char c = text.charAt(next);
+                    if (Character.isLetter(c) || c == '-' || c == '_') continue;
+                }
+                outCanonical[0] = synonymToCanonical.get(key);
+                return len;
+            }
+        }
+        return 0;
+    }
+
+    private boolean isSpawnKey(String key) {
+        String canonical = synonymToCanonical.get(key);
+        Entry e = canonical == null ? null : entries.get(canonical);
+        return e != null && e.category == Category.SPAWN;
     }
 
     public Collection<Entry> all() { return entries.values(); }
@@ -90,6 +123,12 @@ public final class KeywordDictionary {
 
         keys.sort((a, b) -> Integer.compare(b.length(), a.length()));
         sortedKeys = List.copyOf(keys);
+
+        List<String> blocks = new ArrayList<>();
+        for (String key : keys) {
+            if (isSpawnKey(key)) blocks.add(key);
+        }
+        blockSortedKeys = List.copyOf(blocks);
     }
 
     private void registerDefaults() {
@@ -98,7 +137,7 @@ public final class KeywordDictionary {
         registerBiome("minecraft:taiga", "тайга", "taiga", "spruce forest", "pine forest", "boreal forest");
         registerBiome("minecraft:swamp", "болото", "swamp", "marsh", "wetland", "bog", "swampland");
         registerBiome("minecraft:jungle", "джунгли", "jungle", "rainforest", "tropical forest");
-        registerBiome("minecraft:desert", "пустыня", "desert", "sand", "sandy", "dunes", "sand desert");
+        registerBiome("minecraft:desert", "пустыня", "desert", "sandy", "dunes", "sand desert");
         registerBiome("minecraft:savanna", "саванна", "savanna", "savannah", "dry grassland");
         registerBiome("minecraft:plains", "равнины", "plains", "plain", "field", "grassland", "grassy field");
         registerBiome("minecraft:cherry_grove", "вишневый лес", "вишнёвый лес", "вишня",
@@ -122,7 +161,7 @@ public final class KeywordDictionary {
         registerBiome("minecraft:flower_forest", "цветочный лес",
                 "flower forest", "flowery forest", "flowers forest");
         registerBiome("minecraft:mushroom_fields", "грибные поля", "грибной остров",
-                "mushroom fields", "mushroom island", "mushroom", "mooshroom island");
+                "mushroom fields", "mushroom island", "mushroom", "mooshroom island", "mushrom", "mushroom biome");
         registerBiome("minecraft:mangrove_swamp", "мангровое болото", "мангры",
                 "mangrove swamp", "mangrove", "mangroves");
         registerBiome("minecraft:bamboo_jungle", "бамбуковые джунгли", "bamboo jungle", "bamboo forest");
@@ -147,6 +186,17 @@ public final class KeywordDictionary {
                 "old growth pine taiga", "mega taiga", "giant taiga", "old growth taiga", "pine taiga");
         registerBiome("minecraft:pale_garden", "бледный сад", "pale garden", "pale forest");
 
+        registerBiome("minecraft:savanna_plateau", "плато саванны", "плато", "savanna plateau", "plateau");
+        registerBiome("minecraft:windswept_savanna", "ветреная саванна", "windswept savanna", "savanna hills");
+        registerBiome("minecraft:snowy_beach", "снежный пляж", "snowy beach", "frozen beach");
+        registerBiome("minecraft:stony_shore", "каменистый берег", "stony shore", "stone shore", "rocky shore");
+        registerBiome("minecraft:frozen_river", "замерзшая река", "frozen river", "icy river");
+        registerBiome("minecraft:windswept_forest", "ветреный лес", "windswept forest", "windswept woods");
+        registerBiome("minecraft:frozen_peaks", "замерзшие пики", "frozen peaks", "ice peaks");
+        registerBiome("minecraft:stony_peaks", "каменистые пики", "stony peaks", "stone peaks", "rocky peaks");
+        registerBiome("minecraft:eroded_badlands", "эродированная пустошь", "эродированные бэдлендс",
+                "eroded badlands", "eroded mesa", "weathered badlands");
+
         // ---- biomes (underground / cave) ----
         registerBiome("minecraft:deep_dark", "глубокая тьма", "тьма", "дип дарк",
                 "deep dark", "deep_dark", "darkness");
@@ -154,6 +204,8 @@ public final class KeywordDictionary {
                 "lush caves", "lush cave", "lush", "lush cavern");
         registerBiome("minecraft:dripstone_caves", "капельные пещеры", "сталактитовые пещеры", "капельная пещера",
                 "dripstone caves", "dripstone cave", "dripstone", "stalactite caves");
+        registerBiome("minecraft:sulfur_caves", "серные пещеры", "серная пещера",
+                "sulfur caves", "sulfur cave", "sulfur", "sulphur caves");
 
         // ---- structures ----
         registerStructure("minecraft:village", "деревня", "деревушка", "деревни", "деревню", "деревней",
@@ -196,6 +248,20 @@ public final class KeywordDictionary {
         registerObject("minecraft:tree", "дерево", "tree", "trees", "oak", "birch", "spruce");
         registerObject("minecraft:water", "вода", "water", "lake", "pond");
         registerObject("minecraft:lava", "лава", "lava", "magma", "lava pool", "lava lake");
+
+        // ---- spawn surface blocks ----
+        registerBlock("minecraft:grass_block", "трава", "grass", "grass block", "травяной блок");
+        registerBlock("minecraft:dirt", "земля", "dirt", "soil", "soil block");
+        registerBlock("minecraft:coarse_dirt", "крупная земля", "coarse dirt", "coarse soil");
+        registerBlock("minecraft:sand", "песок", "sand", "sand block", "песчаный блок");
+        registerBlock("minecraft:stone", "камень", "stone", "rock", "stone block");
+        registerBlock("minecraft:snow_block", "снег", "snow", "snow block", "снежный блок");
+        registerBlock("minecraft:podzol", "подзол", "podzol");
+        registerBlock("minecraft:mycelium", "мицелий", "mycelium");
+        registerBlock("minecraft:gravel", "гравий", "gravel");
+        registerBlock("any_solid", "любой твёрдый блок", "любой твёрдый", "любые твёрдые", "любых твёрдых",
+                "any solid", "any solid block", "solid block", "твёрдый блок", "твердый блок",
+                "твёрдых", "твердых", "твёрдое", "твердое");
     }
 
     private void registerBiome(String canonical, String displayName, String... synonyms) {
@@ -208,5 +274,9 @@ public final class KeywordDictionary {
 
     private void registerObject(String canonical, String displayName, String... synonyms) {
         register(new Entry(canonical, Category.OBJECT, displayName), synonyms);
+    }
+
+    private void registerBlock(String canonical, String displayName, String... synonyms) {
+        register(new Entry(canonical, Category.SPAWN, displayName), synonyms);
     }
 }

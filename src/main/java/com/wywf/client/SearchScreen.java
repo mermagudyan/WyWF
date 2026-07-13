@@ -11,6 +11,7 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
 import net.minecraft.network.chat.Component;
 
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 public final class SearchScreen extends Screen {
@@ -88,6 +89,11 @@ public final class SearchScreen extends Screen {
         }
     }
 
+    private SearchResult lastCandidate() {
+        List<SearchResult> cs = WYWFClient.searcher().candidates();
+        return cs.isEmpty() ? null : cs.get(cs.size() - 1);
+    }
+
     @Override
     public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
         super.extractRenderState(g, mouseX, mouseY, partialTick);
@@ -162,14 +168,14 @@ public final class SearchScreen extends Screen {
         drawRow(g, rightCol, y, "Seed limit:",      config.unbounded() ? "\u221e" : formatNumber(maxSeeds));
         y += rowH + 6;
 
-        SearchResult best = lastSnapshot.currentBest();
+        SearchResult best = lastCandidate();
         String candidateText;
         if (best != null) {
             candidateText = "§a✓ " + best.seed + " @ (" + best.centerX + ", " + best.centerZ + ") — " + best.matchedDescription;
         } else if (lastSnapshot.finished()) {
             candidateText = "§cNo matching seed found.";
         } else {
-            candidateText = "§7No candidate found yet...";
+            candidateText = "§7Searching candidates...";
         }
         g.centeredText(font, Component.literal(candidateText), cx, y, 0xFFFFFF);
     }

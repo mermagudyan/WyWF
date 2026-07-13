@@ -14,6 +14,7 @@ public final class WorldContext {
 
     public final long seed;
     public final BiomeSource biomeSource;
+    public final SpawnBlockPredictor spawnPredictor;
 
     private Climate.Sampler sampler;
     private final Supplier<Climate.Sampler> samplerSupplier;
@@ -23,11 +24,13 @@ public final class WorldContext {
     public WorldContext(long seed,
                         BiomeSource biomeSource,
                         Supplier<Climate.Sampler> samplerSupplier,
-                        Map<ResourceKey<Structure>, List<StructurePlacement>> placementsByStructure) {
+                        Map<ResourceKey<Structure>, List<StructurePlacement>> placementsByStructure,
+                        SpawnBlockPredictor spawnPredictor) {
         this.seed = seed;
         this.biomeSource = biomeSource;
         this.samplerSupplier = samplerSupplier;
         this.placementsByStructure = placementsByStructure;
+        this.spawnPredictor = spawnPredictor;
     }
 
     public Climate.Sampler sampler() {

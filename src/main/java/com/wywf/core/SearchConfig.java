@@ -18,6 +18,11 @@ public final class SearchConfig {
     private int biomeSampleStepChunks = 4;
     private long maxSeeds = UNBOUNDED;
     private long timeLimitMs = 0L;
+    private int candidatesToCollect = 8;
+    private int minCandidates = 3;
+    private int candidateRampDownSeconds = 10;
+    private boolean randomizeStart = true;
+    private boolean stopAtFirstCandidate = false;
 
     public SearchConfig() {}
 
@@ -57,4 +62,37 @@ public final class SearchConfig {
 
     public long timeLimitMs()               { return timeLimitMs; }
     public SearchConfig timeLimitMs(long v) { this.timeLimitMs = v; return this; }
+
+    public int candidatesToCollect()                 { return candidatesToCollect; }
+    public SearchConfig candidatesToCollect(int v)   { this.candidatesToCollect = Math.max(1, v); return this; }
+
+    public int minCandidates()                       { return minCandidates; }
+    public SearchConfig minCandidates(int v)         { this.minCandidates = Math.max(1, v); return this; }
+
+    public int candidateRampDownSeconds()                   { return candidateRampDownSeconds; }
+    public SearchConfig candidateRampDownSeconds(int v)     { this.candidateRampDownSeconds = Math.max(0, v); return this; }
+
+    /**
+     * How many candidates are needed to stop the search, given how long it has run.
+     * <ul>
+     *   <li>before {@link #candidateRampDownSeconds()} — the full {@link #candidatesToCollect()};</li>
+     *   <li>after — ramps down to {@link #minCandidates()} (3), so a rare/complex query still
+     *       produces a result soon without waiting to accumulate the full set.</li>
+     * </ul>
+     */
+    public int effectiveCandidateTarget(long elapsedMs) {
+        if (stopAtFirstCandidate) return 1;
+        long rampMs = (long) candidateRampDownSeconds * 1000L;
+        if (elapsedMs < rampMs) return candidatesToCollect;
+        return Math.max(1, Math.min(candidatesToCollect, minCandidates));
+    }
+
+    public boolean randomizeStart()                 { return randomizeStart; }
+    public SearchConfig randomizeStart(boolean v)    { this.randomizeStart = v; return this; }
+
+    /** When true the search stops as soon as the first matching seed is found
+     *  (candidate target = 1), giving the fastest possible result at the cost of
+     *  variety. Defaults to false (the ramp-down to {@link #minCandidates()} applies). */
+    public boolean stopAtFirstCandidate()                  { return stopAtFirstCandidate; }
+    public SearchConfig stopAtFirstCandidate(boolean v)    { this.stopAtFirstCandidate = v; return this; }
 }

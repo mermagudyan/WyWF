@@ -34,7 +34,8 @@ public final class VanillaStructureChecker implements StructureChecker {
             Map.entry("minecraft:ruined_portal", List.of(
                     "minecraft:ruined_portal", "minecraft:ruined_portal_desert",
                     "minecraft:ruined_portal_jungle", "minecraft:ruined_portal_swamp",
-                    "minecraft:ruined_portal_mountain", "minecraft:ruined_portal_ocean")),
+                    "minecraft:ruined_portal_mountain", "minecraft:ruined_portal_ocean",
+                    "minecraft:ruined_portal_nether")),
             Map.entry("minecraft:mineshaft", List.of(
                     "minecraft:mineshaft", "minecraft:mineshaft_mesa")),
             Map.entry("minecraft:ocean_monument", List.of("minecraft:monument")),

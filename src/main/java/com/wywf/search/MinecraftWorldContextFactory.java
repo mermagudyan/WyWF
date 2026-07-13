@@ -31,8 +31,10 @@ public final class MinecraftWorldContextFactory implements WorldContextFactory {
     private volatile HolderLookup.RegistryLookup<StructureSet> structureSets;
     private volatile HolderLookup.RegistryLookup<Structure> structures;
     private volatile Map<ResourceKey<Structure>, List<StructurePlacement>> placementsByStructure;
+    private volatile Holder<NoiseGeneratorSettings> noiseSettingsHolder;
     private volatile NoiseGeneratorSettings noiseSettings;
     private volatile HolderGetter<NormalNoise.NoiseParameters> noiseParameters;
+    private volatile SpawnBlockPredictor spawnPredictor;
 
     private final ThreadLocal<ReusableClimateSampler> reusableSampler =
             ThreadLocal.withInitial(() -> new ReusableClimateSampler(noiseSettings, noiseParameters));
@@ -53,9 +55,12 @@ public final class MinecraftWorldContextFactory implements WorldContextFactory {
 
         this.placementsByStructure = buildPlacements(this.structureSets);
 
-        this.noiseSettings    = r.lookupOrThrow(Registries.NOISE_SETTINGS)
-                .getOrThrow(NoiseGeneratorSettings.OVERWORLD).value();
+        this.noiseSettingsHolder = r.lookupOrThrow(Registries.NOISE_SETTINGS)
+                .getOrThrow(NoiseGeneratorSettings.OVERWORLD);
+        this.noiseSettings    = this.noiseSettingsHolder.value();
         this.noiseParameters  = r.lookupOrThrow(Registries.NOISE);
+
+        this.spawnPredictor = new SpawnBlockPredictor(biomeSource);
 
         this.registries     = r;
     }
@@ -77,7 +82,7 @@ public final class MinecraftWorldContextFactory implements WorldContextFactory {
     @Override
     public WorldContext create(long seed, boolean accurateRings) {
         ensureInit();
-        return new WorldContext(seed, biomeSource, () -> samplerFor(seed), placementsByStructure);
+        return new WorldContext(seed, biomeSource, () -> samplerFor(seed), placementsByStructure, spawnPredictor);
     }
 
     @Override

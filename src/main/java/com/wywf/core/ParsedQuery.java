@@ -26,6 +26,7 @@ public final class ParsedQuery {
     private final List<String> structures;
     private final List<String> biomes;
     private final List<String> objects;
+    private final List<String> spawns;
 
     public ParsedQuery(String raw, List<Term> terms) {
         this.raw = raw;
@@ -34,16 +35,19 @@ public final class ParsedQuery {
         List<String> s = new ArrayList<>();
         List<String> b = new ArrayList<>();
         List<String> o = new ArrayList<>();
+        List<String> p = new ArrayList<>();
         for (Term t : this.terms) {
             switch (t.category) {
                 case STRUCTURE -> s.add(t.canonical);
                 case BIOME     -> b.add(t.canonical);
                 case OBJECT    -> o.add(t.canonical);
+                case SPAWN     -> p.add(t.canonical);
             }
         }
         this.structures = List.copyOf(s);
         this.biomes     = List.copyOf(b);
         this.objects    = List.copyOf(o);
+        this.spawns     = List.copyOf(p);
     }
 
     public String raw()              { return raw; }
@@ -51,6 +55,7 @@ public final class ParsedQuery {
     public List<String> structures() { return structures; }
     public List<String> biomes()     { return biomes; }
     public List<String> objects()    { return objects; }
+    public List<String> spawns()     { return spawns; }
 
     public boolean isEmpty() {
         return terms.isEmpty();
@@ -59,6 +64,7 @@ public final class ParsedQuery {
     public Optional<String> primaryTarget() {
         if (!structures.isEmpty()) return Optional.of(structures.get(0));
         if (!biomes.isEmpty())     return Optional.of(biomes.get(0));
+        if (!spawns.isEmpty())     return Optional.of(spawns.get(0));
         if (!objects.isEmpty())    return Optional.of(objects.get(0));
         return Optional.empty();
     }

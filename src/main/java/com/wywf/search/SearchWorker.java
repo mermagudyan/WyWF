@@ -1,6 +1,7 @@
 package com.wywf.search;
 
 import com.wywf.core.*;
+import java.util.List;
 import java.util.concurrent.atomic.*;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
@@ -21,7 +22,8 @@ public final class SearchWorker implements Runnable {
     private final SearchProgress  progress;
     private final AtomicBoolean   running;
     private final AtomicLong      globalSeedCursor;
-    private final Consumer<SearchResult> onFound;
+    private final List<SearchResult> candidates;
+    private final SearchConfig     config;
 
     public SearchWorker(int threadIndex, int threadCount,
                         ParsedQuery query,
@@ -30,7 +32,9 @@ public final class SearchWorker implements Runnable {
                         SearchProgress progress,
                         AtomicBoolean running,
                         AtomicLong globalSeedCursor,
-                        Consumer<SearchResult> onFound) {
+                        long startOffset,
+                        List<SearchResult> candidates,
+                        SearchConfig config) {
         this.threadIndex       = threadIndex;
         this.threadCount       = threadCount;
         this.query             = query;
@@ -40,11 +44,15 @@ public final class SearchWorker implements Runnable {
         this.progress          = progress;
         this.running           = running;
         this.globalSeedCursor  = globalSeedCursor;
-        this.onFound           = onFound;
+        this.startOffset       = startOffset;
+        this.candidates        = candidates;
+        this.config            = config;
     }
 
     private static final long SIZE48 = 1L << 48;
     private static final long SIZE16 = 1L << 16;
+
+    private final long startOffset;
 
     @Override
     public void run() {
@@ -53,7 +61,7 @@ public final class SearchWorker implements Runnable {
         if (usesSplit()) {
             LOGGER.info("[thread {}] start: threads={}, mode=origin-relative 48/16 split",
                     threadIndex, threadCount);
-            runSplit(accurateRings);
+            runSplit(startOffset, accurateRings);
         } else {
             LOGGER.info("[thread {}] start: threads={}, mode=linear (biome-only)",
                     threadIndex, threadCount);
@@ -71,12 +79,12 @@ public final class SearchWorker implements Runnable {
         return false;
     }
 
-    private void runSplit(boolean accurateRings) {
+    private void runSplit(long offset, boolean accurateRings) {
         long step = Math.max(1, threadCount);
-        long rank = threadIndex;
         long localChecked = 0;
 
-        for (long a = rank; a < SIZE48; a += step) {
+        for (long i = 0; i < SIZE48; i += step) {
+            long a = (i + offset) % SIZE48;
             if (!running.get()) {
                 LOGGER.info("[thread {}] stopped (checked {} seeds locally)", threadIndex, localChecked);
                 return;
@@ -108,7 +116,7 @@ public final class SearchWorker implements Runnable {
 
                     if (outcome.accepted) {
                         reportFound(outcome.result);
-                        return;
+                        if (enoughCandidates()) return;
                     }
                 } catch (Throwable t) {
                     globalSeedCursor.incrementAndGet();
@@ -157,7 +165,7 @@ public final class SearchWorker implements Runnable {
 
                 if (outcome.accepted) {
                     reportFound(outcome.result);
-                    return;
+                    if (enoughCandidates()) return;
                 }
             } catch (Throwable t) {
                 progress.onSeedDiscarded();
@@ -190,12 +198,21 @@ public final class SearchWorker implements Runnable {
         return true;
     }
 
+    private boolean enoughCandidates() {
+        int target = config.effectiveCandidateTarget(progress.snapshot().elapsedMs());
+        return candidates.size() >= target;
+    }
+
     private void reportFound(SearchResult r) {
-        LOGGER.info("[thread {}] FOUND matching seed {} → center ({}, {}), match: {}",
+        LOGGER.info("[thread {}] candidate seed {} → center ({}, {}), match: {}",
                 threadIndex, r.seed, r.centerX, r.centerZ, r.matchedDescription);
-        if (progress.offerCandidate(r)) {
+        synchronized (candidates) {
+            if (candidates.size() < config.candidatesToCollect()) {
+                candidates.add(r);
+            }
+        }
+        if (enoughCandidates()) {
             running.set(false);
-            onFound.accept(r);
         }
     }
 

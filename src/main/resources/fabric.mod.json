@@ -6,8 +6,9 @@
   "description": "Turn the world-creation Seed box into a natural-language search.",
   "authors": ["mermagudyan"],
   "contact": {
-    "homepage": "",
-    "sources": "https://github.com/mermagudyan/WyWF"
+    "homepage": "https://www.curseforge.com/minecraft/mc-mods/wywf",
+    "sources": "https://github.com/mermagudyan/WyWF",
+    "issues": "https://github.com/mermagudyan/WyWF/issues"
   },
   "license": "Apache-2.0",
   "icon": "assets/wywf/icon.png",

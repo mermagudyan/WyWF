@@ -24,6 +24,8 @@ public final class SeedSearcher {
     private final SearchProgress progress = new SearchProgress();
     private volatile SearchConfig activeConfig;
 
+    private final List<SearchResult> candidates = Collections.synchronizedList(new ArrayList<>());
+
     public SeedSearcher(WorldContextFactory contextFactory) {
         this.contextFactory   = contextFactory;
         this.structureChecker = new VanillaStructureChecker();
@@ -31,6 +33,8 @@ public final class SeedSearcher {
     }
 
     public SearchProgress progress() { return progress; }
+
+    public List<SearchResult> candidates() { return candidates; }
 
     public boolean isRunning() { return running.get(); }
 
@@ -43,6 +47,8 @@ public final class SeedSearcher {
             LOGGER.warn("No searchable terms in query \"{}\" — nothing to search, aborting", rawQuery.raw());
             return;
         }
+
+        candidates.clear();
 
         int threadCount = config.resolveThreadCount();
         activeConfig = config;
@@ -77,11 +83,15 @@ public final class SeedSearcher {
         });
 
         List<Future<?>> fs = new ArrayList<>(threadCount);
+        long startOffset = config.randomizeStart()
+                ? new java.util.Random().nextLong() & 0xFFFFFFFFFFFFL
+                : 0L;
         for (int i = 0; i < threadCount; i++) {
             SearchWorker worker = new SearchWorker(
                     i, threadCount, query,
                     contextFactory, validator, progress,
-                    running, globalSeedCursor, onFound
+                    running, globalSeedCursor, startOffset, candidates,
+                    config
             );
             fs.add(pool.submit(worker));
         }
@@ -90,6 +100,7 @@ public final class SeedSearcher {
         Thread monitor = new Thread(() -> {
             long lastChecked = 0;
             long lastTime = System.currentTimeMillis();
+            int lastTarget = config.candidatesToCollect();
             while (running.get()) {
                 try {
                     Thread.sleep(5000);
@@ -103,6 +114,15 @@ public final class SeedSearcher {
                 double perSec = dChecked * 1000.0 / Math.max(1, now - lastTime);
                 LOGGER.info("[progress] checked {} seeds, ~{}/sec, discarded {}, elapsed {} ms",
                         s.checkedSeeds(), Math.round(perSec), s.discardedSeeds(), s.elapsedMs());
+                int target = config.effectiveCandidateTarget(s.elapsedMs());
+                if (target < lastTarget) {
+                    LOGGER.info("[progress] query is slow — collected {} of {} candidates, ramping target down to {}",
+                            candidates.size(), config.candidatesToCollect(), target);
+                    lastTarget = target;
+                }
+                if (!candidates.isEmpty() && candidates.size() >= target) {
+                    running.set(false);
+                }
                 lastChecked = s.checkedSeeds();
                 lastTime = now;
             }
@@ -121,10 +141,15 @@ public final class SeedSearcher {
             progress.finish();
 
             SearchProgress.Snapshot snap = progress.snapshot();
-            SearchResult best = snap.currentBest();
-            if (best != null) {
-                LOGGER.info("===== Search finished: seed {} found after {} checked seeds ({} ms) =====",
-                        best.seed, snap.checkedSeeds(), snap.elapsedMs());
+            int poolSize = candidates.size();
+            SearchResult chosen = null;
+            if (!candidates.isEmpty()) {
+                chosen = candidates.get(new java.util.Random().nextInt(poolSize));
+            }
+            if (chosen != null) {
+                LOGGER.info("===== Search finished: seed {} chosen from {} candidate(s) after {} checked seeds ({} ms) =====",
+                        chosen.seed, poolSize, snap.checkedSeeds(), snap.elapsedMs());
+                onFound.accept(chosen);
             } else {
                 LOGGER.info("===== Search finished: no matching seed found. Checked {} seeds ({} ms) =====",
                         snap.checkedSeeds(), snap.elapsedMs());

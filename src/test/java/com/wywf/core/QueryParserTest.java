@@ -75,4 +75,53 @@ class QueryParserTest {
         ParsedQuery q = parser.parse("особняк темный лес");
         assertEquals("minecraft:mansion", q.primaryTarget().orElseThrow());
     }
+
+    @Test
+    void spawnOnSandEnglish() {
+        ParsedQuery q = parser.parse("spawn on sand");
+        assertEquals(java.util.List.of("minecraft:sand"), q.spawns());
+    }
+
+    @Test
+    void onTheSandBlockEnglish() {
+        ParsedQuery q = parser.parse("on the sand block");
+        assertEquals(java.util.List.of("minecraft:sand"), q.spawns());
+    }
+
+    @Test
+    void onTheStoneEnglish() {
+        ParsedQuery q = parser.parse("on the stone");
+        assertEquals(java.util.List.of("minecraft:stone"), q.spawns());
+    }
+
+    @Test
+    void russianOnBlockSand() {
+        ParsedQuery q = parser.parse("на блоке песок");
+        assertEquals(java.util.List.of("minecraft:sand"), q.spawns());
+    }
+
+    @Test
+    void russianAnySolidBlock() {
+        ParsedQuery q = parser.parse("на любых твёрдых блоках");
+        assertEquals(java.util.List.of("any_solid"), q.spawns());
+    }
+
+    @Test
+    void spawnTriggerWithoutBlockIsIgnored() {
+        ParsedQuery q = parser.parse("spawn on lava");
+        assertTrue(q.spawns().isEmpty());
+    }
+
+    @Test
+    void sandAloneIsNotASpawnTerm() {
+        ParsedQuery q = parser.parse("sand");
+        assertTrue(q.spawns().isEmpty());
+    }
+
+    @Test
+    void spawnBlockCombinesWithOtherTerms() {
+        ParsedQuery q = parser.parse("village on sand");
+        assertTrue(q.structures().contains("minecraft:village"));
+        assertTrue(q.spawns().contains("minecraft:sand"));
+    }
 }

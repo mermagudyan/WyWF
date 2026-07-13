@@ -40,7 +40,7 @@ Keywords are recognized in **Russian and English**, with many synonyms.
 |-----------------------------------|----------------------------------|
 | *(none)*                          | present within the default radius|
 | `near` / рядом, возле…            | within ~200 blocks               |
-| `in`, `on` / в, на…               | within ~64 blocks                |
+| `in` / в, на…                     | within ~64 blocks                |
 | `far` / далеко, вдали…            | far away (~1000–2000 blocks)     |
 | `some` / несколько, много…        | several structures nearby        |
 | `under` / под, снизу              | the surface biome at that spot   |
@@ -49,10 +49,16 @@ Keywords are recognized in **Russian and English**, with many synonyms.
 ## What works
 
 - **Biomes**: surface biomes (ocean, desert, forest, …) and cave biomes
-  (`deep dark`, `lush caves`, `dripstone caves`).
+  (`deep dark`, `lush caves`, `dripstone caves`, `sulfur_caves` — searchable
+  with `near`).
 - **Structures**: village, mansion, temples, monument, shipwreck, outpost,
   igloo, mineshaft, ocean ruins, buried treasure, trail ruins, ancient city,
-  trial chambers, ruined portal, and more.
+  trial chambers, ruined portal (incl. nether variant), and more.
+- **Spawn block**: find seeds by the block you stand on at the origin —
+  `spawn on sand`, `on the stone block`, `на блоке песок`, or any solid block.
+
+For slow queries the search stops early (after collecting a few candidates) so
+you get a result faster.
 
 ## Limitations
 

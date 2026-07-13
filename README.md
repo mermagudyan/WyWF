@@ -1,7 +1,6 @@
 # What you Want to Find (WyWF)
 
-A client-side Fabric mod for Minecraft 26.x (tested on 26.2; Fabric Loader 0.19+,
-Java 25) that turns the **Seed** field in the world-creation screen into a
+A client-side Fabric mod for Minecraft 26.x that turns the **Seed** field in the world-creation screen into a
 natural-language search bar. Instead of a number, you describe the world you want
 and the mod searches for a seed that matches — fully offline, without generating
 chunks.
@@ -16,6 +15,8 @@ village near warm ocean
 mansion dark forest
 desert temple in desert
 near deep dark
+spawn on sand
+на блоке песок
 ```
 
 When you press **Create New World**, the mod:
@@ -37,21 +38,48 @@ A query is a list of keywords, each optionally preceded by a modifier:
 |----------------------------------------|-------------------------------------------|
 | *(none)*                               | present within the default radius         |
 | `near` / рядом, около, возле…          | within ~200 blocks                        |
-| `in`, `on` / в, на…                    | within ~64 blocks (right where you spawn) |
+| `in` / в, на…                         | within ~64 blocks (right where you spawn) |
 | `far` / далеко, вдали…                 | far away (~1000–2000 blocks)              |
 | `some` / несколько, много…             | several of them nearby (structures)       |
 | `under` / под, снизу                   | the surface biome at that spot            |
 | `no`, `not`, `without` / нет, не, без  | must **not** be present                   |
 
-Keywords fall into three categories:
+Keywords fall into four categories:
 
-- **Biomes** — `warm ocean`, `desert`, `dark forest`, `deep dark`, `lush caves`, …
-- **Structures** — `village`, `mansion`, `desert temple`, `monument`, …
+- **Biomes** — `warm ocean`, `desert`, `dark forest`, `deep dark`, `lush caves`,
+  `sulfur_caves` (searchable only with `near`, since it sits deep underground)…
+- **Structures** — `village`, `mansion`, `desert temple`, `monument`,
+  `ruined_portal` (incl. `ruined_portal_nether`)…
+- **Spawn blocks** — `grass`, `dirt`, `sand`, `stone`, `snow`, `podzol`,
+  `mycelium`, `gravel`, or `any solid` block, prefixed by a trigger such as
+  `spawn on`, `on the … block`, `на блоке …` (see below).
 - **Objects** — `tree`, `water`, `lava` (recognized, but not searchable yet — ignored)
 
 The dictionary lives in `KeywordDictionary` and holds many synonyms per keyword.
 Multi-word keywords win over shorter ones (`dark forest` is matched as the
 dark-forest biome, not `forest`).
+
+### Spawn block
+
+You can ask for the block the player ends up standing on at the world origin.
+The query must contain a *trigger* (`spawn`, `on`, `на`, `блок`, `block`,
+`onto`, `встань`, `стоять`) immediately followed by a block name:
+
+```
+spawn on sand
+on the stone block
+на блоке песок
+на любых твёрдых блоках     (any solid block)
+```
+
+- `on` / `на` here mean *spawn on*, **not** the (removed) `ON` modifier.
+- If the requested block can never be a world-origin surface block (e.g.
+  `spawn on lava`), the term is ignored rather than failing the search.
+- `any solid` always matches.
+- The block is predicted from the biome at the origin chunk (the mod cannot run
+  the vanilla voxel spawn finder offline on the client), so the prediction is
+  approximate — beaches, rivers and snow layers may differ. It is accurate
+  enough to reliably find e.g. desert (sand) or snowy (snow) spawns.
 
 ## How the search works
 
@@ -95,36 +123,36 @@ Defaults (`SearchConfig`):
 - Structure search radius: 40 chunks.
 - Biome check radius: 16 chunks, sampled every 4 chunks.
 - Seed limit: unbounded.
+- Candidate count: collects up to `8` matching seeds, then stops. For slow /
+  rare queries the target **ramps down to `3` after 10 s** of searching, so a
+  result appears sooner instead of waiting for a full set
+  (`minCandidates`, `candidateRampDownSeconds`).
+- Start position: randomized across the 48-bit space by default
+  (`randomizeStart`), so a re-run over the same query explores different seeds.
 
-## Links
+## Example: a seed found by WyWF
 
-- Source: https://github.com/mermagudyan/WyWF
-- Issues: https://github.com/mermagudyan/WyWF/issues
+To show the mod in action, here is a real seed it discovered while running a
+natural-language search (not a typed number), verified on 1.1.0:
 
-## Project layout
+> **Seed:** `3033784457675282057`
+>
+> - Query: `in village near mushroom`
+> - Seeds checked: `1 665 924`
+> - Search time: `62 552 ms` (~1 minute)
+> - Candidates found: `3` (the search ramped down to 3 after 10 s, then stopped)
+
+What you'll find in this world:
+- You spawn on a **snowy beach**, right next to a **snowy village**.
+- A **mushroom biome** lies in the middle of a `deep frozen ocean`, stretching
+  from about `(-181, -159)` to `(-586, -862)`. It is made of **2 large islands**
+  and **2–3 smaller ones** between them.
+
+
+Copy-paste the seed:
 
 ```
-com.wywf/
-├── WYWFClient                     — client entry point
-├── core/                          — parsing & model (no Minecraft dependency)
-│   ├── KeywordDictionary          — keywords + synonyms (RU + EN)
-│   ├── QueryParser / ParsedQuery  — text → structured query
-│   ├── Modifier                   — near / in / on / some / far / under / never
-│   ├── SearchConfig               — threads, radii, limits
-│   ├── SearchResult               — the found seed
-│   └── SearchProgress             — thread-safe metrics for the GUI
-├── search/                        — the seed search
-│   ├── SeedSearcher               — thread-pool coordinator
-│   ├── SearchWorker               — one worker (48/16 split or linear scan)
-│   ├── SeedValidator              — checks one seed against the query
-│   ├── WorldContext(+Factory)     — per-seed biome source + placements
-│   ├── BiomeChecker / VanillaBiomeChecker
-│   ├── StructureChecker / VanillaStructureChecker
-│   ├── MinecraftWorldContextFactory
-│   └── ReusableClimateSampler     — fast, exact climate sampler
-├── world/                         — WorldCreator, PendingWorldCreation
-├── client/SearchScreen            — live search GUI (progress + cancel)
-└── mixin/                         — CreateWorldScreen hook + seed-field length fix
+3033784457675282057
 ```
 
 ## Limitations
@@ -136,11 +164,72 @@ com.wywf/
 
 ## Building
 
+### Prerequisites
+
+- **JDK 25.** The mod is compiled against Java 25 (`sourceCompatibility` /
+  `targetCompatibility = VERSION_25`, `options.release = 25`). Any JDK 25 works
+  (e.g. Eclipse Temurin 25, Oracle, GraalVM). Set `JAVA_HOME` to it before
+  building so Gradle uses the right compiler:
+
+  ```bash
+  # Linux / macOS
+  export JAVA_HOME=/path/to/jdk-25
+
+  # Windows (PowerShell)
+  $env:JAVA_HOME = "C:\path\to\jdk-25"
+  ```
+
+- **No manual Gradle install needed.** The project ships the Gradle Wrapper
+  (`gradlew` / `gradlew.bat`), which downloads the correct Gradle version
+  automatically.
+- **Internet access on the first build.** Fabric Loom downloads Minecraft
+  26.2, the Yarn mappings, Fabric Loader and Fabric API and caches them under
+  `~/.gradle` / `.gradle`. Later builds are offline-friendly.
+
+### Commands
+
+Run the wrapper from the project root. On Windows use `gradlew.bat` instead of
+`./gradlew`.
+
 ```bash
+# Build the mod jar (compiles main + tests, runs the test suite)
 ./gradlew build
+
+# Run the unit tests only (JUnit 5)
+./gradlew test
+
+# Launch a Minecraft client with the mod loaded (dev run)
+./gradlew runClient
+
+# List all available tasks
+./gradlew tasks
+
+# Wipe the build output and caches for a clean rebuild
+./gradlew clean
 ```
 
-Requires JDK 25. The jar is produced in `build/libs/`.
+`runClient` uses the `client` run configuration defined in `build.gradle`
+(Loom) and needs Fabric API, which is already declared as an `implementation`
+dependency, so it works out of the box.
+
+### Output
+
+The built mod jar is written to:
+
+```
+build/libs/wywf-1.1.0+26.1.jar
+```
+
+(the name is `<archives_base_name>-<mod_version>.jar`, taken from
+`gradle.properties`). Drop that jar into your `mods/` folder to install.
+
+### Troubleshooting
+
+- **`invalid source release: 25` / `release version 25 not supported`** — your
+  `JAVA_HOME` points at an older JDK. Point it at a JDK 25.
+- **First build is slow / downloads a lot** — that is Loom fetching Minecraft
+  and the mappings once; subsequent builds are much faster.
+- **Outdated mappings / dependency caches** — run `./gradlew clean` and rebuild.
 
 ## Installation
 

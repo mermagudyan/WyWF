@@ -2,7 +2,14 @@ package com.wywf.search;
 
 import com.wywf.core.*;
 
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.level.biome.Biome;
+
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 public final class SeedValidator {
@@ -11,6 +18,7 @@ public final class SeedValidator {
         ACCEPTED("matches"),
         NO_STRUCTURE("required structure not found near spawn"),
         BIOME_MISMATCH("missing required biomes near spawn"),
+        SPAWN_MISMATCH("spawn block does not match"),
         OBJECT_MISMATCH("missing required objects");
 
         public final String description;
@@ -72,7 +80,7 @@ public final class SeedValidator {
     public int structureScanRadiusChunks(ParsedQuery.Term term) {
         return switch (term.modifier) {
             case NEAR   -> chunks(NEAR_BLOCKS);
-            case IN, ON -> UNDERGROUND.contains(term.canonical) ? searchRadiusChunks : chunks(IN_ON_BLOCKS);
+            case IN     -> UNDERGROUND.contains(term.canonical) ? searchRadiusChunks : chunks(IN_ON_BLOCKS);
             default     -> searchRadiusChunks;
         };
     }
@@ -99,7 +107,10 @@ public final class SeedValidator {
 
         StructureChecker.Result spawnStruct = StructureChecker.Result.notFound();
 
-        for (ParsedQuery.Term term : query.terms()) {
+        List<ParsedQuery.Term> terms = reorder(query.terms());
+        Map<Integer, BiomeField> fields = sampleBiomeFields(ctx, cx, cz, terms);
+
+        for (ParsedQuery.Term term : terms) {
             switch (term.category) {
                 case STRUCTURE -> {
                     StructureChecker.Result r = evalStructureTerm(ctx, cx, cz, term);
@@ -107,8 +118,13 @@ public final class SeedValidator {
                     if (r.found && !spawnStruct.found) spawnStruct = r;
                 }
                 case BIOME -> {
-                    if (!evalBiomeTerm(ctx, cx, cz, term)) {
+                    if (!evalBiomeTerm(ctx, cx, cz, term, fields)) {
                         return Outcome.rejected(Reason.BIOME_MISMATCH, spawnStruct);
+                    }
+                }
+                case SPAWN -> {
+                    if (!evalSpawnTerm(ctx, term, seed)) {
+                        return Outcome.rejected(Reason.SPAWN_MISMATCH, spawnStruct);
                     }
                 }
                 case OBJECT -> {
@@ -156,7 +172,7 @@ public final class SeedValidator {
 
         int scanChunks = switch (mod) {
             case NEAR   -> chunks(NEAR_BLOCKS);
-            case IN, ON -> UNDERGROUND.contains(canonical) ? searchRadiusChunks : chunks(IN_ON_BLOCKS);
+            case IN     -> UNDERGROUND.contains(canonical) ? searchRadiusChunks : chunks(IN_ON_BLOCKS);
             default     -> searchRadiusChunks;
         };
 
@@ -165,32 +181,131 @@ public final class SeedValidator {
         return StructureChecker.Result.found(found[0], found[1], canonical);
     }
 
-    private boolean evalBiomeTerm(WorldContext ctx, int cx, int cz, ParsedQuery.Term term) {
+    private boolean evalSpawnTerm(WorldContext ctx, ParsedQuery.Term term, long seed) {
+        String requested = term.canonical;
+        if ("any_solid".equals(requested)) return true;
+
+        SpawnBlockPredictor predictor = ctx.spawnPredictor;
+        if (predictor == null) return true;
+        if (!predictor.isPossibleSurfaceBlock(requested)) return true;
+
+        String block = predictor.predict(ctx, seed);
+        if (block == null) return true;
+        return requested.equals(block);
+    }
+
+    private boolean evalBiomeTerm(WorldContext ctx, int cx, int cz, ParsedQuery.Term term,
+                                   Map<Integer, BiomeField> fields) {
+        if (fields.isEmpty()) return evalBiomeTermDirect(ctx, cx, cz, term);
+
         String canonical = term.canonical;
         Modifier mod = term.modifier;
 
-        switch (mod) {
-            case IN, ON -> {
-                return biomeChecker.exists(ctx, cx, cz, chunks(IN_ON_BLOCKS), canonical);
+        if (biomeChecker instanceof VanillaBiomeChecker vbc && vbc.isUnderground(canonical)) {
+            BiomeField f = fields.get(vbc.quartYFor(canonical));
+            return f != null && vbc.evalUnderground(f, canonical, mod, NEAR_BLOCKS, FAR_MIN_BLOCKS, FAR_MAX_BLOCKS);
+        }
+
+        if (!(biomeChecker instanceof VanillaBiomeChecker vbc)) return false;
+        ResourceKey<Biome> key = vbc.keyOf(canonical);
+        if (key == null) return false;
+
+        BiomeField f = fields.get(VanillaBiomeChecker.SURFACE_Y >> 2);
+        if (f == null) return false;
+
+        return switch (mod) {
+            case IN -> f.exists(key, IN_ON_BLOCKS);
+            case UNDER -> biomeChecker.matchesAt(ctx, cx, cz, canonical);
+            case NEAR -> f.exists(key, NEAR_BLOCKS);
+            case FAR -> {
+                int d = f.nearestDistanceBlocks(key, FAR_MIN_BLOCKS, FAR_MAX_BLOCKS);
+                yield d >= 0;
             }
-            case UNDER -> {
-                return biomeChecker.matchesAt(ctx, cx, cz, canonical);
-            }
-            case NEAR -> {
-                int d = biomeChecker.nearestDistanceBlocks(ctx, cx, cz, chunks(NEAR_BLOCKS), canonical);
-                return d >= 0 && d <= NEAR_BLOCKS;
-            }
+            case NEVER -> !f.exists(key, biomeRadiusChunks * 16);
+            default -> f.exists(key, biomeRadiusChunks * 16);
+        };
+    }
+
+    /**
+     * Single-biome-term path: sample directly with early-exit so a near match is
+     * found without scanning the whole grid (e.g. {@code near} uses {@code exists},
+     * which returns on the first hit instead of computing distances for every point).
+     */
+    private boolean evalBiomeTermDirect(WorldContext ctx, int cx, int cz, ParsedQuery.Term term) {
+        String canonical = term.canonical;
+        Modifier mod = term.modifier;
+
+        if (biomeChecker instanceof VanillaBiomeChecker vbc && vbc.isUnderground(canonical)) {
+            int qy = vbc.quartYFor(canonical);
+            int step = vbc.stepChunks();
+            BiomeField f = biomeChecker.sampleField(ctx, cx, cz, qy, biomeTermRadiusChunks(term), step);
+            return vbc.evalUnderground(f, canonical, mod, NEAR_BLOCKS, FAR_MIN_BLOCKS, FAR_MAX_BLOCKS);
+        }
+
+        return switch (mod) {
+            case IN -> biomeChecker.exists(ctx, cx, cz, chunks(IN_ON_BLOCKS), canonical);
+            case UNDER -> biomeChecker.matchesAt(ctx, cx, cz, canonical);
+            case NEAR -> biomeChecker.exists(ctx, cx, cz, chunks(NEAR_BLOCKS), canonical);
             case FAR -> {
                 int d = biomeChecker.nearestDistanceBlocks(ctx, cx, cz, chunks(FAR_MAX_BLOCKS), canonical);
-                return d >= FAR_MIN_BLOCKS && d <= FAR_MAX_BLOCKS;
+                yield d >= FAR_MIN_BLOCKS && d <= FAR_MAX_BLOCKS;
             }
-            case NEVER -> {
-                return !biomeChecker.exists(ctx, cx, cz, biomeRadiusChunks, canonical);
-            }
-            default -> {
-                return biomeChecker.exists(ctx, cx, cz, biomeRadiusChunks, canonical);
-            }
+            case NEVER -> !biomeChecker.exists(ctx, cx, cz, biomeRadiusChunks, canonical);
+            default -> biomeChecker.exists(ctx, cx, cz, biomeRadiusChunks, canonical);
+        };
+    }
+
+    /**
+     * Samples the biome grid once per Y-level needed by the biome terms and reuses
+     * it across all of them. Only worth it when there is more than one biome term;
+     * a single term is handled by {@link #evalBiomeTermDirect} (which early-exits).
+     */
+    private Map<Integer, BiomeField> sampleBiomeFields(WorldContext ctx, int cx, int cz, List<ParsedQuery.Term> terms) {
+        List<ParsedQuery.Term> biomeTerms = terms.stream()
+                .filter(t -> t.category == KeywordDictionary.Category.BIOME)
+                .toList();
+        if (biomeTerms.size() <= 1) return Map.of();
+
+        int step = (biomeChecker instanceof VanillaBiomeChecker vbc) ? vbc.stepChunks() : 4;
+        Map<Integer, Integer> maxRadius = new HashMap<>();
+        for (ParsedQuery.Term t : biomeTerms) {
+            int qy = (biomeChecker instanceof VanillaBiomeChecker vbc && vbc.isUnderground(t.canonical))
+                    ? vbc.quartYFor(t.canonical) : (VanillaBiomeChecker.SURFACE_Y >> 2);
+            maxRadius.merge(qy, biomeTermRadiusChunks(t), Math::max);
         }
+
+        Map<Integer, BiomeField> fields = new HashMap<>();
+        for (Map.Entry<Integer, Integer> e : maxRadius.entrySet()) {
+            fields.put(e.getKey(), biomeChecker.sampleField(ctx, cx, cz, e.getKey(), e.getValue(), step));
+        }
+        return fields;
+    }
+
+    private int biomeTermRadiusChunks(ParsedQuery.Term term) {
+        return switch (term.modifier) {
+            case IN -> chunks(IN_ON_BLOCKS);
+            case NEAR -> chunks(NEAR_BLOCKS);
+            case FAR -> chunks(FAR_MAX_BLOCKS);
+            default -> biomeRadiusChunks;
+        };
+    }
+
+    /** Cheap checks first (structure/spawn, then positive biome terms) so a rejecting
+     *  term is reached with minimal work; expensive {@code far}/{@code never} biome
+     *  scans run last. */
+    private static List<ParsedQuery.Term> reorder(List<ParsedQuery.Term> terms) {
+        List<ParsedQuery.Term> out = new ArrayList<>(terms);
+        out.sort(Comparator.comparingInt(SeedValidator::termRank));
+        return out;
+    }
+
+    private static int termRank(ParsedQuery.Term t) {
+        return switch (t.category) {
+            case STRUCTURE -> 0;
+            case SPAWN -> 1;
+            case BIOME -> (t.modifier == Modifier.FAR || t.modifier == Modifier.NEVER) ? 3 : 2;
+            default -> 4;
+        };
     }
 
     private static int chunks(int blocks) {

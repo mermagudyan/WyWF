@@ -8,6 +8,8 @@ public final class QueryParser {
 
     private static final Map<String, Modifier> MODIFIERS = buildModifiers();
 
+    private static final Set<String> SPAWN_TRIGGERS = buildSpawnTriggers();
+
     public QueryParser(KeywordDictionary dict) {
         this.dict = dict;
     }
@@ -22,10 +24,6 @@ public final class QueryParser {
         for (String w : new String[]{"in", "inside", "within",
                 "в", "во", "внутри"}) {
             m.put(w, Modifier.IN);
-        }
-        for (String w : new String[]{"on", "atop", "upon",
-                "на", "поверх"}) {
-            m.put(w, Modifier.ON);
         }
         for (String w : new String[]{"some", "several", "many", "multiple", "cluster",
                 "несколько", "много", "куча", "группа", "скопление"}) {
@@ -44,6 +42,14 @@ public final class QueryParser {
             m.put(w, Modifier.NEVER);
         }
         return m;
+    }
+
+    private static Set<String> buildSpawnTriggers() {
+        Set<String> s = new HashSet<>();
+        for (String w : new String[]{"spawn", "on", "на", "блок", "block", "onto", "встань", "стоять"}) {
+            s.add(w);
+        }
+        return Set.copyOf(s);
     }
 
     public ParsedQuery parse(String input) {
@@ -73,6 +79,7 @@ public final class QueryParser {
         int len = normalized.length();
         String[] out = new String[1];
         Modifier pending = Modifier.DEFAULT;
+        boolean pendingSpawn = false;
 
         while (i < len) {
             char c = normalized.charAt(i);
@@ -89,6 +96,32 @@ public final class QueryParser {
                 continue;
             }
 
+            if (SPAWN_TRIGGERS.contains(word)) {
+                pendingSpawn = true;
+                i = wordEnd;
+                continue;
+            }
+
+            if (pendingSpawn) {
+                int matched = dict.matchBlockAt(normalized, i, out);
+                if (matched > 0) {
+                    String canonical = out[0];
+                    if (canonical != null) {
+                        KeywordDictionary.Entry e = dict.get(canonical);
+                        if (e != null && e.category == KeywordDictionary.Category.SPAWN) {
+                            String dedupeKey = canonical + "#SPAWN";
+                            if (seen.add(dedupeKey)) {
+                                terms.add(new ParsedQuery.Term(canonical, e.category, Modifier.DEFAULT));
+                            }
+                        }
+                    }
+                    pendingSpawn = false;
+                    pending = Modifier.DEFAULT;
+                    i += matched;
+                    continue;
+                }
+            }
+
             int matched = dict.matchAt(normalized, i, out);
             if (matched > 0) {
                 String canonical = out[0];
@@ -102,6 +135,7 @@ public final class QueryParser {
                     }
                 }
                 pending = Modifier.DEFAULT;
+                pendingSpawn = false;
                 i += matched;
             } else {
                 i = wordEnd;

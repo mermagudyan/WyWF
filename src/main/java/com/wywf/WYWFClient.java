@@ -29,7 +29,7 @@ public final class WYWFClient implements ClientModInitializer {
             if (searcher.isRunning()) searcher.cancel();
         });
 
-        LOGGER.info("[WYWF] What You Want To Find initialized. Dictionary size: {}", dictionary.all().size());
+        LOGGER.info("[WyWF] What you Want to Find initialized. Dictionary size: {}", dictionary.all().size());
     }
 
     public static KeywordDictionary dictionary()   { return dictionary; }

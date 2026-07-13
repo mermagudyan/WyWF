@@ -8,26 +8,36 @@ import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.biome.Climate;
 
+import com.wywf.core.Modifier;
+
 import java.util.*;
 
 public final class VanillaBiomeChecker implements BiomeChecker {
 
     private volatile int stepChunks = 4;
 
-    private static final int SURFACE_Y = 64;
+    public static final int SURFACE_Y = 64;
+
+    private static final BiomeField EMPTY = new BiomeField(SURFACE_Y >> 2, new int[0], new int[0], new ResourceKey[0]);
 
     /** Underground (cave) biomes only exist below the surface, so they must be sampled at depth. */
     private static final Map<String, Integer> UNDERGROUND_BIOME_Y = Map.of(
             "minecraft:deep_dark", -50,
             "minecraft:lush_caves", -50,
-            "minecraft:dripstone_caves", -50);
+            "minecraft:dripstone_caves", -50,
+            "minecraft:sulfur_caves", -50);
 
-    private static boolean isUnderground(String biomeId) {
-        return UNDERGROUND_BIOME_Y.containsKey(biomeId);
+    /**
+     * Underground biomes are only searchable by proximity (`near`/`far`) — they
+     * are never "right here" at the surface. `sulfur_caves` is restricted to
+     * `near` only, the others also allow `far`.
+     */
+    private static boolean undergroundNearOnly(String biomeId) {
+        return "minecraft:sulfur_caves".equals(biomeId);
     }
 
-    private static int quartYFor(String biomeId) {
-        return UNDERGROUND_BIOME_Y.getOrDefault(biomeId, SURFACE_Y) >> 2;
+    public boolean isUnderground(String biomeId) {
+        return UNDERGROUND_BIOME_Y.containsKey(biomeId);
     }
 
     private final Map<String, ResourceKey<Biome>> keyCache = new java.util.concurrent.ConcurrentHashMap<>();
@@ -37,7 +47,15 @@ public final class VanillaBiomeChecker implements BiomeChecker {
         return this;
     }
 
-    private ResourceKey<Biome> keyOf(String biomeId) {
+    public int stepChunks() {
+        return stepChunks;
+    }
+
+    public int quartYFor(String biomeId) {
+        return UNDERGROUND_BIOME_Y.getOrDefault(biomeId, SURFACE_Y) >> 2;
+    }
+
+    public ResourceKey<Biome> keyOf(String biomeId) {
         return keyCache.computeIfAbsent(biomeId, id -> {
             Identifier ident = Identifier.tryParse(id);
             return ident == null ? null : ResourceKey.create(Registries.BIOME, ident);
@@ -126,5 +144,63 @@ public final class VanillaBiomeChecker implements BiomeChecker {
         if (holder == null) return false;
 
         return target.equals(holder.unwrapKey().orElse(null));
+    }
+
+    /**
+     * Evaluates an underground (cave) biome against an already-sampled {@link BiomeField}.
+     * Cave biomes only exist below the surface, so they are searchable by proximity
+     * only: {@code near} always, and {@code far} for all except {@code sulfur_caves}
+     * (near-only). All other modifiers return false.
+     */
+    public boolean evalUnderground(BiomeField field, String biomeId, Modifier mod,
+                                    int nearRadiusBlocks, int farMinBlocks, int farMaxBlocks) {
+        if (!isUnderground(biomeId)) return false;
+        ResourceKey<Biome> key = keyOf(biomeId);
+        if (key == null) return false;
+        if (mod == Modifier.NEAR) {
+            int d = field.nearestDistanceBlocks(key, 0, nearRadiusBlocks);
+            return d >= 0 && d <= nearRadiusBlocks;
+        }
+        if (mod == Modifier.FAR && !undergroundNearOnly(biomeId)) {
+            int d = field.nearestDistanceBlocks(key, farMinBlocks, farMaxBlocks);
+            return d >= 0;
+        }
+        return false;
+    }
+
+    @Override
+    public BiomeField sampleField(WorldContext ctx, int centerX, int centerZ,
+                                   int quartY, int radiusChunks, int stepChunks) {
+        BiomeSource biomeSource = ctx.biomeSource;
+        Climate.Sampler sampler = ctx.sampler();
+        if (biomeSource == null || sampler == null) return EMPTY;
+
+        int centerChunkX = centerX >> 4;
+        int centerChunkZ = centerZ >> 4;
+        int step = Math.max(1, stepChunks);
+
+        int count = 0;
+        for (int cx = centerChunkX - radiusChunks; cx <= centerChunkX + radiusChunks; cx += step) {
+            for (int cz = centerChunkZ - radiusChunks; cz <= centerChunkZ + radiusChunks; cz += step) {
+                count++;
+            }
+        }
+
+        int[] dx = new int[count];
+        int[] dz = new int[count];
+        ResourceKey<Biome>[] keys = new ResourceKey[count];
+        int i = 0;
+        for (int cx = centerChunkX - radiusChunks; cx <= centerChunkX + radiusChunks; cx += step) {
+            for (int cz = centerChunkZ - radiusChunks; cz <= centerChunkZ + radiusChunks; cz += step) {
+                int quartX = (cx << 4) >> 2;
+                int quartZ = (cz << 4) >> 2;
+                Holder<Biome> holder = biomeSource.getNoiseBiome(quartX, quartY, quartZ, sampler);
+                dx[i] = (cx - centerChunkX) << 4;
+                dz[i] = (cz - centerChunkZ) << 4;
+                keys[i] = holder == null ? null : holder.unwrapKey().orElse(null);
+                i++;
+            }
+        }
+        return new BiomeField(quartY, dx, dz, keys);
     }
 }
