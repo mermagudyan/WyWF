@@ -1,19 +1,10 @@
-# What You Want To Find (WYWF)
-
-> Type what you want your world to be like — get a seed that matches.
+# What you Want to Find (WyWF)
 
 A client-side Fabric mod for Minecraft 26.x that turns the **Seed** field in the
 world-creation screen into a natural-language search bar. Describe the world you
 want, press Create, and the mod searches offline for a matching seed.
 
-## Links
-
-- Source: <YOUR_SOURCE_LINK>
-- Discord: <YOUR_DISCORD_LINK>
-- Website: <YOUR_WEBSITE_LINK>
-- Downloads: <YOUR_DOWNLOADS_LINK>
-
-*(replace the placeholders above before publishing)*
+> Type what you want your world to be like — get a seed that matches.
 
 ## How it works
 
@@ -65,7 +56,7 @@ you get a result faster.
 - **Strongholds are not supported** yet (concentric-ring placement).
 - **Objects** (`tree`, `water`, `lava`) are recognized but not searched yet.
 - Matches are found around the origin `(0, 0)`; the spawn is not moved.
-- Requires **Minecraft 26.x** (tested on 26.2) and **Java 25**.
+- Requires **Minecraft 26.x** and **Java 25**.
 
 ## License
 

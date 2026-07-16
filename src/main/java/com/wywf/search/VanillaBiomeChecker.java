@@ -55,6 +55,23 @@ public final class VanillaBiomeChecker implements BiomeChecker {
         return UNDERGROUND_BIOME_Y.getOrDefault(biomeId, SURFACE_Y) >> 2;
     }
 
+    /** Unified surface quart-Y for structure-biome checks (block Y = {@code SURFACE_Y}). */
+    public static int quartYForSurfaceMatches() {
+        return SURFACE_Y >> 2;
+    }
+
+    /** Surface-biome predicate used by structure checks; identical Y to surface sampling. */
+    public static boolean quartYForSurfaceMatches(WorldContext ctx, int blockX, int blockZ,
+                                                  Set<ResourceKey<Biome>> allowedBiomes) {
+        BiomeSource biomeSource = ctx.biomeSource;
+        Climate.Sampler sampler = ctx.sampler();
+        if (biomeSource == null || sampler == null) return false;
+        Holder<Biome> holder = biomeSource.getNoiseBiome(blockX >> 2, quartYForSurfaceMatches(), blockZ >> 2, sampler);
+        if (holder == null) return false;
+        ResourceKey<Biome> key = holder.unwrapKey().orElse(null);
+        return key != null && allowedBiomes.contains(key);
+    }
+
     public ResourceKey<Biome> keyOf(String biomeId) {
         return keyCache.computeIfAbsent(biomeId, id -> {
             Identifier ident = Identifier.tryParse(id);

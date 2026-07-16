@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.1.1
+
+### Fixed
+- **Structure search parity (all placement types):** rewrote
+  `VanillaStructureChecker` to no longer rely on
+  `ChunkGeneratorStructureState.isStructureChunk(state, …)`, which both failed
+  to compile and threw `UnsupportedOperationException` at construction (offline /
+  test `RegistryAccess` lacks the datapack `has_structure` biome tags). It now
+  re-implements the placement check standalone:
+  - `RandomSpreadStructurePlacement` via its public
+    `getPotentialStructureChunk(seed, x, z)` (covers mineshaft, villages,
+    temples, monuments, bastions, fortresses, end cities, ruined portals, …).
+  - `ConcentricRingsStructurePlacement` via recomputed ring positions
+    (`BiomeSource.findBiomeHorizontal`, cached per `(placement, seed)`,
+    with an "any biome" fallback when the preferred-biome tag is unbound).
+  - `FrequencyReduction` is now honored through the public
+    `applyAdditionalChunkRestrictions`.
+  - Per-structure biome gate now calls
+    `VanillaBiomeChecker.quartYForSurfaceMatches`, unifying surface/cave quart-Y
+    with the biome checker.
+- **`WorldContext` build API:** removed the broken `structureState` field and
+  unused holders; now carries `HolderLookup.Provider` + `noiseSettingsKey`.
+- **`MinecraftWorldContextFactory`:** updated to construct `WorldContext` with
+  the registry provider + noise-settings key.
+
+### Known feature
+- `ExclusionZone` interactions between structure sets are not yet enforced
+  (accessor is `protected`; no vanilla structure of interest uses one).
+
 ## 1.1.0
 
 ### Added

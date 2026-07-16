@@ -65,6 +65,10 @@ public final class MinecraftWorldContextFactory implements WorldContextFactory {
         this.registries     = r;
     }
 
+    private HolderLookup.RegistryLookup<StructureSet> structureSets() {
+        return structureSets;
+    }
+
     private static Map<ResourceKey<Structure>, List<StructurePlacement>> buildPlacements(
             HolderLookup.RegistryLookup<StructureSet> sets) {
         Map<ResourceKey<Structure>, List<StructurePlacement>> map = new HashMap<>();
@@ -82,7 +86,9 @@ public final class MinecraftWorldContextFactory implements WorldContextFactory {
     @Override
     public WorldContext create(long seed, boolean accurateRings) {
         ensureInit();
-        return new WorldContext(seed, biomeSource, () -> samplerFor(seed), placementsByStructure, spawnPredictor);
+        return new WorldContext(seed, biomeSource, () -> samplerFor(seed),
+                placementsByStructure, spawnPredictor,
+                registries, NoiseGeneratorSettings.OVERWORLD, structureSets);
     }
 
     @Override
