@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.2.0 (unreleased)
+## 1.2.0
 
 ### Added
 - **Externalized all query synonyms to lang files** (`assets/wywf/lang/en_us.json`,
