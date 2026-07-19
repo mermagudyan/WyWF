@@ -6,50 +6,44 @@ public final class QueryParser {
 
     private final KeywordDictionary dict;
 
-    private static final Map<String, Modifier> MODIFIERS = buildModifiers();
-
-    private static final Set<String> SPAWN_TRIGGERS = buildSpawnTriggers();
-
     public QueryParser(KeywordDictionary dict) {
         this.dict = dict;
     }
 
-    private static Map<String, Modifier> buildModifiers() {
-        Map<String, Modifier> m = new HashMap<>();
+    /**
+     * Binds a preceding biome word to a following structure word so
+     * "plains village" -> "minecraft:village_plains" and "desert village" ->
+     * "minecraft:village_desert", instead of two independent terms that match ANY
+     * village. Key = {@code biomeCanonical + "\u0000" + structureCanonical},
+     * value = the specific bound structure variant canonical.
+     */
+    private static final Map<String, String> COMPOUND = buildCompound();
 
-        for (String w : new String[]{"near", "nearby", "close", "beside", "next",
-                "рядом", "около", "вблизи", "недалеко", "возле", "близко"}) {
-            m.put(w, Modifier.NEAR);
-        }
-        for (String w : new String[]{"in", "inside", "within",
-                "в", "во", "внутри"}) {
-            m.put(w, Modifier.IN);
-        }
-        for (String w : new String[]{"some", "several", "many", "multiple", "cluster",
-                "несколько", "много", "куча", "группа", "скопление"}) {
-            m.put(w, Modifier.SOME);
-        }
-        for (String w : new String[]{"far", "distant", "away", "remote",
-                "далеко", "вдали", "далеки", "поодаль"}) {
-            m.put(w, Modifier.FAR);
-        }
-        for (String w : new String[]{"under", "beneath", "below", "underneath",
-                "под", "снизу"}) {
-            m.put(w, Modifier.UNDER);
-        }
-        for (String w : new String[]{"never", "no", "not", "without",
-                "нет", "не", "без", "никакого", "никаких"}) {
-            m.put(w, Modifier.NEVER);
-        }
-        return m;
+    private static Map<String, String> buildCompound() {
+        Map<String, String> m = new HashMap<>();
+        bind(m, "minecraft:plains",        "minecraft:village",  "minecraft:village_plains");
+        bind(m, "minecraft:desert",        "minecraft:village",  "minecraft:village_desert");
+        bind(m, "minecraft:savanna",       "minecraft:village",  "minecraft:village_savanna");
+        bind(m, "minecraft:snowy_plains",   "minecraft:village",  "minecraft:village_snowy");
+        bind(m, "minecraft:taiga",         "minecraft:village",  "minecraft:village_taiga");
+        bind(m, "minecraft:desert",        "minecraft:desert_pyramid", "minecraft:desert_pyramid");
+        bind(m, "minecraft:jungle",        "minecraft:jungle_temple",  "minecraft:jungle_pyramid");
+        bind(m, "minecraft:bamboo_jungle",  "minecraft:jungle_temple",  "minecraft:jungle_pyramid");
+        bind(m, "minecraft:swamp",         "minecraft:swamp_hut", "minecraft:swamp_hut");
+        bind(m, "minecraft:dark_forest",    "minecraft:mansion",       "minecraft:mansion");
+        bind(m, "minecraft:snowy_plains",  "minecraft:igloo", "minecraft:igloo");
+        bind(m, "minecraft:snowy_taiga",   "minecraft:igloo", "minecraft:igloo");
+        bind(m, "minecraft:snowy_slopes",  "minecraft:igloo", "minecraft:igloo");
+        bind(m, "minecraft:ocean",         "minecraft:ocean_monument", "minecraft:ocean_monument");
+        bind(m, "minecraft:ocean",         "minecraft:ocean_ruins", "minecraft:ocean_ruin_cold");
+        bind(m, "minecraft:nether",        "minecraft:fortress", "minecraft:fortress");
+        bind(m, "minecraft:nether",        "minecraft:bastion",  "minecraft:bastion");
+        bind(m, "minecraft:end",           "minecraft:end_city", "minecraft:end_city");
+        return Map.copyOf(m);
     }
 
-    private static Set<String> buildSpawnTriggers() {
-        Set<String> s = new HashSet<>();
-        for (String w : new String[]{"spawn", "on", "на", "блок", "block", "onto", "встань", "стоять"}) {
-            s.add(w);
-        }
-        return Set.copyOf(s);
+    private static void bind(Map<String, String> m, String biome, String structure, String variant) {
+        m.put(biome + "\u0000" + structure, variant);
     }
 
     public ParsedQuery parse(String input) {
@@ -74,6 +68,7 @@ public final class QueryParser {
 
         List<ParsedQuery.Term> terms = new ArrayList<>();
         Set<String> seen = new HashSet<>();
+        List<String> ignored = new ArrayList<>();
 
         int i = 0;
         int len = normalized.length();
@@ -89,14 +84,14 @@ public final class QueryParser {
             while (wordEnd < len && normalized.charAt(wordEnd) != ' ') wordEnd++;
             String word = normalized.substring(i, wordEnd);
 
-            Modifier mod = MODIFIERS.get(word);
-            if (mod != null) {
-                pending = mod;
+            String modName = dict.getModifier(word);
+            if (modName != null) {
+                pending = Modifier.valueOf(modName);
                 i = wordEnd;
                 continue;
             }
 
-            if (SPAWN_TRIGGERS.contains(word)) {
+            if (dict.isSpawnTrigger(word)) {
                 pendingSpawn = true;
                 i = wordEnd;
                 continue;
@@ -138,11 +133,54 @@ public final class QueryParser {
                 pendingSpawn = false;
                 i += matched;
             } else {
+                ignored.add(word);
                 i = wordEnd;
             }
         }
 
-        return new ParsedQuery(input, terms);
+        List<ParsedQuery.Term> bound = bindCompound(terms);
+        return new ParsedQuery(input, bound, ignored);
+    }
+
+    /**
+     * Merges a biome term immediately followed by a structure term (or vice-versa)
+     * into ONE structure term whose canonical is the specific variant bound by
+     * {@link #COMPOUND} (e.g. "plains village" -> "minecraft:village_plains").
+     * The bound term keeps the structure's modifier (or the biome's if the structure
+     * had none). If no binding exists, both terms are kept as-is.
+     */
+    private List<ParsedQuery.Term> bindCompound(List<ParsedQuery.Term> terms) {
+        List<ParsedQuery.Term> out = new ArrayList<>(terms.size());
+        int i = 0;
+        while (i < terms.size()) {
+            ParsedQuery.Term a = terms.get(i);
+            ParsedQuery.Term b = (i + 1 < terms.size()) ? terms.get(i + 1) : null;
+            if (b != null) {
+                String variant = null;
+                Modifier mod = null;
+                if (a.category == KeywordDictionary.Category.BIOME
+                        && b.category == KeywordDictionary.Category.STRUCTURE) {
+                    variant = COMPOUND.get(a.canonical + "\u0000" + b.canonical);
+                    mod = b.modifier;
+                } else if (b.category == KeywordDictionary.Category.BIOME
+                        && a.category == KeywordDictionary.Category.STRUCTURE) {
+                    variant = COMPOUND.get(b.canonical + "\u0000" + a.canonical);
+                    mod = a.modifier;
+                }
+                if (variant != null) {
+                    KeywordDictionary.Entry e = dict.get(variant);
+                    Modifier useMod = (mod == null || mod == Modifier.DEFAULT) ? a.modifier : mod;
+                    if (e != null) {
+                        out.add(new ParsedQuery.Term(variant, KeywordDictionary.Category.STRUCTURE, useMod));
+                        i += 2;
+                        continue;
+                    }
+                }
+            }
+            out.add(a);
+            i++;
+        }
+        return out;
     }
 
     public boolean isQuery(String input) {

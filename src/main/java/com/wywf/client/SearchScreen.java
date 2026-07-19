@@ -2,6 +2,7 @@ package com.wywf.client;
 
 import com.wywf.WYWFClient;
 import com.wywf.core.*;
+import com.wywf.core.ConfigStore;
 import com.wywf.search.SeedSearcher;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -54,6 +55,7 @@ public final class SearchScreen extends Screen {
     }
 
     private void startSearch() {
+        WYWFClient.applyQueryLanguage(config.queryLanguage());
         SeedSearcher searcher = WYWFClient.searcher();
         if (searcher.isRunning()) {
             WYWFClient.LOGGER.warn("Search already running, ignoring start");
@@ -171,13 +173,34 @@ public final class SearchScreen extends Screen {
         SearchResult best = lastCandidate();
         String candidateText;
         if (best != null) {
-            candidateText = "§a✓ " + best.seed + " @ (" + best.centerX + ", " + best.centerZ + ") — " + best.matchedDescription;
+            StringBuilder sb = new StringBuilder();
+            sb.append("§a✓ ").append(best.seed)
+              .append(" @ (").append(best.centerX).append(", ").append(best.centerZ).append(")");
+            if (best.stopReason != null && !best.stopReason.isBlank()) {
+                sb.append("  §8[").append(best.stopReason).append("]");
+            }
+            if (!best.matchedStructures.isEmpty()) {
+                sb.append("\n§7structures: §f").append(String.join(", ", best.matchedStructures));
+            }
+            if (!best.matchedBiomes.isEmpty()) {
+                sb.append("\n§7biomes: §f").append(String.join(", ", best.matchedBiomes));
+            }
+            candidateText = sb.toString();
         } else if (lastSnapshot.finished()) {
             candidateText = "§cNo matching seed found.";
         } else {
             candidateText = "§7Searching candidates...";
         }
-        g.centeredText(font, Component.literal(candidateText), cx, y, 0xFFFFFF);
+        for (String line : candidateText.split("\n")) {
+            g.centeredText(font, Component.literal(line), cx, y, 0xFFFFFF);
+            y += 12;
+        }
+
+        if (parsedQuery != null && !parsedQuery.ignoredWords().isEmpty()) {
+            g.centeredText(font,
+                    Component.literal("§eUnknown words ignored: §f" + String.join(", ", parsedQuery.ignoredWords())),
+                    cx, this.height - 60, 0xFFFFFF);
+        }
     }
 
     private void drawRow(GuiGraphicsExtractor g, int x, int y, String label, String value) {

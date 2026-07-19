@@ -7,6 +7,7 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.util.RandomSource;
+import com.wywf.core.KeywordDictionary;
 import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.biome.Biome;
@@ -27,30 +28,6 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class VanillaStructureChecker implements StructureChecker {
-
-    private static final Map<String, List<String>> EXPANSIONS = Map.ofEntries(
-            Map.entry("minecraft:village", List.of(
-                    "minecraft:village_plains", "minecraft:village_desert",
-                    "minecraft:village_savanna", "minecraft:village_snowy",
-                    "minecraft:village_taiga")),
-            Map.entry("minecraft:smithy", List.of(
-                    "minecraft:village_plains", "minecraft:village_desert",
-                    "minecraft:village_savanna", "minecraft:village_snowy",
-                    "minecraft:village_taiga")),
-            Map.entry("minecraft:jungle_temple", List.of("minecraft:jungle_pyramid")),
-            Map.entry("minecraft:shipwreck", List.of(
-                    "minecraft:shipwreck", "minecraft:shipwreck_beached")),
-            Map.entry("minecraft:ruined_portal", List.of(
-                    "minecraft:ruined_portal", "minecraft:ruined_portal_desert",
-                    "minecraft:ruined_portal_jungle", "minecraft:ruined_portal_swamp",
-                    "minecraft:ruined_portal_mountain", "minecraft:ruined_portal_ocean",
-                    "minecraft:ruined_portal_nether")),
-            Map.entry("minecraft:mineshaft", List.of(
-                    "minecraft:mineshaft", "minecraft:mineshaft_mesa")),
-            Map.entry("minecraft:ocean_monument", List.of("minecraft:monument")),
-            Map.entry("minecraft:ocean_ruins", List.of(
-                    "minecraft:ocean_ruin_cold", "minecraft:ocean_ruin_warm"))
-    );
 
     private static final Map<String, Set<String>> STRUCTURE_BIOMES = Map.ofEntries(
             Map.entry("minecraft:mansion", Set.of("minecraft:dark_forest")),
@@ -81,11 +58,13 @@ public final class VanillaStructureChecker implements StructureChecker {
         return Map.copyOf(out);
     }
 
-    public static List<String> expand(String canonical) {
-        return EXPANSIONS.getOrDefault(canonical, List.of(canonical));
-    }
+    private final KeywordDictionary dict;
 
     private final Map<String, Optional<ResourceKey<Structure>>> keyCache = new ConcurrentHashMap<>();
+
+    public VanillaStructureChecker(KeywordDictionary dict) {
+        this.dict = dict;
+    }
 
     private ResourceKey<Structure> resolveKey(String realId) {
         return keyCache.computeIfAbsent(realId, rid -> {
@@ -216,7 +195,7 @@ public final class VanillaStructureChecker implements StructureChecker {
         int minX = cX - radiusChunks, maxX = cX + radiusChunks;
         int minZ = cZ - radiusChunks, maxZ = cZ + radiusChunks;
 
-        for (String realId : expand(canonical)) {
+        for (String realId : dict.getVariants(canonical)) {
             ResourceKey<Structure> key = resolveKey(realId);
             if (key == null) continue;
             for (int cx = minX; cx <= maxX; cx++) {
@@ -237,7 +216,7 @@ public final class VanillaStructureChecker implements StructureChecker {
         int minX = cX - radiusChunks, maxX = cX + radiusChunks;
         int minZ = cZ - radiusChunks, maxZ = cZ + radiusChunks;
 
-        for (String realId : expand(canonical)) {
+        for (String realId : dict.getVariants(canonical)) {
             ResourceKey<Structure> key = resolveKey(realId);
             if (key == null) continue;
             for (int cx = minX; cx <= maxX; cx++) {
@@ -257,7 +236,7 @@ public final class VanillaStructureChecker implements StructureChecker {
         int minX = cX - radiusChunks, maxX = cX + radiusChunks;
         int minZ = cZ - radiusChunks, maxZ = cZ + radiusChunks;
 
-        for (String realId : expand(canonical)) {
+        for (String realId : dict.getVariants(canonical)) {
             ResourceKey<Structure> key = resolveKey(realId);
             if (key == null) continue;
             for (int cx = minX; cx <= maxX; cx++) {

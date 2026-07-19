@@ -1,5 +1,44 @@
 # Changelog
 
+## 1.2.0 (unreleased)
+
+### Added
+- **Externalized all query synonyms to lang files** (`assets/wywf/lang/en_us.json`,
+  `ru_ru.json`). Modifiers, spawn triggers, biomes, structures, objects and spawn
+  blocks are now data-driven and no longer hardcoded in `QueryParser` /
+  `VanillaStructureChecker`. AUTO merges EN + RU (`queryLanguage` EN / RU / AUTO).
+- **New spawn blocks** for `spawn on …` / `на …`: `clay`, `terracotta`,
+  `red_sand`, `netherrack`, `soul_sand`, `basalt`, `blackstone`, `end_stone`,
+  `obsidian`, `ice`, `packed_ice`, `cobblestone`, `moss`, `rooted_dirt`
+  (RU synonyms included).
+- **Compound biome+structure terms** resolve to the specific structure variant:
+  `plains village` → `village_plains`, `desert temple` → `desert_pyramid`,
+  `jungle temple` → `jungle_pyramid`, `snowy village` → `village_snowy`, etc.
+  RU phrases supported (`равнинная деревня`, …).
+- **Query validation / ignored words:** unknown words are no longer silently dropped —
+  they are collected and logged (WARN) so the player knows part of the query was
+  not understood.
+- **Config persistence:** `SearchConfig` (incl. `queryLanguage`) is saved to
+  `~/.minecraft/config/wywf.json` and reloaded on the Create-World screen.
+- **Query language is now a mod-level setting (Mod Menu), not a per-search
+  button.** The in-search `Language:` button was removed. Only **EN** is
+  selectable in 1.2.0 — **RU and AUTO are NOT available yet** (the `ru_ru.json`
+  lexicon exists but is not wired to a UI control); the default and fallback is
+  EN. RU/AUTO will be exposed in a later release.
+- **Search-result reporting:** each found seed now lists the matched structures
+  and biomes (coordinates stay DEEP v1) plus the reason the search stopped
+  (`collected N candidates`, `search complete`, …).
+- **Unknown-word feedback:** if part of the query was not recognized, the search
+  screen prints `Unknown words ignored: …` so the player knows what was dropped.
+
+### Changed
+- `KeywordDictionary` now loads from lang JSON; `VanillaStructureChecker.EXPANSIONS`
+  moved to `wywf.variant.*` lang entries; hardcoded `buildModifiers()` /
+  `buildSpawnTriggers()` removed from `QueryParser`.
+- **Structure presence cache:** `SeedValidator` caches per-(seed, structure,
+  radius) placement results so a revisited seed does not recompute `firstPosition`
+  (internal optimization; no player-visible behaviour change).
+
 ## 1.1.1
 
 ### Fixed

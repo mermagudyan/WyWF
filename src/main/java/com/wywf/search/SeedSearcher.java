@@ -15,6 +15,7 @@ public final class SeedSearcher {
     private final WorldContextFactory contextFactory;
     private final StructureChecker    structureChecker;
     private final BiomeChecker        biomeChecker;
+    private final KeywordDictionary   dictionary;
 
     private volatile ExecutorService        pool;
     private volatile List<Future<?>>        futures = List.of();
@@ -26,9 +27,12 @@ public final class SeedSearcher {
 
     private final List<SearchResult> candidates = Collections.synchronizedList(new ArrayList<>());
 
-    public SeedSearcher(WorldContextFactory contextFactory) {
+    private volatile String stopReason;
+
+    public SeedSearcher(WorldContextFactory contextFactory, KeywordDictionary dictionary) {
         this.contextFactory   = contextFactory;
-        this.structureChecker = new VanillaStructureChecker();
+        this.dictionary       = dictionary;
+        this.structureChecker = new VanillaStructureChecker(dictionary);
         this.biomeChecker     = new VanillaBiomeChecker();
     }
 
@@ -62,6 +66,9 @@ public final class SeedSearcher {
         LOGGER.info("Looking for structures: {}", query.structures().isEmpty() ? "(none)" : query.structures());
         LOGGER.info("Looking for biomes: {}",     query.biomes().isEmpty()     ? "(none)" : query.biomes());
         LOGGER.info("Looking for objects: {}",   query.objects().isEmpty()    ? "(none)" : query.objects());
+        if (!query.ignoredWords().isEmpty()) {
+            LOGGER.warn("Ignored words (not recognized as biome/structure/block): {}", query.ignoredWords());
+        }
         LOGGER.info("Threads: {}, structure radius: {} chunks, biome radius: {} chunks (step {}), limit: {} seeds",
                 threadCount, config.searchRadiusChunks(), config.biomeCheckRadiusChunks(),
                 config.biomeSampleStepChunks(), config.unbounded() ? "\u221e" : config.maxSeeds());
@@ -121,6 +128,7 @@ public final class SeedSearcher {
                     lastTarget = target;
                 }
                 if (!candidates.isEmpty() && candidates.size() >= target) {
+                    stopReason = "collected " + candidates.size() + " candidate(s) (target " + target + ")";
                     running.set(false);
                 }
                 lastChecked = s.checkedSeeds();
@@ -147,9 +155,15 @@ public final class SeedSearcher {
                 chosen = candidates.get(new java.util.Random().nextInt(poolSize));
             }
             if (chosen != null) {
+                String reason = stopReason != null ? stopReason
+                        : (snap.finished() ? "search complete" : "candidate found");
+                SearchResult finalResult = new SearchResult(
+                        chosen.seed, chosen.centerX, chosen.centerZ,
+                        chosen.primaryDescription, chosen.matchedStructures,
+                        chosen.matchedBiomes, reason);
                 LOGGER.info("===== Search finished: seed {} chosen from {} candidate(s) after {} checked seeds ({} ms) =====",
                         chosen.seed, poolSize, snap.checkedSeeds(), snap.elapsedMs());
-                onFound.accept(chosen);
+                onFound.accept(finalResult);
             } else {
                 LOGGER.info("===== Search finished: no matching seed found. Checked {} seeds ({} ms) =====",
                         snap.checkedSeeds(), snap.elapsedMs());
@@ -165,7 +179,7 @@ public final class SeedSearcher {
             switch (term.category) {
                 case STRUCTURE -> {
                     boolean any = false;
-                    for (String realId : VanillaStructureChecker.expand(term.canonical)) {
+                    for (String realId : dictionary.getVariants(term.canonical)) {
                         if (contextFactory.isStructureAvailable(realId)) { any = true; break; }
                     }
                     if (any) {
@@ -185,7 +199,7 @@ public final class SeedSearcher {
                 }
                 case OBJECT -> {
                     changed = true;
-                    LOGGER.info("Object '{}' cannot be searched offline yet — ignoring keyword", term.canonical);
+                    LOGGER.warn("Object '{}' cannot be searched offline yet — ignoring keyword", term.canonical);
                 }
                 default -> kept.add(term);
             }

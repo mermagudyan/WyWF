@@ -7,6 +7,8 @@ import net.minecraft.server.Bootstrap;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import com.wywf.core.KeywordDictionary;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class StructureParityTest {
@@ -22,7 +24,7 @@ class StructureParityTest {
 
     @Test
     void findsMineshaftAndNetherAndEnd() {
-        VanillaStructureChecker checker = new VanillaStructureChecker();
+        VanillaStructureChecker checker = new VanillaStructureChecker(new KeywordDictionary());
         int radius = 64;
         int found = 0;
         for (long seed = 1; seed <= 2000 && found < 3; seed++) {

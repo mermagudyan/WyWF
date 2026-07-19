@@ -23,6 +23,7 @@ public final class SearchConfig {
     private int candidateRampDownSeconds = 10;
     private boolean randomizeStart = true;
     private boolean stopAtFirstCandidate = false;
+    private KeywordDictionary.Lang queryLanguage = KeywordDictionary.Lang.EN;
 
     public SearchConfig() {}
 
@@ -95,4 +96,8 @@ public final class SearchConfig {
      *  variety. Defaults to false (the ramp-down to {@link #minCandidates()} applies). */
     public boolean stopAtFirstCandidate()                  { return stopAtFirstCandidate; }
     public SearchConfig stopAtFirstCandidate(boolean v)    { this.stopAtFirstCandidate = v; return this; }
+
+    /** Which synonym language the query parser uses. AUTO merges EN + RU. */
+    public KeywordDictionary.Lang queryLanguage()                 { return queryLanguage; }
+    public SearchConfig queryLanguage(KeywordDictionary.Lang v)   { this.queryLanguage = (v == null) ? KeywordDictionary.Lang.AUTO : v; return this; }
 }

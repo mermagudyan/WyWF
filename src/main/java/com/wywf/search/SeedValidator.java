@@ -33,9 +33,12 @@ public final class SeedValidator {
         public final int           structureX;
         public final int           structureZ;
         public final String        structureId;
+        public final List<String>  matchedStructures;
+        public final List<String>  matchedBiomes;
 
         private Outcome(boolean accepted, Reason reason, SearchResult result,
-                        boolean structuresMatched, int sx, int sz, String sid) {
+                        boolean structuresMatched, int sx, int sz, String sid,
+                        List<String> matchedStructures, List<String> matchedBiomes) {
             this.accepted = accepted;
             this.reason = reason;
             this.result = result;
@@ -43,14 +46,19 @@ public final class SeedValidator {
             this.structureX = sx;
             this.structureZ = sz;
             this.structureId = sid;
+            this.matchedStructures = matchedStructures;
+            this.matchedBiomes = matchedBiomes;
         }
 
-        static Outcome accepted(SearchResult r, StructureChecker.Result s) {
-            return new Outcome(true, Reason.ACCEPTED, r, s.found, s.structureX, s.structureZ, s.structureId);
+        static Outcome accepted(SearchResult r, StructureChecker.Result s,
+                               List<String> matchedStructures, List<String> matchedBiomes) {
+            return new Outcome(true, Reason.ACCEPTED, r, s.found, s.structureX, s.structureZ,
+                    s.structureId, matchedStructures, matchedBiomes);
         }
 
         static Outcome rejected(Reason reason, StructureChecker.Result s) {
-            return new Outcome(false, reason, null, s.found, s.structureX, s.structureZ, s.structureId);
+            return new Outcome(false, reason, null, s.found, s.structureX, s.structureZ,
+                    s.structureId, List.of(), List.of());
         }
     }
 
@@ -58,6 +66,12 @@ public final class SeedValidator {
     private final BiomeChecker     biomeChecker;
     private final int              searchRadiusChunks;
     private final int              biomeRadiusChunks;
+
+    /** Per-search cache of structure presence: (seed, canonical, radius) -> found.
+     *  Avoids recomputing placement for the same seed/structure/radius pair
+     *  (e.g. if a seed is revisited). Keyed by the low-48 bits of the seed,
+     *  since structure placement does not depend on the high 16 bits. */
+    private final Map<Long, Map<String, StructureChecker.Result>> structureCache = new HashMap<>();
 
     public SeedValidator(StructureChecker sc, BiomeChecker bc,
                          int searchRadiusChunks, int biomeRadiusChunks) {
@@ -107,6 +121,9 @@ public final class SeedValidator {
 
         StructureChecker.Result spawnStruct = StructureChecker.Result.notFound();
 
+        List<String> matchedStructures = new ArrayList<>();
+        List<String> matchedBiomes = new ArrayList<>();
+
         List<ParsedQuery.Term> terms = reorder(query.terms());
         Map<Integer, BiomeField> fields = sampleBiomeFields(ctx, cx, cz, terms);
 
@@ -115,12 +132,16 @@ public final class SeedValidator {
                 case STRUCTURE -> {
                     StructureChecker.Result r = evalStructureTerm(ctx, cx, cz, term);
                     if (r == null) return Outcome.rejected(Reason.NO_STRUCTURE, spawnStruct);
-                    if (r.found && !spawnStruct.found) spawnStruct = r;
+                    if (r.found) {
+                        matchedStructures.add(term.canonical);
+                        if (!spawnStruct.found) spawnStruct = r;
+                    }
                 }
                 case BIOME -> {
                     if (!evalBiomeTerm(ctx, cx, cz, term, fields)) {
                         return Outcome.rejected(Reason.BIOME_MISMATCH, spawnStruct);
                     }
+                    matchedBiomes.add(term.canonical);
                 }
                 case SPAWN -> {
                     if (!evalSpawnTerm(ctx, term, seed)) {
@@ -134,8 +155,9 @@ public final class SeedValidator {
 
         String desc = spawnStruct.found ? spawnStruct.structureId
                 : (!query.biomes().isEmpty() ? query.biomes().get(0) : "origin");
-        SearchResult result = new SearchResult(seed, cx, cz, desc);
-        return Outcome.accepted(result, spawnStruct);
+        SearchResult result = new SearchResult(seed, cx, cz, desc,
+                matchedStructures, matchedBiomes, "");
+        return Outcome.accepted(result, spawnStruct, matchedStructures, matchedBiomes);
     }
 
     private StructureChecker.Result evalStructureTerm(WorldContext ctx, int cx, int cz, ParsedQuery.Term term) {
@@ -176,9 +198,26 @@ public final class SeedValidator {
             default     -> searchRadiusChunks;
         };
 
-        int[] found = structureChecker.firstPosition(ctx, cx, cz, scanChunks, canonical);
+        int[] found = cachedFirstPosition(ctx, cx, cz, scanChunks, canonical);
         if (found == null) return null;
         return StructureChecker.Result.found(found[0], found[1], canonical);
+    }
+
+    private int[] cachedFirstPosition(WorldContext ctx, int cx, int cz,
+                                     int radiusChunks, String canonical) {
+        long base = ctx.seed & 0xFFFFFFFFFFFFL;
+        Map<String, StructureChecker.Result> byStruct = structureCache
+                .computeIfAbsent(base, k -> new HashMap<>());
+        String key = canonical + "@" + radiusChunks;
+        StructureChecker.Result cached = byStruct.get(key);
+        if (cached != null) {
+            return cached.found ? new int[]{cached.structureX, cached.structureZ} : null;
+        }
+        int[] found = structureChecker.firstPosition(ctx, cx, cz, radiusChunks, canonical);
+        byStruct.put(key, found != null
+                ? StructureChecker.Result.found(found[0], found[1], canonical)
+                : StructureChecker.Result.notFound());
+        return found;
     }
 
     private boolean evalSpawnTerm(WorldContext ctx, ParsedQuery.Term term, long seed) {
@@ -237,7 +276,7 @@ public final class SeedValidator {
 
         if (biomeChecker instanceof VanillaBiomeChecker vbc && vbc.isUnderground(canonical)) {
             int qy = vbc.quartYFor(canonical);
-            int step = vbc.stepChunks();
+            int step = vbc.effectiveStep(qy);
             BiomeField f = biomeChecker.sampleField(ctx, cx, cz, qy, biomeTermRadiusChunks(term), step);
             return vbc.evalUnderground(f, canonical, mod, NEAR_BLOCKS, FAR_MIN_BLOCKS, FAR_MAX_BLOCKS);
         }
@@ -266,16 +305,17 @@ public final class SeedValidator {
                 .toList();
         if (biomeTerms.size() <= 1) return Map.of();
 
-        int step = (biomeChecker instanceof VanillaBiomeChecker vbc) ? vbc.stepChunks() : 4;
+        VanillaBiomeChecker vbc = (biomeChecker instanceof VanillaBiomeChecker x) ? x : null;
         Map<Integer, Integer> maxRadius = new HashMap<>();
         for (ParsedQuery.Term t : biomeTerms) {
-            int qy = (biomeChecker instanceof VanillaBiomeChecker vbc && vbc.isUnderground(t.canonical))
+            int qy = (vbc != null && vbc.isUnderground(t.canonical))
                     ? vbc.quartYFor(t.canonical) : (VanillaBiomeChecker.SURFACE_Y >> 2);
             maxRadius.merge(qy, biomeTermRadiusChunks(t), Math::max);
         }
 
         Map<Integer, BiomeField> fields = new HashMap<>();
         for (Map.Entry<Integer, Integer> e : maxRadius.entrySet()) {
+            int step = (vbc != null) ? vbc.effectiveStep(e.getKey()) : 4;
             fields.put(e.getKey(), biomeChecker.sampleField(ctx, cx, cz, e.getKey(), e.getValue(), step));
         }
         return fields;

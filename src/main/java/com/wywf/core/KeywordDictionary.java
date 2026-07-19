@@ -1,14 +1,36 @@
 package com.wywf.core;
 
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonElement;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 public final class KeywordDictionary {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger("wywf-dict");
 
     public enum Category {
         BIOME,
         STRUCTURE,
         OBJECT,
-        SPAWN
+        SPAWN,
+        SPAWN_TRIGGER,
+        MODIFIER
+    }
+
+    /** Which synonym file(s) to load. AUTO merges EN + RU with a collision check. */
+    public enum Lang {
+        EN,
+        RU,
+        AUTO
     }
 
     public static final class Entry {
@@ -29,13 +51,120 @@ public final class KeywordDictionary {
 
     private final Map<String, String> synonymToCanonical = new HashMap<>();
 
+    private final Map<String, String> modifierCanonical = new HashMap<>();
+
+    private final Set<String> spawnTriggers = new HashSet<>();
+
+    private final Map<String, List<String>> variants = new HashMap<>();
+
     private volatile List<String> sortedKeys = List.of();
 
     private volatile List<String> blockSortedKeys = List.of();
 
+    private static final Gson GSON = new Gson();
+
     public KeywordDictionary() {
-        registerDefaults();
+        this(Lang.AUTO);
+    }
+
+    public KeywordDictionary(Lang lang) {
+        load(lang);
         rebuildIndex();
+    }
+
+    /** Loads the synonym file(s) for the given language. EN is always the base /
+     *  fallback: if the chosen language's file is missing or fails to parse, EN is
+     *  used instead (never an error to the player). AUTO merges EN + the chosen
+     *  secondary language, throwing on a duplicate synonym across files. */
+    private void load(Lang lang) {
+        boolean loadedAny = false;
+
+        if (lang == Lang.EN) {
+            loadedAny |= loadFile("assets/wywf/lang/en_us.json");
+        } else if (lang == Lang.RU) {
+            loadedAny = loadFile("assets/wywf/lang/ru_ru.json");
+            if (!loadedAny) loadedAny = loadFile("assets/wywf/lang/en_us.json");
+        } else { // AUTO
+            loadedAny |= loadFile("assets/wywf/lang/en_us.json");
+            loadedAny |= loadFile("assets/wywf/lang/ru_ru.json");
+        }
+
+        if (!loadedAny) {
+            // Last-resort: hardcoded defaults so the mod still parses something.
+            registerDefaults();
+        }
+    }
+
+    /** @return true if the file was found and parsed. */
+    private boolean loadFile(String resource) {
+        InputStream in = KeywordDictionary.class.getClassLoader().getResourceAsStream(resource);
+        if (in == null) return false;
+        try (InputStreamReader r = new InputStreamReader(in, StandardCharsets.UTF_8)) {
+            JsonObject root = GSON.fromJson(r, JsonObject.class);
+            if (root == null) return false;
+            for (Map.Entry<String, JsonElement> e : root.entrySet()) {
+                String key = e.getKey();
+                if (key.startsWith("wywf.variant.")) {
+                    String generic = key.substring("wywf.variant.".length());
+                    if (!e.getValue().isJsonArray()) continue;
+                    List<String> list = new ArrayList<>();
+                    for (JsonElement v : e.getValue().getAsJsonArray()) {
+                        if (v.isJsonPrimitive()) list.add(v.getAsString());
+                    }
+                    variants.put(generic, List.copyOf(list));
+                    continue;
+                }
+                if (!key.startsWith("wywf.synonym.")) continue;
+                String rest = key.substring("wywf.synonym.".length());
+                if (rest.equals("spawn_trigger")) {
+                    if (!e.getValue().isJsonArray()) continue;
+                    for (JsonElement syn : e.getValue().getAsJsonArray()) {
+                        if (syn.isJsonPrimitive()) spawnTriggers.add(syn.getAsString().toLowerCase(Locale.ROOT).trim());
+                    }
+                    continue;
+                }
+                List<String> parts = splitKey(key);
+                if (parts == null) continue;
+                String cat = parts.get(0);
+                String canonical = parts.get(1);
+                if (cat.equals("modifier")) canonical = canonical.toUpperCase(Locale.ROOT);
+                Category category = categoryOf(cat);
+                if (category == null) continue;
+                if (!e.getValue().isJsonArray()) continue;
+                for (JsonElement syn : e.getValue().getAsJsonArray()) {
+                    if (!syn.isJsonPrimitive()) continue;
+                    registerSynonym(syn.getAsString(), canonical, category);
+                }
+            }
+            return true;
+        } catch (IOException | RuntimeException ex) {
+            LOGGER.warn("Failed to load keyword file '{}': {}", resource, ex.getMessage());
+            return false;
+        }
+    }
+
+    /** Splits "wywf.synonym.<cat>.<canonical>" into [cat, canonical]. */
+    private static List<String> splitKey(String key) {
+        // key = wywf.synonym.modifier.near  -> [modifier, near]
+        // key = wywf.synonym.biome.minecraft:plains -> [biome, minecraft:plains]
+        String prefix = "wywf.synonym.";
+        if (!key.startsWith(prefix)) return null;
+        String rest = key.substring(prefix.length());
+        int dot = rest.indexOf('.');
+        if (dot < 0) return null;
+        return List.of(rest.substring(0, dot), rest.substring(dot + 1));
+    }
+
+    private static Category categoryOf(String cat) {
+        return switch (cat) {
+            case "modifier" -> Category.MODIFIER;
+            case "spawn_trigger" -> Category.SPAWN_TRIGGER;
+            case "biome" -> Category.BIOME;
+            case "structure" -> Category.STRUCTURE;
+            case "object" -> Category.OBJECT;
+            case "block" -> Category.SPAWN;
+            default -> null;
+        };
     }
 
     public void register(Entry entry, String... synonyms) {
@@ -54,8 +183,26 @@ public final class KeywordDictionary {
         }
     }
 
-    public void registerSynonym(String synonym, String canonical) {
-        synonymToCanonical.put(synonym.toLowerCase(Locale.ROOT).trim(), canonical);
+    public void registerSynonym(String synonym, String canonical, Category category) {
+        if (synonym == null || synonym.isBlank()) return;
+        String key = synonym.toLowerCase(Locale.ROOT).trim();
+        String existing = synonymToCanonical.get(key);
+        if (existing != null) {
+            // First definition wins. A later synonym mapping to a different canonical
+            // (e.g. a cross-language or intra-file clash) is skipped and logged.
+            if (!existing.equals(canonical)) {
+                LOGGER.warn("Keyword '{}' already maps to '{}', ignoring duplicate '{}'",
+                        synonym, existing, canonical);
+            }
+            return;
+        }
+        synonymToCanonical.put(key, canonical);
+        entries.computeIfAbsent(canonical, c -> new Entry(c, category, null));
+        if (category == Category.MODIFIER) {
+            modifierCanonical.put(key, canonical);
+        } else if (category == Category.SPAWN_TRIGGER) {
+            spawnTriggers.add(key);
+        }
     }
 
     public Entry get(String canonical) {
@@ -80,6 +227,8 @@ public final class KeywordDictionary {
                     if (Character.isLetter(c) || c == '-' || c == '_') continue;
                 }
                 if (isSpawnKey(key)) continue;
+                if (isModifierKey(key)) continue;
+                if (isSpawnTriggerKey(key)) continue;
                 outCanonical[0] = synonymToCanonical.get(key);
                 return len;
             }
@@ -116,6 +265,29 @@ public final class KeywordDictionary {
         return e != null && e.category == Category.SPAWN;
     }
 
+    private boolean isModifierKey(String key) {
+        return modifierCanonical.containsKey(key);
+    }
+
+    private boolean isSpawnTriggerKey(String key) {
+        return spawnTriggers.contains(key);
+    }
+
+    public String getModifier(String word) {
+        if (word == null) return null;
+        return modifierCanonical.get(word.toLowerCase(Locale.ROOT).trim());
+    }
+
+    public boolean isSpawnTrigger(String word) {
+        if (word == null) return false;
+        return spawnTriggers.contains(word.toLowerCase(Locale.ROOT).trim());
+    }
+
+    public List<String> getVariants(String generic) {
+        List<String> v = variants.get(generic);
+        return v != null ? v : List.of(generic);
+    }
+
     public Collection<Entry> all() { return entries.values(); }
 
     public void rebuildIndex() {
@@ -131,6 +303,7 @@ public final class KeywordDictionary {
         blockSortedKeys = List.copyOf(blocks);
     }
 
+    /** Hardcoded fallback used only if no lang file could be loaded. */
     private void registerDefaults() {
         // ---- biomes (surface) ----
         registerBiome("minecraft:forest", "лес", "forest", "woods", "woodland", "oak forest");
@@ -142,12 +315,12 @@ public final class KeywordDictionary {
         registerBiome("minecraft:plains", "равнины", "plains", "plain", "field", "grassland", "grassy field");
         registerBiome("minecraft:cherry_grove", "вишневый лес", "вишнёвый лес", "вишня",
                 "cherry grove", "cherry forest", "cherry", "cherry blossom", "sakura", "sakura grove");
-        registerBiome("minecraft:dark_forest", "темный лес", "тёмный лес",
+        registerBiome("minecraft:dark_forest", "тёмный лес", "тёмный лес",
                 "dark forest", "dark woods", "roofed forest");
         registerBiome("minecraft:ocean", "океан", "ocean", "sea", "море", "моря", "океана", "океане");
-        registerBiome("minecraft:warm_ocean", "теплый океан", "тёплый океан",
+        registerBiome("minecraft:warm_ocean", "тёплый океан", "тёплый океан",
                 "warm ocean", "warm sea", "tropical ocean", "tropical sea",
-                "теплого океана", "тёплого океана", "теплом океане", "тёплом океане");
+                "тёплого океана", "тёплого океана", "тёплом океане", "тёплом океане");
         registerBiome("minecraft:cold_ocean", "холодный океан",
                 "cold ocean", "cold sea", "холодного океана", "холодном океане");
         registerBiome("minecraft:deep_ocean", "глубокий океан",
@@ -156,7 +329,7 @@ public final class KeywordDictionary {
         registerBiome("minecraft:badlands", "пустошь", "бэдлендс", "меса", "badlands", "mesa", "badland");
         registerBiome("minecraft:wooded_badlands", "лесистая пустошь",
                 "wooded badlands", "wooded mesa", "forested badlands");
-        registerBiome("minecraft:birch_forest", "березовый лес", "берёзовый лес",
+        registerBiome("minecraft:birch_forest", "берёзовый лес", "берёзовый лес",
                 "birch forest", "birch woods");
         registerBiome("minecraft:flower_forest", "цветочный лес",
                 "flower forest", "flowery forest", "flowers forest");
@@ -176,7 +349,7 @@ public final class KeywordDictionary {
                 "windswept hills", "mountains", "extreme hills", "hills", "mountain");
         registerBiome("minecraft:jagged_peaks", "горные пики", "пики",
                 "jagged peaks", "mountain peaks", "peaks", "snowy peaks");
-        registerBiome("minecraft:frozen_ocean", "замерзший океан", "замёрзший океан",
+        registerBiome("minecraft:frozen_ocean", "замёрзший океан", "замерзший океан",
                 "frozen ocean", "frozen sea", "icy ocean");
         registerBiome("minecraft:lukewarm_ocean", "тепловатый океан", "lukewarm ocean", "lukewarm sea");
         registerBiome("minecraft:beach", "пляж", "берег", "beach", "shore", "coast", "seaside");
@@ -185,7 +358,6 @@ public final class KeywordDictionary {
         registerBiome("minecraft:old_growth_pine_taiga", "гигантская тайга", "мегатайга",
                 "old growth pine taiga", "mega taiga", "giant taiga", "old growth taiga", "pine taiga");
         registerBiome("minecraft:pale_garden", "бледный сад", "pale garden", "pale forest");
-
         registerBiome("minecraft:savanna_plateau", "плато саванны", "плато", "savanna plateau", "plateau");
         registerBiome("minecraft:windswept_savanna", "ветреная саванна", "windswept savanna", "savanna hills");
         registerBiome("minecraft:snowy_beach", "снежный пляж", "snowy beach", "frozen beach");
@@ -262,6 +434,32 @@ public final class KeywordDictionary {
         registerBlock("any_solid", "любой твёрдый блок", "любой твёрдый", "любые твёрдые", "любых твёрдых",
                 "any solid", "any solid block", "solid block", "твёрдый блок", "твердый блок",
                 "твёрдых", "твердых", "твёрдое", "твердое");
+
+        // ---- modifiers ----
+        registerModifier("NEAR", "near", "nearby", "close", "beside", "next",
+                "рядом", "около", "вблизи", "недалеко", "возле", "близко");
+        registerModifier("IN", "in", "inside", "within", "в", "во", "внутри");
+        registerModifier("SOME", "some", "several", "many", "multiple", "cluster",
+                "несколько", "много", "куча", "группа", "скопление");
+        registerModifier("FAR", "far", "distant", "away", "remote",
+                "далеко", "вдали", "далеки", "поодаль");
+        registerModifier("UNDER", "under", "beneath", "below", "underneath", "под", "снизу");
+        registerModifier("NEVER", "never", "no", "not", "without", "нет", "не", "без", "никакого", "никаких");
+
+        // ---- spawn triggers ----
+        for (String w : new String[]{"spawn", "on", "на", "блок", "block", "onto", "встань", "стоять"}) {
+            spawnTriggers.add(w.toLowerCase(Locale.ROOT).trim());
+        }
+    }
+
+    private void registerModifier(String canonical, String... synonyms) {
+        register(new Entry(canonical, Category.MODIFIER, null), synonyms);
+    }
+
+    private void registerSpawnTrigger(String... synonyms) {
+        for (String s : synonyms) {
+            spawnTriggers.add(s.toLowerCase(Locale.ROOT).trim());
+        }
     }
 
     private void registerBiome(String canonical, String displayName, String... synonyms) {

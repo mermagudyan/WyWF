@@ -68,6 +68,26 @@ public final class SpawnBlockPredictor {
         put("minecraft:old_growth_pine_taiga", "minecraft:podzol");
         put("minecraft:old_growth_spruce_taiga", "minecraft:podzol");
         put("minecraft:mushroom_fields", "minecraft:mycelium");
+
+        // Solid-capable blocks the player could in principle stand on at spawn.
+        allowBlock("minecraft:clay");
+        allowBlock("minecraft:terracotta");
+        allowBlock("minecraft:red_sand");
+        allowBlock("minecraft:netherrack");
+        allowBlock("minecraft:soul_sand");
+        allowBlock("minecraft:basalt");
+        allowBlock("minecraft:blackstone");
+        allowBlock("minecraft:end_stone");
+        allowBlock("minecraft:obsidian");
+        allowBlock("minecraft:ice");
+        allowBlock("minecraft:packed_ice");
+        allowBlock("minecraft:cobblestone");
+        allowBlock("minecraft:moss_block");
+        allowBlock("minecraft:rooted_dirt");
+    }
+
+    private void allowBlock(String block) {
+        possibleBlocks.add(block);
     }
 
     private void put(String biome, String block) {

@@ -27,10 +27,16 @@ public final class ParsedQuery {
     private final List<String> biomes;
     private final List<String> objects;
     private final List<String> spawns;
+    private final List<String> ignoredWords;
 
     public ParsedQuery(String raw, List<Term> terms) {
+        this(raw, terms, List.of());
+    }
+
+    public ParsedQuery(String raw, List<Term> terms, List<String> ignoredWords) {
         this.raw = raw;
         this.terms = List.copyOf(terms);
+        this.ignoredWords = List.copyOf(ignoredWords);
 
         List<String> s = new ArrayList<>();
         List<String> b = new ArrayList<>();
@@ -56,6 +62,7 @@ public final class ParsedQuery {
     public List<String> biomes()     { return biomes; }
     public List<String> objects()    { return objects; }
     public List<String> spawns()     { return spawns; }
+    public List<String> ignoredWords() { return ignoredWords; }
 
     public boolean isEmpty() {
         return terms.isEmpty();

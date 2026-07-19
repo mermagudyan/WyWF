@@ -2,6 +2,7 @@ package com.wywf.mixin;
 
 import com.wywf.WYWFClient;
 import com.wywf.client.SearchScreen;
+import com.wywf.core.ConfigStore;
 import com.wywf.core.ParsedQuery;
 import com.wywf.core.SearchConfig;
 import com.wywf.world.WorldCreator;
@@ -36,7 +37,7 @@ public abstract class CreateWorldScreenMixin {
 
         ci.cancel();
 
-        SearchConfig config = SearchConfig.defaults();
+        SearchConfig config = ConfigStore.load();
         SearchScreen screen = new SearchScreen(self, seedText, query, config);
         Minecraft.getInstance().setScreenAndShow(screen);
     }

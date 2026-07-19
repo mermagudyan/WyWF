@@ -20,16 +20,24 @@ public final class WYWFClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        dictionary   = new KeywordDictionary();
-        parser       = new QueryParser(dictionary);
         worldCreator = new WorldCreator();
-        searcher     = new SeedSearcher(new com.wywf.search.MinecraftWorldContextFactory());
+        applyQueryLanguage(KeywordDictionary.Lang.AUTO);
 
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
             if (searcher.isRunning()) searcher.cancel();
         });
 
         LOGGER.info("[WyWF] What you Want to Find initialized. Dictionary size: {}", dictionary.all().size());
+    }
+
+    /** (Re)builds the keyword dictionary, parser and searcher for the given query
+     *  language. Called at startup and whenever the user changes the language
+     *  in the search config. */
+    public static synchronized void applyQueryLanguage(KeywordDictionary.Lang lang) {
+        if (searcher != null && searcher.isRunning()) searcher.cancel();
+        dictionary   = new KeywordDictionary(lang);
+        parser       = new QueryParser(dictionary);
+        searcher     = new SeedSearcher(new com.wywf.search.MinecraftWorldContextFactory(), dictionary);
     }
 
     public static KeywordDictionary dictionary()   { return dictionary; }

@@ -205,7 +205,7 @@ public final class SearchWorker implements Runnable {
 
     private void reportFound(SearchResult r) {
         LOGGER.info("[thread {}] candidate seed {} → center ({}, {}), match: {}",
-                threadIndex, r.seed, r.centerX, r.centerZ, r.matchedDescription);
+                threadIndex, r.seed, r.centerX, r.centerZ, r.primaryDescription);
         synchronized (candidates) {
             if (candidates.size() < config.candidatesToCollect()) {
                 candidates.add(r);

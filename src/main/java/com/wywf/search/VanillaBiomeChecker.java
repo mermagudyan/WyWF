@@ -16,6 +16,11 @@ public final class VanillaBiomeChecker implements BiomeChecker {
 
     private volatile int stepChunks = 4;
 
+    /** Underground (cave) biomes are sampled on a much finer grid than the
+     *  surface, because on the coarse stepChunks=4 (64-block) grid a cave
+     *  biome at Y=-50 can fall between sample nodes and never match. */
+    private static final int UNDERGROUND_STEP_CHUNKS = 1;
+
     public static final int SURFACE_Y = 64;
 
     private static final BiomeField EMPTY = new BiomeField(SURFACE_Y >> 2, new int[0], new int[0], new ResourceKey[0]);
@@ -49,6 +54,19 @@ public final class VanillaBiomeChecker implements BiomeChecker {
 
     public int stepChunks() {
         return stepChunks;
+    }
+
+    /** Step used when sampling a given quart-Y. Underground (cave) biomes use a
+     *  much finer grid than the surface, so they don't fall between nodes. */
+    public int effectiveStep(int quartY) {
+        return isUndergroundY(quartY) ? UNDERGROUND_STEP_CHUNKS : Math.max(1, stepChunks);
+    }
+
+    private static boolean isUndergroundY(int quartY) {
+        for (int y : UNDERGROUND_BIOME_Y.values()) {
+            if ((y >> 2) == quartY) return true;
+        }
+        return false;
     }
 
     public int quartYFor(String biomeId) {
@@ -91,7 +109,7 @@ public final class VanillaBiomeChecker implements BiomeChecker {
         int centerChunkX = centerX >> 4;
         int centerChunkZ = centerZ >> 4;
         final int quartY = quartYFor(biomeId);
-        final int step = Math.max(1, stepChunks);
+        final int step = effectiveStep(quartY);
         long best = Long.MAX_VALUE;
 
         for (int cx = centerChunkX - radiusChunks; cx <= centerChunkX + radiusChunks; cx += step) {
@@ -128,7 +146,7 @@ public final class VanillaBiomeChecker implements BiomeChecker {
         int centerChunkX = centerX >> 4;
         int centerChunkZ = centerZ >> 4;
         final int quartY = quartYFor(biomeId);
-        final int step = Math.max(1, stepChunks);
+        final int step = effectiveStep(quartY);
 
         for (int cx = centerChunkX - radiusChunks; cx <= centerChunkX + radiusChunks; cx += step) {
             for (int cz = centerChunkZ - radiusChunks; cz <= centerChunkZ + radiusChunks; cz += step) {
