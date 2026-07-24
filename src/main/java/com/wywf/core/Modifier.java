@@ -7,5 +7,7 @@ public enum Modifier {
     SOME,
     FAR,
     UNDER,
-    NEVER
+    NEVER,
+    ONLY,
+    BETWEEN
 }

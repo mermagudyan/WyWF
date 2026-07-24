@@ -108,6 +108,14 @@ public final class MinecraftWorldContextFactory implements WorldContextFactory {
     }
 
     @Override
+    public boolean isStructureSetAvailable(String structureSetId) {
+        ensureInit();
+        Identifier id = Identifier.tryParse(structureSetId);
+        if (id == null) return false;
+        return structureSets.get(ResourceKey.create(Registries.STRUCTURE_SET, id)).isPresent();
+    }
+
+    @Override
     public boolean isBiomeAvailable(String biomeId) {
         ensureInit();
         Identifier id = Identifier.tryParse(biomeId);

@@ -15,7 +15,8 @@
   "environment": "client",
   "accessWidener": "wywf.accesswidener",
   "entrypoints": {
-    "client": ["com.wywf.WYWFClient"]
+    "client": ["com.wywf.WYWFClient"],
+    "modmenu": ["com.wywf.client.ModMenuIntegration"]
   },
   "mixins": [
     "wywf.mixins.json",
@@ -27,5 +28,8 @@
     "java": ">=25",
     "fabric-api": "*"
   },
-  "suggests": {}
+  "suggests": {
+    "modmenu": "*",
+    "yet_another_config_lib_v3": "*"
+  }
 }

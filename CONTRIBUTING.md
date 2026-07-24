@@ -2,7 +2,7 @@
 
 First off, thanks for taking the time to contribute! ❤️
 
-This document describes how to contribute to **What You Want To Find (WYWTF)**.
+This document describes how to contribute to **What You Want To Find (WyWF)**.
 Following these guidelines helps maintainers and the community understand your
 contribution and review it faster.
 
@@ -33,7 +33,7 @@ By participating in this project, you agree to abide by the
 
 ## Getting Started
 
-WYWTF is a Fabric mod for Minecraft 26.x (tested on 26.2), written in Java 25,
+WyWF is a Fabric mod for Minecraft 26.x (tested on 26.2), written in Java 25,
 built with Gradle. Make sure you have the following installed before you start:
 
 | Tool | Minimum Version |
@@ -64,7 +64,7 @@ Before opening a new one:
 1. **Search existing issues** — your bug may already be reported.
 2. **Check the latest version** — the bug may have been fixed in `main`.
 3. **Collect information**:
-   - WYWTF version
+   - WyWF version
    - Minecraft version
    - Fabric Loader version
    - Fabric API version
@@ -103,7 +103,7 @@ implementation details. Implementation is the maintainers' job.
 
 ### Improving the Dictionary
 
-WYWTF is a dictionary-driven mod. The easiest and most impactful way to
+WyWF is a dictionary-driven mod. The easiest and most impactful way to
 contribute is to extend the synonym dictionary in
 `src/main/java/com/wywf/core/KeywordDictionary.java`:
 

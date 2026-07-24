@@ -13,7 +13,7 @@ public class CompoundTest {
     void plainsVillageBinds() {
         var q = p.parse("plains village");
         assertTrue(q.structures().contains("minecraft:village_plains"), () -> q.toString());
-        assertFalse(q.biomes().contains("minecraft:plains"));
+        assertTrue(q.biomes().contains("minecraft:plains"), () -> q.toString());
     }
 
     @Test

@@ -2,7 +2,7 @@
 
 This file documents the repository setup state. Each item corresponds to a
 GitHub feature that should be configured on the repo settings page
-(`https://github.com/WYWTF/wywtf/settings`).
+(`https://github.com/mermagudyan/WyWF/settings`).
 
 ## ✅ Done — Files in this repo
 
@@ -28,7 +28,7 @@ After pushing this repo to GitHub, complete the following on the settings page:
 
 - [ ] Click the gear icon next to "About" on the repo homepage.
 - [ ] **Description:** paste from `.github/DESCRIPTION.txt` (long version).
-- [ ] **Website:** `https://github.com/WYWTF/wywtf` (or your project page).
+- [ ] **Website:** `https://github.com/mermagudyan/WyWF` (or your project page).
 - [ ] **Topics:** add `minecraft`, `fabric`, `fabric-mod`, `minecraft-mod`,
       `seed-finder`, `natural-language`, `java`, `apache-license`,
       `contributions-welcome`, `good-first-issue`.

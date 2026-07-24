@@ -58,7 +58,7 @@ public final class SearchScreen extends Screen {
         WYWFClient.applyQueryLanguage(config.queryLanguage());
         SeedSearcher searcher = WYWFClient.searcher();
         if (searcher.isRunning()) {
-            WYWFClient.LOGGER.warn("Search already running, ignoring start");
+            WYWFClient.LOGGER.info("Search already running, ignoring start");
             return;
         }
 
@@ -69,8 +69,20 @@ public final class SearchScreen extends Screen {
     }
 
     private void onSearchFinished(SearchResult result) {
-        WYWFClient.LOGGER.info("Found seed: {}", result);
-        WYWFClient.worldCreator().create(result, queryText, parentScreen);
+        WYWFClient.LOGGER.info("Search finished: {}", result);
+
+        List<SearchResult> candidates = WYWFClient.searcher().candidates();
+        String reason = (result != null) ? result.stopReason : null;
+        boolean limitReached = reason != null && reason.contains("limit reached");
+
+        if (limitReached || result == null) {
+            if (reason == null) reason = "search complete — no matching seeds found";
+            SearchLimitReachedScreen screen = new SearchLimitReachedScreen(
+                    parentScreen, queryText, parsedQuery, config, reason, candidates);
+            Minecraft.getInstance().setScreenAndShow(screen);
+        } else {
+            WYWFClient.worldCreator().create(result, queryText, parentScreen);
+        }
     }
 
     @Override
@@ -123,7 +135,7 @@ public final class SearchScreen extends Screen {
         }
 
         long checked = lastSnapshot.checkedSeeds();
-        long maxSeeds = config.maxSeeds();
+        long maxSeeds = config.maxSeedsToCheck();
         int barWidth = 320;
         int barX = cx - barWidth / 2;
         int barY = y;
@@ -131,20 +143,18 @@ public final class SearchScreen extends Screen {
         g.fill(barX - 1, barY - 1, barX + barWidth + 1, barY + 11, 0xFF404040);
         g.fill(barX, barY, barX + barWidth, barY + 10, 0xFF202020);
 
-        if (config.unbounded()) {
-            if (!lastSnapshot.finished()) {
-                int segW = barWidth / 4;
-                int travel = barWidth + segW;
-                int pos = (int) ((System.currentTimeMillis() / 8) % travel) - segW;
-                int segStart = Math.max(barX, barX + pos);
-                int segEnd = Math.min(barX + barWidth, barX + pos + segW);
-                if (segEnd > segStart) g.fill(segStart, barY, segEnd, barY + 10, 0xFF00AA00);
-            }
-        } else {
+        if (lastSnapshot.finished()) {
             double ratio = maxSeeds > 0 ? (double) checked / maxSeeds : 0;
             if (ratio > 1) ratio = 1;
             int filled = (int) (barWidth * ratio);
             g.fill(barX, barY, barX + filled, barY + 10, 0xFF00AA00);
+        } else {
+            int segW = barWidth / 4;
+            int travel = barWidth + segW;
+            int pos = (int) ((System.currentTimeMillis() / 8) % travel) - segW;
+            int segStart = Math.max(barX, barX + pos);
+            int segEnd = Math.min(barX + barWidth, barX + pos + segW);
+            if (segEnd > segStart) g.fill(segStart, barY, segEnd, barY + 10, 0xFF00AA00);
         }
 
         y += 18;
@@ -167,7 +177,7 @@ public final class SearchScreen extends Screen {
 
         int cpuUsage = estimateCpuUsage();
         drawRow(g, leftCol, y,  "CPU:",             cpuUsage + "%");
-        drawRow(g, rightCol, y, "Seed limit:",      config.unbounded() ? "\u221e" : formatNumber(maxSeeds));
+        drawRow(g, rightCol, y, "Seed limit:",      formatNumber(maxSeeds));
         y += rowH + 6;
 
         SearchResult best = lastCandidate();

@@ -1,6 +1,6 @@
 ---
 name: Feature Request
-about: Suggest a new feature or enhancement for WYWTF
+about: Suggest a new feature or enhancement for WyWF
 title: "[FEATURE] "
 labels: ["enhancement", "triage"]
 assignees: []

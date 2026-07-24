@@ -34,15 +34,17 @@ Keywords are recognized in **Russian and English**.
 
 A query is a list of keywords, each optionally preceded by a modifier:
 
-| Modifier (EN / RU)                     | Meaning                                   |
-|----------------------------------------|-------------------------------------------|
-| *(none)*                               | present within the default radius         |
-| `near` / рядом, около, возле…          | within ~200 blocks                        |
-| `in` / в, на…                         | within ~64 blocks (right where you spawn) |
-| `far` / далеко, вдали…                 | far away (~1000–2000 blocks)              |
-| `some` / несколько, много…             | several of them nearby (structures)       |
-| `under` / под, снизу                   | the surface biome at that spot            |
-| `no`, `not`, `without` / нет, не, без  | must **not** be present                   |
+| Modifier (EN / RU)                          | Meaning                                   |
+|---------------------------------------------|-------------------------------------------|
+| *(none)*                                    | present within the default radius         |
+| `near` / рядом, около, возле…              | within ~200 blocks                        |
+| `in` / в, на…                              | within ~64 blocks (right where you spawn) |
+| `far` / далеко, вдали…                     | far away (~500–1000 blocks)               |
+| `some N` / несколько, много…               | N or more structures nearby               |
+| `only` / только, лишь, одна…               | exactly one structure nearby              |
+| `between 500 to 800` / между, от…          | structure within a distance range         |
+| `under` / под, снизу                       | the surface biome at that spot            |
+| `no`, `not`, `without` / нет, не, без      | must **not** be present                   |
 
 Keywords fall into four categories:
 
@@ -129,6 +131,9 @@ Defaults (`SearchConfig`):
   (`minCandidates`, `candidateRampDownSeconds`).
 - Start position: randomized across the 48-bit space by default
   (`randomizeStart`), so a re-run over the same query explores different seeds.
+- Search center: `ORIGIN` (default), `SPAWN`, or `BOTH` — structures/biomes
+  are checked at origin `(0, 0)`, approximate world spawn, or both (first
+  match wins).
 
 ## Example: a seed found by WyWF
 
@@ -157,8 +162,6 @@ Copy-paste the seed:
 
 ## Limitations
 
-- **Strongholds are not supported.** They use concentric-ring placement, which
-  this mod does not compute yet — stronghold queries won't match.
 - **Objects** (`tree`, `water`, `lava`) are recognized but not searched.
 - Matches are found around the origin `(0, 0)`; the world spawn is not moved.
 
@@ -217,7 +220,7 @@ dependency, so it works out of the box.
 The built mod jar is written to:
 
 ```
-build/libs/wywf-1.1.0+26.1.jar
+build/libs/wywf-1.3.0+26.x.jar
 ```
 
 (the name is `<archives_base_name>-<mod_version>.jar`, taken from

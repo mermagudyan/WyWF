@@ -23,7 +23,7 @@ public final class WorldContext {
     private final ResourceKey<NoiseGeneratorSettings> noiseSettingsKey;
     private final HolderLookup.RegistryLookup<StructureSet> structureSets;
 
-    private Climate.Sampler sampler;
+    private volatile Climate.Sampler sampler;
     private final Supplier<Climate.Sampler> samplerSupplier;
 
     public final Map<ResourceKey<Structure>, List<StructurePlacement>> placementsByStructure;

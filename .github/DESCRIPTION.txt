@@ -16,7 +16,7 @@ apache-license | contributions-welcome | good-first-issue
 
 # Repository homepage URL
 
-https://github.com/WYWTF/wywtf
+https://github.com/mermagudyan/WyWF
 
 ---
 
@@ -28,7 +28,7 @@ Natural-language seed search for Minecraft 26.x — Fabric mod.
 
 # Suggested "About" tagline (long version, ~200 chars)
 
-Type "village near warm ocean" in the Seed field. WYWTF parses your request,
+Type "village near warm ocean" in the Seed field. WyWF parses your request,
 runs a multi-threaded seed search, and spawns you next to the feature you
 asked for. Bilingual dictionary (RU + EN), extensible, no Yarn mappings.
 Licensed under Apache 2.0.

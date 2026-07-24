@@ -1,6 +1,6 @@
 ---
 name: Dictionary Contribution
-about: Suggest new keywords, synonyms, or translations for the WYWTF dictionary
+about: Suggest new keywords, synonyms, or translations for the WyWF dictionary
 title: "[DICT] "
 labels: ["dictionary", "enhancement"]
 assignees: []

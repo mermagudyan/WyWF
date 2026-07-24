@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.*;
 public class SearchResultTest {
     @Test
     void carriesMatchedListsAndStopReason() {
-        SearchResult r = new SearchResult(123L, 0, 0, "minecraft:village_plains",
+        SearchResult r = new SearchResult(123L, 0, 0, 32, 48, "minecraft:village_plains",
                 List.of("minecraft:village_plains"), List.of("minecraft:plains"), "collected 3 candidates");
         assertEquals(123L, r.seed);
         assertEquals(List.of("minecraft:village_plains"), r.matchedStructures);

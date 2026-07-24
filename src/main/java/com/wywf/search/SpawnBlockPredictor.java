@@ -32,6 +32,8 @@ public final class SpawnBlockPredictor {
     private final Map<String, String> biomeToBlock = new HashMap<>();
     private final Set<String> possibleBlocks = new HashSet<>();
 
+    public Set<String> waterBiomes() { return waterBiomes; }
+
     public SpawnBlockPredictor(BiomeSource biomeSource) {
         this.biomeSource = biomeSource;
         buildWaterBiomes();
@@ -100,10 +102,16 @@ public final class SpawnBlockPredictor {
         return "any_solid".equals(blockId) || possibleBlocks.contains(blockId);
     }
 
-    public String predict(WorldContext ctx, long seed) {
+    /**
+     * Scan a radius around the given center to find the most likely spawn block.
+     * Vanilla searches up to ~20 blocks from the spawn point, so we scan
+     * ±2 chunks (32 blocks) to cover that range.
+     */
+    public String predict(WorldContext ctx, long seed, int centerBlockX, int centerBlockZ) {
         Climate.Sampler sampler = ctx.sampler();
-        for (int z = 0; z < 16; z++) {
-            for (int x = 0; x < 16; x++) {
+        final int SCAN_CHUNKS = 2;
+        for (int z = centerBlockZ - SCAN_CHUNKS * 16; z < centerBlockZ + SCAN_CHUNKS * 16; z++) {
+            for (int x = centerBlockX - SCAN_CHUNKS * 16; x < centerBlockX + SCAN_CHUNKS * 16; x++) {
                 Holder<Biome> biome = biomeSource.getNoiseBiome(x >> 2, 64 >> 2, z >> 2, sampler);
                 String biomeId = biome.unwrapKey().map(k -> k.identifier().toString()).orElse(null);
                 if (biomeId == null || waterBiomes.contains(biomeId)) continue;
@@ -111,5 +119,9 @@ public final class SpawnBlockPredictor {
             }
         }
         return null;
+    }
+
+    public String predict(WorldContext ctx, long seed) {
+        return predict(ctx, seed, 8, 8);
     }
 }

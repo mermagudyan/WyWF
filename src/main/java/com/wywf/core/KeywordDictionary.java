@@ -57,6 +57,8 @@ public final class KeywordDictionary {
 
     private final Map<String, List<String>> variants = new HashMap<>();
 
+    private final Map<String, String> variantToBase = new HashMap<>();
+
     private volatile List<String> sortedKeys = List.of();
 
     private volatile List<String> blockSortedKeys = List.of();
@@ -80,13 +82,13 @@ public final class KeywordDictionary {
         boolean loadedAny = false;
 
         if (lang == Lang.EN) {
-            loadedAny |= loadFile("assets/wywf/lang/en_us.json");
+            loadedAny |= loadFile("assets/wywf/data/en_us.json");
         } else if (lang == Lang.RU) {
-            loadedAny = loadFile("assets/wywf/lang/ru_ru.json");
-            if (!loadedAny) loadedAny = loadFile("assets/wywf/lang/en_us.json");
+            loadedAny = loadFile("assets/wywf/data/ru_ru.json");
+            if (!loadedAny) loadedAny = loadFile("assets/wywf/data/en_us.json");
         } else { // AUTO
-            loadedAny |= loadFile("assets/wywf/lang/en_us.json");
-            loadedAny |= loadFile("assets/wywf/lang/ru_ru.json");
+            loadedAny |= loadFile("assets/wywf/data/en_us.json");
+            loadedAny |= loadFile("assets/wywf/data/ru_ru.json");
         }
 
         if (!loadedAny) {
@@ -112,6 +114,9 @@ public final class KeywordDictionary {
                         if (v.isJsonPrimitive()) list.add(v.getAsString());
                     }
                     variants.put(generic, List.copyOf(list));
+                    for (String v : list) {
+                        variantToBase.putIfAbsent(v, generic);
+                    }
                     continue;
                 }
                 if (!key.startsWith("wywf.synonym.")) continue;
@@ -138,7 +143,7 @@ public final class KeywordDictionary {
             }
             return true;
         } catch (IOException | RuntimeException ex) {
-            LOGGER.warn("Failed to load keyword file '{}': {}", resource, ex.getMessage());
+            LOGGER.info("Failed to load keyword file '{}': {}", resource, ex.getMessage());
             return false;
         }
     }
@@ -191,7 +196,7 @@ public final class KeywordDictionary {
             // First definition wins. A later synonym mapping to a different canonical
             // (e.g. a cross-language or intra-file clash) is skipped and logged.
             if (!existing.equals(canonical)) {
-                LOGGER.warn("Keyword '{}' already maps to '{}', ignoring duplicate '{}'",
+                LOGGER.debug("Keyword '{}' already maps to '{}', ignoring duplicate '{}'",
                         synonym, existing, canonical);
             }
             return;
@@ -283,9 +288,12 @@ public final class KeywordDictionary {
         return spawnTriggers.contains(word.toLowerCase(Locale.ROOT).trim());
     }
 
-    public List<String> getVariants(String generic) {
-        List<String> v = variants.get(generic);
-        return v != null ? v : List.of(generic);
+    public List<String> getVariants(String canonical) {
+        List<String> v = variants.get(canonical);
+        if (v != null) return v;
+        String base = variantToBase.get(canonical);
+        if (base != null) return List.of(base);
+        return List.of(canonical);
     }
 
     public Collection<Entry> all() { return entries.values(); }
@@ -301,6 +309,83 @@ public final class KeywordDictionary {
             if (isSpawnKey(key)) blocks.add(key);
         }
         blockSortedKeys = List.copyOf(blocks);
+    }
+
+    /**
+     * Returns the best fuzzy suggestion for a misspelled word, or null if none
+     * is close enough. Uses consonant-skeleton matching: consonants from the input
+     * must be a subsequence of the target's consonants, and the input length must
+     * be within 2 of the target length.
+     *
+     * <p>Examples that match: "vllg"→"village", "dsrt"→"desert", "vilge"→"village".
+     * Examples that don't: "drts"→"desert" (consonants out of order),
+     * "dskdfoskdrt"→any (gibberish), "villllage"→"village" (too many l's).
+     */
+    public String findSuggestion(String word) {
+        if (word == null || word.isBlank()) return null;
+        String lower = word.toLowerCase(Locale.ROOT).trim();
+        if (synonymToCanonical.containsKey(lower)) return null;
+
+        String inputConsonants = extractConsonants(lower);
+        if (inputConsonants.length() < 2) return null;
+
+        String bestMatch = null;
+        int bestLen = Integer.MAX_VALUE;
+
+        for (String key : sortedKeys) {
+            if (key.length() < 3) continue;
+            if (lower.length() < key.length() / 2) continue;
+
+            String targetConsonants = extractConsonants(key);
+            if (!isSubsequence(inputConsonants, targetConsonants)) continue;
+
+            if (key.length() < bestLen) {
+                bestLen = key.length();
+                bestMatch = key;
+            }
+        }
+        return bestMatch;
+    }
+
+    private static final java.util.Set<Character> CONSONANTS = Set.of(
+            'b','c','d','f','g','h','j','k','l','m','n','p','q','r','s','t','v','w','x','y','z');
+
+    private static String extractConsonants(String word) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < word.length(); i++) {
+            char c = word.charAt(i);
+            if (CONSONANTS.contains(c)) sb.append(c);
+        }
+        return sb.toString();
+    }
+
+    /** Returns true if {@code input} is a subsequence of {@code target}. */
+    private static boolean isSubsequence(String input, String target) {
+        int i = 0, j = 0;
+        while (i < input.length() && j < target.length()) {
+            if (input.charAt(i) == target.charAt(j)) i++;
+            j++;
+        }
+        return i == input.length();
+    }
+
+    private static int levenshtein(String a, String b) {
+        int m = a.length(), n = b.length();
+        int[] prev = new int[n + 1];
+        for (int j = 0; j <= n; j++) prev[j] = j;
+        for (int i = 1; i <= m; i++) {
+            int[] curr = new int[n + 1];
+            curr[0] = i;
+            for (int j = 1; j <= n; j++) {
+                int cost = (a.charAt(i - 1) == b.charAt(j - 1)) ? 0 : 1;
+                curr[j] = Math.min(Math.min(
+                        curr[j - 1] + 1,
+                        prev[j] + 1),
+                        prev[j - 1] + cost);
+            }
+            prev = curr;
+        }
+        return prev[n];
     }
 
     /** Hardcoded fallback used only if no lang file could be loaded. */
@@ -445,6 +530,10 @@ public final class KeywordDictionary {
                 "далеко", "вдали", "далеки", "поодаль");
         registerModifier("UNDER", "under", "beneath", "below", "underneath", "под", "снизу");
         registerModifier("NEVER", "never", "no", "not", "without", "нет", "не", "без", "никакого", "никаких");
+        registerModifier("ONLY", "only", "just", "single", "only one",
+                "только", "лишь", "одна", "один", "единственная", "единственная");
+        registerModifier("BETWEEN", "between", "mid", "middle", "in range", "from",
+                "между", "середина", "диапазон", "промежуток", "от");
 
         // ---- spawn triggers ----
         for (String w : new String[]{"spawn", "on", "на", "блок", "block", "onto", "встань", "стоять"}) {

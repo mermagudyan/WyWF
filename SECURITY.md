@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-WYWTF is a Minecraft **26.x** client mod (tested on 26.2). Security updates are
+WyWF is a Minecraft **26.x** client mod (tested on 26.2). Security updates are
 provided for the latest released version only.
 
 | Minecraft | Version  | Supported          | Notes                       |
@@ -19,7 +19,7 @@ release before reporting any security issue.
 
 **DO NOT open a public GitHub issue for security vulnerabilities.**
 
-If you discover a security vulnerability in WYWTF, please report it privately:
+If you discover a security vulnerability in WyWF, please report it privately:
 
 1. **Preferred:** Use GitHub's private vulnerability reporting:
    https://github.com/mermagudyan/WyWF/security/advisories/new
@@ -64,7 +64,7 @@ target time, please follow up.
 
 - Bugs in Minecraft itself (report to Mojang via bugs.mojang.com)
 - Bugs in Fabric Loader or Fabric API (report to their respective repos)
-- Bugs in third-party mods that interact with WYWTF
+- Bugs in third-party mods that interact with WyWF
 - Performance issues that are not security-relevant
 - "The mod uses a lot of CPU" — that's the search feature doing its job
 - Social engineering or phishing attempts against maintainers
@@ -73,7 +73,7 @@ target time, please follow up.
 
 ## Security Best Practices for Users
 
-WYWTF is a client-side mod. To stay safe:
+WyWF is a client-side mod. To stay safe:
 
 1. **Download only from official sources:**
    - GitHub Releases
@@ -82,23 +82,23 @@ WYWTF is a client-side mod. To stay safe:
 
 2. **Verify the file hash** if one is published in the release notes.
 
-3. **Do not run WYWTF on a server.** The mod is marked
+3. **Do not run WyWF on a server.** The mod is marked
    `"environment": "client"` and is not designed for server-side use.
 
 4. **Do not paste arbitrary text into the Seed field** if you don't trust
-   your dictionary source. WYWTF only recognizes keywords from its built-in
+   your dictionary source. WyWF only recognizes keywords from its built-in
    dictionary — unknown words are ignored — but keep this in mind when
    extending the dictionary from third-party JSON files.
 
-5. **Keep your Minecraft and Fabric Loader updated.** WYWTF relies on
+5. **Keep your Minecraft and Fabric Loader updated.** WyWF relies on
    Minecraft's internal APIs; using an outdated Minecraft version with a
-   newer WYWTF build may cause mixin failures.
+   newer WyWF build may cause mixin failures.
 
 ---
 
 ## Security Best Practices for Contributors
 
-When contributing to WYWTF, follow these rules:
+When contributing to WyWF, follow these rules:
 
 - **No `Runtime.exec()`.** Ever.
 - **No `Method.invoke()` on user-controlled class names.** Reflection is

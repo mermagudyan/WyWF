@@ -6,3 +6,7 @@ accessWidener v2 official
 accessible	class	net/minecraft/world/level/levelgen/DensityFunctions$ShiftA
 accessible	class	net/minecraft/world/level/levelgen/DensityFunctions$ShiftB
 accessible	class	net/minecraft/world/level/levelgen/DensityFunctions$ShiftedNoise
+
+# ExclusionZone enforcement: need to read the exclusion zone from each placement
+# to reject chunks blocked by nearby structures from another set.
+accessible method	net/minecraft/world/level/levelgen/structure/placement/StructurePlacement exclusionZone ()Ljava/util/Optional;

@@ -27,7 +27,7 @@ public final class ConfigStore {
             SearchConfig cfg = GSON.fromJson(r, SearchConfig.class);
             return cfg != null ? cfg : SearchConfig.defaults();
         } catch (IOException | RuntimeException e) {
-            WYWFClient.LOGGER.warn("[WyWF] Failed to load config, using defaults: {}", e.getMessage());
+            WYWFClient.LOGGER.info("[WyWF] Failed to load config, using defaults: {}", e.getMessage());
             return SearchConfig.defaults();
         }
     }
@@ -39,7 +39,7 @@ public final class ConfigStore {
                 GSON.toJson(cfg, w);
             }
         } catch (IOException e) {
-            WYWFClient.LOGGER.warn("[WyWF] Failed to save config: {}", e.getMessage());
+            WYWFClient.LOGGER.info("[WyWF] Failed to save config: {}", e.getMessage());
         }
     }
 }

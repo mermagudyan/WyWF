@@ -6,6 +6,7 @@
   "mixins": [],
   "client": [
     "CreateWorldScreenMixin",
+    "CreateWorldScreenMoreTabMixin",
     "CreateWorldScreenInvoker",
     "WorldTabSeedMixin"
   ],

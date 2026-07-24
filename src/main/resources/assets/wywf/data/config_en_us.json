@@ -1,0 +1,52 @@
+{
+  "wywf.config.title": "What You Want To Find",
+
+  "wywf.config.category.general": "General",
+  "wywf.config.category.search": "Search",
+
+  "wywf.config.general.language.name": "Language",
+  "wywf.config.general.language.desc": "Which synonym language the query parser uses.\nEN: English only (default)\nRU: Russian only\nAUTO: merge EN + RU (all synonyms)",
+  "wywf.config.general.language.option": "Query language",
+
+  "wywf.config.general.performance.name": "Performance",
+  "wywf.config.general.performance.desc": "How many CPU cores the search may use.\nAUTO: ~65% (ECONOMY if CPU <= 4 threads)\nECONOMY: ~25% — quiet mode\nHIGH: ~75% — fast search\nMAX: all cores — maximum speed",
+  "wywf.config.general.performance.thread_mode": "Thread mode",
+
+  "wywf.config.search.scan.name": "Scan area",
+
+  "wywf.config.search.scan.structure_radius": "Structure scan radius (blocks)",
+  "wywf.config.search.scan.structure_radius.desc": "How far from the search center to look for\nstructures (villages, temples, strongholds, etc.).\n\n1 chunk = 16 blocks = small terrain area.\nRecommended: 40-64 chunks.\nLarger = slower, but more likely to find.\nDefault: 40 (640 blocks from center).",
+
+  "wywf.config.search.scan.biome_radius": "Biome check radius (blocks)",
+  "wywf.config.search.scan.biome_radius.desc": "How far from the search center to check biomes\n(forest, desert, ocean, etc.).\n\n1 chunk = 16 blocks = small terrain area.\nRecommended: 16-32 chunks.\nIncrease if the biome is far away.\nDefault: 16 (256 blocks from center).",
+
+  "wywf.config.search.scan.biome_step": "Biome sample step (blocks)",
+  "wywf.config.search.scan.biome_step.desc": "How often to sample biomes. Lower = more accurate, slower.\n\n1 = check every block (most accurate, slowest)\n4 = check every 4th block (default)\n8 = check every 8th block (fast, rough)\n\nDefault: 4.",
+
+  "wywf.config.search.center.name": "Search center",
+  "wywf.config.search.center.desc": "Where to start searching for structures and biomes.\n\nORIGIN (0, 0): from world center (default).\nSPAWN: from player world spawn.\nBOTH: checks both origin and spawn.\n\nORIGIN — faster and more accurate.\nSPAWN — finds near your spawn point.\nBOTH — combines both options.",
+  "wywf.config.search.center.option": "Search center",
+
+  "wywf.config.search.limits.name": "Limits",
+  "wywf.config.search.limits.desc": "Search stops when either limit is reached.",
+
+  "wywf.config.search.limits.time": "Time limit (minutes)",
+  "wywf.config.search.limits.time.desc": "Maximum search time.\nWhen time runs out, search stops and shows\nfound results.\n\nMinimum: 5 minutes. Default: 30 minutes.",
+
+  "wywf.config.search.limits.infinite": "Infinite seeds",
+  "wywf.config.search.limits.infinite.desc": "When ON, seed limit is ignored — search runs\nuntil time limit or candidates found.\n\nMax seeds setting is disabled.\nDefault: OFF.",
+
+  "wywf.config.search.limits.max_seeds": "Max seeds to check",
+  "wywf.config.search.limits.max_seeds.desc": "Maximum number of seeds to evaluate.\nSearch stops when reached.\nDisabled when 'Infinite seeds' is ON.\n\n1M = 1,000,000\n10M = 10,000,000 (default)\n1B = 1,000,000,000\n\nRange: 1M — 1B. Default: 10M.",
+
+  "wywf.config.search.candidates.name": "Candidates",
+
+  "wywf.config.search.candidates.collect": "Candidates to collect",
+  "wywf.config.search.candidates.collect.desc": "How many matching seeds to find before stopping.\n\nMore = more options to choose from.\nFewer = finishes faster.\n\nDefault: 8.",
+
+  "wywf.config.search.candidates.stop_first": "Stop at first candidate",
+  "wywf.config.search.candidates.stop_first.desc": "When ON, stops at the first match for\nfastest results, but no choice.\n\nDefault: OFF (collects multiple candidates).",
+
+  "wywf.config.search.candidates.sort_distance": "Sort by distance",
+  "wywf.config.search.candidates.sort_distance.desc": "When ON, the final candidate is chosen by distance\nto the nearest structure (closest first), rather\nthan randomly.\n\nDefault: OFF."
+}

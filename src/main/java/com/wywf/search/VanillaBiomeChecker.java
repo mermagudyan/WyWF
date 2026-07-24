@@ -186,19 +186,74 @@ public final class VanillaBiomeChecker implements BiomeChecker {
      * Cave biomes only exist below the surface, so they are searchable by proximity
      * only: {@code near} always, and {@code far} for all except {@code sulfur_caves}
      * (near-only). All other modifiers return false.
+     *
+     * <p>Cross-check: if the same biome also appears at the surface Y level,
+     * the climate sampler is producing a false positive (underground biomes
+     * should never match at surface depth). This filters out inaccuracies in
+     * {@link ReusableClimateSampler} at underground Y levels.</p>
      */
     public boolean evalUnderground(BiomeField field, String biomeId, Modifier mod,
                                     int nearRadiusBlocks, int farMinBlocks, int farMaxBlocks) {
+        return evalUnderground(field, biomeId, mod, nearRadiusBlocks, farMinBlocks, farMaxBlocks, null, 0, 0);
+    }
+
+    public boolean evalUnderground(BiomeField field, String biomeId, Modifier mod,
+                                    int nearRadiusBlocks, int farMinBlocks, int farMaxBlocks,
+                                    WorldContext ctx, int centerX, int centerZ) {
         if (!isUnderground(biomeId)) return false;
         ResourceKey<Biome> key = keyOf(biomeId);
         if (key == null) return false;
+
+        boolean found = false;
         if (mod == Modifier.NEAR) {
             int d = field.nearestDistanceBlocks(key, 0, nearRadiusBlocks);
-            return d >= 0 && d <= nearRadiusBlocks;
-        }
-        if (mod == Modifier.FAR && !undergroundNearOnly(biomeId)) {
+            found = d >= 0 && d <= nearRadiusBlocks;
+        } else if (mod == Modifier.FAR && !undergroundNearOnly(biomeId)) {
             int d = field.nearestDistanceBlocks(key, farMinBlocks, farMaxBlocks);
-            return d >= 0;
+            found = d >= 0;
+        } else if (mod == Modifier.NEVER) {
+            int d = field.nearestDistanceBlocks(key, 0, Integer.MAX_VALUE);
+            if (d < 0) return true;
+            if (ctx != null && isSamplerFalsePositive(ctx, key, centerX, centerZ)) {
+                return true;
+            }
+            return false;
+        }
+
+        if (!found) return false;
+
+        if (ctx != null && isSamplerFalsePositive(ctx, key, centerX, centerZ)) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Checks if an underground biome also appears at surface Y — a clear sign
+     * the climate sampler produced a false positive. Underground biomes like
+     * {@code deep_dark} should never match at the surface depth parameter.
+     */
+    private boolean isSamplerFalsePositive(WorldContext ctx, ResourceKey<Biome> undergroundKey,
+                                            int centerX, int centerZ) {
+        BiomeSource biomeSource = ctx.biomeSource;
+        Climate.Sampler sampler = ctx.sampler();
+        if (biomeSource == null || sampler == null) return false;
+
+        int centerChunkX = centerX >> 4;
+        int centerChunkZ = centerZ >> 4;
+        int surfaceQuartY = SURFACE_Y >> 2;
+
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                int quartX = ((centerChunkX + dx) << 4) >> 2;
+                int quartZ = ((centerChunkZ + dz) << 4) >> 2;
+                Holder<Biome> holder = biomeSource.getNoiseBiome(quartX, surfaceQuartY, quartZ, sampler);
+                if (holder == null) continue;
+                ResourceKey<Biome> key = holder.unwrapKey().orElse(null);
+                if (undergroundKey.equals(key)) {
+                    return true;
+                }
+            }
         }
         return false;
     }

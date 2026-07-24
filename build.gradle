@@ -14,6 +14,8 @@ repositories {
     mavenCentral()
     maven { url = "https://maven.fabricmc.net/" }
     maven { url = "https://minecraft.net" }
+    maven { url = "https://maven.isxander.dev/releases" }
+    maven { url = "https://maven.terraformersmc.com/" }
 }
 
 loom {
@@ -35,6 +37,13 @@ dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     implementation "net.fabricmc:fabric-loader:${project.loader_version}"
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+    // Optional: YACL config screen (suggested, not required)
+    implementation "dev.isxander:yet-another-config-lib:${project.yacl_version}"
+    // ModMenu API (local JAR — available at compile + runtime for testing)
+    implementation files("libs/modmenu-20.0.1.jar")
+    // Sodium (local JAR — available at compile + runtime for testing)
+    implementation files("libs/sodium-fabric-0.9.1+mc26.2.jar")
 
     testImplementation platform("org.junit:junit-bom:5.11.3")
     testImplementation "org.junit.jupiter:junit-jupiter"

@@ -8,16 +8,33 @@ public final class ParsedQuery {
         public final String canonical;
         public final KeywordDictionary.Category category;
         public final Modifier modifier;
+        public final int someCount;
+        public final int betweenMin;
+        public final int betweenMax;
 
         public Term(String canonical, KeywordDictionary.Category category, Modifier modifier) {
+            this(canonical, category, modifier, 2, 0, 0);
+        }
+
+        public Term(String canonical, KeywordDictionary.Category category, Modifier modifier,
+                    int someCount, int betweenMin, int betweenMax) {
             this.canonical = canonical;
             this.category = category;
             this.modifier = modifier == null ? Modifier.DEFAULT : modifier;
+            this.someCount = someCount < 2 ? 2 : someCount;
+            this.betweenMin = Math.max(0, betweenMin);
+            this.betweenMax = Math.max(betweenMin, betweenMax);
         }
 
         @Override public String toString() {
             String m = modifier == Modifier.DEFAULT ? "" : modifier.name().toLowerCase(Locale.ROOT) + " ";
-            return m + canonical;
+            String extra = "";
+            if (modifier == Modifier.SOME) {
+                extra = someCount + " ";
+            } else if (modifier == Modifier.BETWEEN) {
+                extra = betweenMin + ".." + betweenMax + " ";
+            }
+            return m + extra + canonical;
         }
     }
 

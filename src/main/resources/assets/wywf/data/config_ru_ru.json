@@ -1,0 +1,52 @@
+{
+  "wywf.config.title": "What You Want To Find",
+
+  "wywf.config.category.general": "Общие",
+  "wywf.config.category.search": "Поиск",
+
+  "wywf.config.general.language.name": "Язык",
+  "wywf.config.general.language.desc": "Язык синонимов для поискового запроса.\nEN: только английский (по умолчанию)\nRU: только русский\nAUTO: смешать EN + RU (все синонимы)",
+  "wywf.config.general.language.option": "Язык запросов",
+
+  "wywf.config.general.performance.name": "Производительность",
+  "wywf.config.general.performance.desc": "Сколько ядер процессора использует поиск.\nAUTO: ~65% (ECONOMY если <=4 потока)\nECONOMY: ~25% — тихий режим\nHIGH: ~75% — быстрый поиск\nMAX: все ядра — максимальная скорость",
+  "wywf.config.general.performance.thread_mode": "Режим потоков",
+
+  "wywf.config.search.scan.name": "Область поиска",
+
+  "wywf.config.search.scan.structure_radius": "Радиус поиска структур (блоки)",
+  "wywf.config.search.scan.structure_radius.desc": "Как далеко от точки поиска искать структуры\n(деревни, храмы, крепости и т.д.).\n\n16 блоков = 1 чанк = небольшой участок terrain.\nРекомендуется: 40-64 блока (2.5-4 чанка).\nБольше = медленнее, но больше шанс найти.\nПо умолчанию: 40 (640 блоков от центра).",
+
+  "wywf.config.search.scan.biome_radius": "Радиус проверки биомов (блоки)",
+  "wywf.config.search.scan.biome_radius.desc": "Как далеко от точки поиска проверять биомы\n(лес, пустыня, океан и т.д.).\n\n16 блоков = 1 чанк = небольшой участок terrain.\nРекомендуется: 16-32 блока (1-2 чанка).\nУвеличьте, если биом находится далеко.\nПо умолчанию: 16 (256 блоков от центра).",
+
+  "wywf.config.search.scan.biome_step": "Шаг проверки биомов (блоки)",
+  "wywf.config.search.scan.biome_step.desc": "Частота проверки биомов. Меньше = точнее, но медленнее.\n\n1 = проверять каждый блок (самый точный, медленный)\n4 = проверять каждый 4-й блок (по умолчанию)\n8 = проверять каждый 8-й блок (быстрый, грубый)\n\nПо умолчанию: 4.",
+
+  "wywf.config.search.center.name": "Центр поиска",
+  "wywf.config.search.center.desc": "Откуда начинать поиск структур и биомов.\n\nORIGIN (0, 0): от центра мира (по умолчанию).\nSPAWN: от точки спавна игрока.\nBOTH: проверяет и от центра, и от спавна.\n\nORIGIN — быстрее и точнее.\nSPAWN — ищет рядом с вашим появением.\nBOTH — комбинирует оба варианта.",
+  "wywf.config.search.center.option": "Точка поиска",
+
+  "wywf.config.search.limits.name": "Лимиты",
+  "wywf.config.search.limits.desc": "Поиск останавливается, когда достигнут любой лимит.",
+
+  "wywf.config.search.limits.time": "Временной лимит (минуты)",
+  "wywf.config.search.limits.time.desc": "Максимальное время поиска.\nКогда время выйдет, поиск остановится\nи покажет найденные результаты.\n\nМинимум: 5 минут. По умолчанию: 30 минут.",
+
+  "wywf.config.search.limits.infinite": "Бесконечный поиск",
+  "wywf.config.search.limits.infinite.desc": "Когда ВКЛ, лимит сидов отключается — поиск\nидёт до временного лимита или до нужного\nколичества кандидатов.\n\nНастройка \"Макс. сидов\" отключается.\nПо умолчанию: ВЫКЛ.",
+
+  "wywf.config.search.limits.max_seeds": "Макс. сидов для проверки",
+  "wywf.config.search.limits.max_seeds.desc": "Сколько сидов максимум проверить.\nКогда достигнуто, поиск останавливается.\nОтключается, если \"Бесконечный поиск\" ВКЛ.\n\n1M = 1 000 000 (миллион)\n10M = 10 000 000 (по умолчанию)\n1B = 1 000 000 000 (миллиард)\n\nДиапазон: 1M — 1B. По умолчанию: 10M.",
+
+  "wywf.config.search.candidates.name": "Кандидаты",
+
+  "wywf.config.search.candidates.collect": "Сколько кандидатов собирать",
+  "wywf.config.search.candidates.collect.desc": "Сколько подходящих сидов найти перед остановкой.\n\nБольше = больше вариантов на выбор.\nМеньше = быстрее завершается.\n\nПо умолчанию: 8.",
+
+  "wywf.config.search.candidates.stop_first": "Стоп на первом кандидате",
+  "wywf.config.search.candidates.stop_first.desc": "Когда ВКЛ, поиск останавливается на первом\nнайденном сиде — самый быстрый результат,\nно без выбора.\n\nПо умолчанию: ВЫКЛ (собирает несколько).",
+
+  "wywf.config.search.candidates.sort_distance": "Сортировка по расстоянию",
+  "wywf.config.search.candidates.sort_distance.desc": "Когда ВКЛ, лучший кандидат выбирается по\nрасстоянию до ближайшей структуры (ближе = лучше),\nа не случайно.\n\nПо умолчанию: ВЫКЛ."
+}
