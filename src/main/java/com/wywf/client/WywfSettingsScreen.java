@@ -9,11 +9,9 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.CycleButton;
-import net.minecraft.client.gui.components.Renderable;
-import net.minecraft.client.gui.components.events.GuiEventListener;
+import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.gui.layouts.HeaderAndFooterLayout;
 import net.minecraft.client.gui.layouts.LinearLayout;
-import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
@@ -24,6 +22,8 @@ import java.util.function.Consumer;
 public final class WywfSettingsScreen extends Screen {
 
     private static final int CONTENT_WIDTH = 340;
+    private static final int ROW_HEIGHT = 24;
+    private static final int LABEL_WIDTH = CONTENT_WIDTH - 154;
 
     private final Screen parent;
     private final SearchConfig config;
@@ -94,7 +94,10 @@ public final class WywfSettingsScreen extends Screen {
     }
 
     private void addCategory(LinearLayout parent, String name) {
-        parent.addChild(new CategoryWidget(name, this.font));
+        parent.addChild(new net.minecraft.client.gui.components.StringWidget(
+                CONTENT_WIDTH, 14,
+                Component.literal("\u00a7l\u00a77" + name + "\u00a7r"),
+                this.font));
     }
 
     private void addRow(LinearLayout parent, String label, AbstractWidget widget) {
@@ -130,44 +133,19 @@ public final class WywfSettingsScreen extends Screen {
     }
 
     @Override
-    public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
-        super.extractRenderState(g, mouseX, mouseY, partialTick);
-        layout.visitChildren(w -> {
-            if (w instanceof Renderable r) r.extractRenderState(g, mouseX, mouseY, partialTick);
-        });
-    }
-
-    @Override
     public boolean shouldCloseOnEsc() { return true; }
 
-    private static final class CategoryWidget extends AbstractWidget {
-        private final String label;
-        private final Font font;
-
-        CategoryWidget(String label, Font font) {
-            super(0, 0, CONTENT_WIDTH, 14, Component.empty());
-            this.label = label;
-            this.font = font;
-        }
-
-        @Override
-        protected void extractWidgetRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
-            g.text(font, Component.literal("§l§7" + label + "§r"), getX(), getY() + 2, 0xAAAAAA);
-        }
-
-        @Override protected void updateWidgetNarration(NarrationElementOutput output) {}
-    }
-
     private static final class SettingRow extends AbstractWidget {
-        private final String label;
+        private final net.minecraft.client.gui.components.StringWidget label;
         private final AbstractWidget widget;
-        private final Font font;
 
-        SettingRow(String label, AbstractWidget widget, Font font) {
-            super(0, 0, CONTENT_WIDTH, 24, Component.empty());
-            this.label = label;
+        SettingRow(String text, AbstractWidget widget, Font font) {
+            super(0, 0, CONTENT_WIDTH, ROW_HEIGHT, Component.empty());
             this.widget = widget;
-            this.font = font;
+            this.label = new net.minecraft.client.gui.components.StringWidget(
+                    LABEL_WIDTH, ROW_HEIGHT,
+                    Component.literal(text),
+                    font);
             repositionWidget();
         }
 
@@ -184,25 +162,29 @@ public final class WywfSettingsScreen extends Screen {
         }
 
         private void repositionWidget() {
+            label.setX(getX());
+            label.setY(getY());
             if (widget != null) {
-                widget.setX(getX() + CONTENT_WIDTH - 154);
+                widget.setX(getX() + CONTENT_WIDTH - 150);
                 widget.setY(getY() + 2);
             }
         }
 
         @Override
         protected void extractWidgetRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
-            g.text(font, Component.literal("§f" + label), getX() + 4, getY() + 6, 0xFFFFFF);
-            if (widget instanceof Renderable r) {
+            label.extractRenderState(g, mouseX, mouseY, partialTick);
+            if (widget instanceof net.minecraft.client.gui.components.Renderable r) {
                 r.extractRenderState(g, mouseX, mouseY, partialTick);
             }
         }
 
         @Override
-        public void visitWidgets(java.util.function.Consumer<AbstractWidget> visitor) {
+        public void visitWidgets(Consumer<AbstractWidget> visitor) {
+            visitor.accept(label);
             if (widget != null) visitor.accept(widget);
         }
 
-        @Override protected void updateWidgetNarration(NarrationElementOutput output) {}
+        @Override
+        protected void updateWidgetNarration(NarrationElementOutput output) {}
     }
 }

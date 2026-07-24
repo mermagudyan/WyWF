@@ -18,6 +18,19 @@ repositories {
     maven { url = "https://maven.terraformersmc.com/" }
 }
 
+def modmenuJar = file("libs/modmenu-20.0.1.jar")
+if (!modmenuJar.exists()) {
+    modmenuJar.parentFile.mkdirs()
+    try {
+        new URL("https://cdn.modrinth.com/data/mOgUt4GM/versions/njXb639R/modmenu-20.0.1.jar").withInputStream { is ->
+            modmenuJar.bytes = is.bytes
+        }
+        logger.lifecycle("Downloaded ModMenu API for compilation")
+    } catch (Exception e) {
+        logger.warn("Could not download ModMenu API: ${e.message} — ModMenu integration will not compile")
+    }
+}
+
 loom {
     accessWidenerPath = file("src/main/resources/wywf.accesswidener")
     mods {
@@ -39,11 +52,11 @@ dependencies {
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
 
     // Optional: YACL config screen (suggested, not required)
-    implementation "dev.isxander:yet-another-config-lib:${project.yacl_version}"
-    // ModMenu API (local JAR — available at compile + runtime for testing)
-    implementation files("libs/modmenu-20.0.1.jar")
-    // Sodium (local JAR — available at compile + runtime for testing)
-    implementation files("libs/sodium-fabric-0.9.1+mc26.2.jar")
+    compileOnly "dev.isxander:yet-another-config-lib:${project.yacl_version}+${project.minecraft_version}-fabric"
+    // ModMenu API (compile-only — downloaded from Modrinth if missing)
+    if (modmenuJar.exists()) {
+        compileOnly files(modmenuJar)
+    }
 
     testImplementation platform("org.junit:junit-bom:5.11.3")
     testImplementation "org.junit.jupiter:junit-jupiter"

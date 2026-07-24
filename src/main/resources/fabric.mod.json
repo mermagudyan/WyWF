@@ -30,6 +30,7 @@
   },
   "suggests": {
     "modmenu": "*",
+    "yet-another-config-lib-v3": "*",
     "yet_another_config_lib_v3": "*"
   }
 }
