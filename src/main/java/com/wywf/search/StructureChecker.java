@@ -6,7 +6,11 @@ public interface StructureChecker {
 
     List<int[]> positions(WorldContext ctx, int centerX, int centerZ, int radiusChunks, String canonical);
 
+    List<int[]> positionsPlacementOnly(WorldContext ctx, int centerX, int centerZ, int radiusChunks, String canonical);
+
     int[] firstPosition(WorldContext ctx, int centerX, int centerZ, int radiusChunks, String canonical);
+
+    int[] firstPositionPlacementOnly(WorldContext ctx, int centerX, int centerZ, int radiusChunks, String canonical);
 
     boolean hasAnyPlacementWithin(WorldContext ctx, int centerX, int centerZ, int radiusChunks, String canonical);
 

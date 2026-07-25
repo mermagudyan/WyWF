@@ -8,5 +8,7 @@ public interface WorldContextFactory {
 
     boolean isStructureAvailable(String structureId);
 
+    boolean isStructureSetAvailable(String structureSetId);
+
     boolean isBiomeAvailable(String biomeId);
 }

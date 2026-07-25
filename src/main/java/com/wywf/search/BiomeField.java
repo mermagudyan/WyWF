@@ -56,4 +56,16 @@ public final class BiomeField {
         }
         return best == Long.MAX_VALUE ? -1 : (int) Math.round(Math.sqrt((double) best));
     }
+
+    public int count(ResourceKey<Biome> biomeKey, int radiusBlocks) {
+        long r2 = (long) radiusBlocks * radiusBlocks;
+        int count = 0;
+        for (int i = 0; i < dx.length; i++) {
+            if (biomeKey.equals(keys[i])) {
+                long d2 = (long) dx[i] * dx[i] + (long) dz[i] * dz[i];
+                if (d2 <= r2) count++;
+            }
+        }
+        return count;
+    }
 }

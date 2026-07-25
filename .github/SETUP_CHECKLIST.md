@@ -2,7 +2,7 @@
 
 This file documents the repository setup state. Each item corresponds to a
 GitHub feature that should be configured on the repo settings page
-(`https://github.com/WYWTF/wywtf/settings`).
+(`https://github.com/mermagudyan/WyWF/settings`).
 
 ## ✅ Done — Files in this repo
 
@@ -28,7 +28,7 @@ After pushing this repo to GitHub, complete the following on the settings page:
 
 - [ ] Click the gear icon next to "About" on the repo homepage.
 - [ ] **Description:** paste from `.github/DESCRIPTION.txt` (long version).
-- [ ] **Website:** `https://github.com/WYWTF/wywtf` (or your project page).
+- [ ] **Website:** `https://github.com/mermagudyan/WyWF` (or your project page).
 - [ ] **Topics:** add `minecraft`, `fabric`, `fabric-mod`, `minecraft-mod`,
       `seed-finder`, `natural-language`, `java`, `apache-license`,
       `contributions-welcome`, `good-first-issue`.
@@ -84,7 +84,7 @@ Optional — modern alternative to branch protection:
 
 - [ ] Create `v1.0.0` tag on `main` after first stable build.
 - [ ] Mark as "Latest release".
-- [ ] Attach `wywtf-1.0.0.jar` and `wywtf-1.0.0-sources.jar` as assets.
+- [ ] Attach `wywf-1.0.0.jar` and `wywf-1.0.0-sources.jar` as assets.
 - [ ] Write release notes (use Conventional Commits auto-generated changelog
       if available).
 
@@ -136,8 +136,8 @@ If you want a project page:
 
   ```
   *       @maintainer1 @maintainer2
-  /src/main/java/com/wywtf/core/    @maintainer1
-  /src/main/java/com/wywtf/mixin/   @maintainer2
+  /src/main/java/com/wywf/core/    @maintainer1
+  /src/main/java/com/wywf/mixin/   @maintainer2
   ```
 
 ### 15. Discussion categories

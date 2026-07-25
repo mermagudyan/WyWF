@@ -2,8 +2,12 @@ package com.wywf.search;
 
 import com.wywf.core.*;
 
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Holder;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.BiomeSource;
+import net.minecraft.world.level.biome.Climate;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -11,8 +15,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public final class SeedValidator {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger("wywf-search");
 
     public enum Reason {
         ACCEPTED("matches"),
@@ -70,8 +78,16 @@ public final class SeedValidator {
     /** Per-search cache of structure presence: (seed, canonical, radius) -> found.
      *  Avoids recomputing placement for the same seed/structure/radius pair
      *  (e.g. if a seed is revisited). Keyed by the low-48 bits of the seed,
-     *  since structure placement does not depend on the high 16 bits. */
-    private final Map<Long, Map<String, StructureChecker.Result>> structureCache = new HashMap<>();
+     *  since structure placement does not depend on the high 16 bits.
+     *  Capped at MAX_STRUCTURE_CACHE entries to bound heap usage. */
+    private static final int MAX_STRUCTURE_CACHE = 8192;
+    private final Map<Long, Map<String, StructureChecker.Result>> structureCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private void evictStructureCacheIfNeeded() {
+        if (structureCache.size() > MAX_STRUCTURE_CACHE) {
+            structureCache.clear();
+        }
+    }
 
     public SeedValidator(StructureChecker sc, BiomeChecker bc,
                          int searchRadiusChunks, int biomeRadiusChunks) {
@@ -93,16 +109,28 @@ public final class SeedValidator {
      */
     public int structureScanRadiusChunks(ParsedQuery.Term term) {
         return switch (term.modifier) {
-            case NEAR   -> chunks(NEAR_BLOCKS);
-            case IN     -> UNDERGROUND.contains(term.canonical) ? searchRadiusChunks : chunks(IN_ON_BLOCKS);
-            default     -> searchRadiusChunks;
+            case NEAR    -> chunks(NEAR_BLOCKS);
+            case IN      -> UNDERGROUND.contains(term.canonical) ? searchRadiusChunks : chunks(IN_ON_BLOCKS);
+            case FAR     -> chunks(FAR_MAX_BLOCKS);
+            case BETWEEN -> chunks(term.betweenMax);
+            case NEVER   -> searchRadiusChunks;
+            case ONLY    -> chunks(ONLY_BLOCKS);
+            case SOME    -> chunks(effectiveSomeBlocks(term.someCount));
+            default      -> searchRadiusChunks;
         };
     }
 
-    private static final int NEAR_BLOCKS    = 200;
-    private static final int FAR_MIN_BLOCKS = 1000;
-    private static final int FAR_MAX_BLOCKS = 2000;
-    private static final int IN_ON_BLOCKS   = 64;
+    private static final int NEAR_BLOCKS      = 200;
+    private static final int FAR_MIN_BLOCKS   = 500;
+    private static final int FAR_MAX_BLOCKS   = 1000;
+    private static final int IN_ON_BLOCKS     = 64;
+    private static final int SOME_BLOCKS      = 320;
+    private static final int SOME_BLOCKS_LARGE = 640;
+    private static final int ONLY_BLOCKS      = 500;
+
+    static int effectiveSomeBlocks(int someCount) {
+        return someCount >= 5 ? SOME_BLOCKS_LARGE : SOME_BLOCKS;
+    }
 
     private static final Set<String> UNDERGROUND = Set.of(
             "minecraft:stronghold", "minecraft:mineshaft",
@@ -112,17 +140,51 @@ public final class SeedValidator {
             "minecraft:mansion", "minecraft:stronghold",
             "minecraft:ancient_city", "minecraft:ocean_monument");
 
+    /**
+     * Computes the vanilla world-spawn position using {@link Climate.Sampler#findSpawnPosition()}.
+     * This is the exact same algorithm vanilla uses: searches outward from origin for
+     * the first chunk whose climate parameters match the overworld spawn target.
+     * Returns block coordinates [x, z].
+     */
+    private static final java.util.concurrent.atomic.AtomicInteger SPAWN_LOG_COUNTER = new java.util.concurrent.atomic.AtomicInteger();
+
+    public static int[] findApproxSpawnPos(BiomeSource biomeSource, Climate.Sampler sampler,
+                                            Set<String> waterBiomes) {
+        BlockPos pos = sampler.findSpawnPosition();
+        int[] result;
+        if (pos != null && !BlockPos.ZERO.equals(pos)) {
+            result = new int[]{pos.getX(), pos.getZ()};
+        } else {
+            result = new int[]{8, 8};
+        }
+        int logCount = SPAWN_LOG_COUNTER.get();
+        if (logCount < 30) {
+            SPAWN_LOG_COUNTER.incrementAndGet();
+            LOGGER.warn("[findApproxSpawnPos] findSpawnPosition()={} → ({}, {})",
+                    pos == null ? "null" : pos.getX() + "," + pos.getY() + "," + pos.getZ(),
+                    result[0], result[1]);
+        }
+        return result;
+    }
+
     public Outcome validate(WorldContextFactory factory, long seed, ParsedQuery query, boolean accurateRings) {
-
         WorldContext ctx = factory.create(seed, accurateRings);
+        return validate(ctx, seed, query, 0, 0);
+    }
 
-        int cx = 0;
-        int cz = 0;
+    public Outcome validate(WorldContextFactory factory, long seed, ParsedQuery query,
+                            boolean accurateRings, int cx, int cz) {
+        WorldContext ctx = factory.create(seed, accurateRings);
+        return validate(ctx, seed, query, cx, cz);
+    }
 
+    private Outcome validate(WorldContext ctx, long seed, ParsedQuery query, int cx, int cz) {
         StructureChecker.Result spawnStruct = StructureChecker.Result.notFound();
 
         List<String> matchedStructures = new ArrayList<>();
         List<String> matchedBiomes = new ArrayList<>();
+        Map<String, int[]> structurePositions = new HashMap<>();
+        Map<String, Integer> biomeDistances = new HashMap<>();
 
         List<ParsedQuery.Term> terms = reorder(query.terms());
         Map<Integer, BiomeField> fields = sampleBiomeFields(ctx, cx, cz, terms);
@@ -134,6 +196,30 @@ public final class SeedValidator {
                     if (r == null) return Outcome.rejected(Reason.NO_STRUCTURE, spawnStruct);
                     if (r.found) {
                         matchedStructures.add(term.canonical);
+                        if (term.modifier == Modifier.SOME || term.modifier == Modifier.ONLY
+                                || term.modifier == Modifier.BETWEEN) {
+                            int scanR = structureScanRadiusChunks(term);
+                            List<int[]> all;
+                            if (term.modifier == Modifier.BETWEEN) {
+                                all = structureChecker.positionsPlacementOnly(ctx, cx, cz, scanR, term.canonical);
+                            } else {
+                                all = structureChecker.positions(ctx, cx, cz, scanR, term.canonical);
+                            }
+                            int idx = 0;
+                            for (int[] p : all) {
+                                int d = dist(p, cx, cz);
+                                if (term.modifier == Modifier.SOME && d > effectiveSomeBlocks(term.someCount)) continue;
+                                if (term.modifier == Modifier.BETWEEN
+                                        && (d < term.betweenMin || d > term.betweenMax)) continue;
+                                if (term.modifier == Modifier.ONLY && d > ONLY_BLOCKS) continue;
+                                structurePositions.put(term.canonical + (idx > 0 ? "#" + (idx + 1) : ""),
+                                        new int[]{p[0], p[1]});
+                                idx++;
+                            }
+                        } else {
+                            structurePositions.put(term.canonical,
+                                    new int[]{r.structureX, r.structureZ});
+                        }
                         if (!spawnStruct.found) spawnStruct = r;
                     }
                 }
@@ -144,7 +230,7 @@ public final class SeedValidator {
                     matchedBiomes.add(term.canonical);
                 }
                 case SPAWN -> {
-                    if (!evalSpawnTerm(ctx, term, seed)) {
+                    if (!evalSpawnTerm(ctx, cx, cz, term, seed)) {
                         return Outcome.rejected(Reason.SPAWN_MISMATCH, spawnStruct);
                     }
                 }
@@ -153,10 +239,17 @@ public final class SeedValidator {
             }
         }
 
+        for (String biome : matchedBiomes) {
+            int d = biomeChecker.nearestDistanceBlocks(ctx, cx, cz, biomeRadiusChunks, biome);
+            biomeDistances.put(biome, d >= 0 ? d : -1);
+        }
+
         String desc = spawnStruct.found ? spawnStruct.structureId
                 : (!query.biomes().isEmpty() ? query.biomes().get(0) : "origin");
-        SearchResult result = new SearchResult(seed, cx, cz, desc,
-                matchedStructures, matchedBiomes, "");
+        int sx = spawnStruct.found ? spawnStruct.structureX : cx;
+        int sz = spawnStruct.found ? spawnStruct.structureZ : cz;
+        SearchResult result = new SearchResult(seed, cx, cz, sx, sz, desc,
+                matchedStructures, matchedBiomes, "", structurePositions, biomeDistances);
         return Outcome.accepted(result, spawnStruct, matchedStructures, matchedBiomes);
     }
 
@@ -165,30 +258,64 @@ public final class SeedValidator {
         Modifier mod = term.modifier;
 
         if (mod == Modifier.NEVER) {
-            int[] p = structureChecker.firstPosition(ctx, cx, cz, searchRadiusChunks, canonical);
+            int[] p = structureChecker.firstPositionPlacementOnly(ctx, cx, cz, searchRadiusChunks, canonical);
             return p == null ? StructureChecker.Result.notFound() : null;
         }
 
         if (mod == Modifier.FAR) {
-            List<int[]> pos = structureChecker.positions(ctx, cx, cz, chunks(FAR_MAX_BLOCKS), canonical);
+            List<int[]> pos = structureChecker.positionsPlacementOnly(ctx, cx, cz, chunks(FAR_MAX_BLOCKS), canonical);
             if (pos.isEmpty()) return null;
-            int nearest = Integer.MAX_VALUE;
-            for (int[] p : pos) nearest = Math.min(nearest, dist(p, cx, cz));
-            if (nearest < FAR_MIN_BLOCKS) return null;
-            return StructureChecker.Result.notFound();
+            int[] nearest = null;
+            int nearestDist = Integer.MAX_VALUE;
+            for (int[] p : pos) {
+                int d = dist(p, cx, cz);
+                if (d < nearestDist) { nearestDist = d; nearest = p; }
+            }
+            if (nearestDist < FAR_MIN_BLOCKS || nearest == null) return null;
+            return StructureChecker.Result.found(nearest[0], nearest[1], canonical);
         }
 
         if (mod == Modifier.SOME && !UNIQUE.contains(canonical)) {
-            List<int[]> pos = structureChecker.positions(ctx, cx, cz, searchRadiusChunks, canonical);
+            int effectiveBlocks = effectiveSomeBlocks(term.someCount);
+            int someChunks = chunks(effectiveBlocks);
+            List<int[]> pos = structureChecker.positions(ctx, cx, cz, someChunks, canonical);
             int count = 0;
             int[] best = null; int bestD = Integer.MAX_VALUE;
-            int limit = searchRadiusChunks * 16;
             for (int[] p : pos) {
                 int d = dist(p, cx, cz);
-                if (d <= limit) count++;
+                if (d <= effectiveBlocks) count++;
                 if (d < bestD) { bestD = d; best = p; }
             }
-            if (count < 2 || best == null) return null;
+            if (count < term.someCount || best == null) return null;
+            return StructureChecker.Result.found(best[0], best[1], canonical);
+        }
+
+        if (mod == Modifier.ONLY) {
+            int onlyChunks = chunks(ONLY_BLOCKS);
+            List<int[]> pos = structureChecker.positions(ctx, cx, cz, onlyChunks, canonical);
+            int count = 0;
+            int[] best = null; int bestD = Integer.MAX_VALUE;
+            for (int[] p : pos) {
+                int d = dist(p, cx, cz);
+                if (d <= ONLY_BLOCKS) count++;
+                if (d < bestD) { bestD = d; best = p; }
+            }
+            if (count != 1 || best == null) return null;
+            return StructureChecker.Result.found(best[0], best[1], canonical);
+        }
+
+        if (mod == Modifier.BETWEEN) {
+            int maxChunks = chunks(term.betweenMax);
+            List<int[]> pos = structureChecker.positionsPlacementOnly(ctx, cx, cz, maxChunks, canonical);
+            int[] best = null; int bestD = Integer.MAX_VALUE;
+            for (int[] p : pos) {
+                int d = dist(p, cx, cz);
+                if (d >= term.betweenMin && d <= term.betweenMax && d < bestD) {
+                    bestD = d;
+                    best = p;
+                }
+            }
+            if (best == null) return null;
             return StructureChecker.Result.found(best[0], best[1], canonical);
         }
 
@@ -200,15 +327,23 @@ public final class SeedValidator {
 
         int[] found = cachedFirstPosition(ctx, cx, cz, scanChunks, canonical);
         if (found == null) return null;
+
+        int distance = dist(found, cx, cz);
+        if (mod == Modifier.IN && distance > IN_ON_BLOCKS) return null;
+        if (mod == Modifier.NEAR && distance > NEAR_BLOCKS) return null;
+
+        LOGGER.warn("[SeedValidator] seed {} structure FOUND: {} @({},{}) center=({},{}) dist={} scanChunks={}",
+                ctx.seed, canonical, found[0], found[1], cx, cz, distance, scanChunks);
         return StructureChecker.Result.found(found[0], found[1], canonical);
     }
 
     private int[] cachedFirstPosition(WorldContext ctx, int cx, int cz,
-                                     int radiusChunks, String canonical) {
+                                      int radiusChunks, String canonical) {
+        evictStructureCacheIfNeeded();
         long base = ctx.seed & 0xFFFFFFFFFFFFL;
         Map<String, StructureChecker.Result> byStruct = structureCache
-                .computeIfAbsent(base, k -> new HashMap<>());
-        String key = canonical + "@" + radiusChunks;
+                .computeIfAbsent(base, k -> new java.util.concurrent.ConcurrentHashMap<>());
+        String key = canonical + "@" + radiusChunks + "@" + cx + "@" + cz;
         StructureChecker.Result cached = byStruct.get(key);
         if (cached != null) {
             return cached.found ? new int[]{cached.structureX, cached.structureZ} : null;
@@ -220,7 +355,7 @@ public final class SeedValidator {
         return found;
     }
 
-    private boolean evalSpawnTerm(WorldContext ctx, ParsedQuery.Term term, long seed) {
+    private boolean evalSpawnTerm(WorldContext ctx, int cx, int cz, ParsedQuery.Term term, long seed) {
         String requested = term.canonical;
         if ("any_solid".equals(requested)) return true;
 
@@ -228,7 +363,7 @@ public final class SeedValidator {
         if (predictor == null) return true;
         if (!predictor.isPossibleSurfaceBlock(requested)) return true;
 
-        String block = predictor.predict(ctx, seed);
+        String block = predictor.predict(ctx, cx, cz);
         if (block == null) return true;
         return requested.equals(block);
     }
@@ -242,7 +377,7 @@ public final class SeedValidator {
 
         if (biomeChecker instanceof VanillaBiomeChecker vbc && vbc.isUnderground(canonical)) {
             BiomeField f = fields.get(vbc.quartYFor(canonical));
-            return f != null && vbc.evalUnderground(f, canonical, mod, NEAR_BLOCKS, FAR_MIN_BLOCKS, FAR_MAX_BLOCKS);
+            return f != null && vbc.evalUnderground(f, canonical, mod, NEAR_BLOCKS, FAR_MIN_BLOCKS, FAR_MAX_BLOCKS, ctx, cx, cz);
         }
 
         if (!(biomeChecker instanceof VanillaBiomeChecker vbc)) return false;
@@ -261,6 +396,11 @@ public final class SeedValidator {
                 yield d >= 0;
             }
             case NEVER -> !f.exists(key, biomeRadiusChunks * 16);
+            case ONLY -> f.count(key, biomeRadiusChunks * 16) == 1;
+            case BETWEEN -> {
+                int d = f.nearestDistanceBlocks(key, term.betweenMin, term.betweenMax);
+                yield d >= term.betweenMin && d <= term.betweenMax;
+            }
             default -> f.exists(key, biomeRadiusChunks * 16);
         };
     }
@@ -278,8 +418,11 @@ public final class SeedValidator {
             int qy = vbc.quartYFor(canonical);
             int step = vbc.effectiveStep(qy);
             BiomeField f = biomeChecker.sampleField(ctx, cx, cz, qy, biomeTermRadiusChunks(term), step);
-            return vbc.evalUnderground(f, canonical, mod, NEAR_BLOCKS, FAR_MIN_BLOCKS, FAR_MAX_BLOCKS);
+            return vbc.evalUnderground(f, canonical, mod, NEAR_BLOCKS, FAR_MIN_BLOCKS, FAR_MAX_BLOCKS, ctx, cx, cz);
         }
+
+        int surfaceStep = (biomeChecker instanceof VanillaBiomeChecker vbc2)
+                ? vbc2.effectiveStep(VanillaBiomeChecker.SURFACE_Y >> 2) : 4;
 
         return switch (mod) {
             case IN -> biomeChecker.exists(ctx, cx, cz, chunks(IN_ON_BLOCKS), canonical);
@@ -290,6 +433,20 @@ public final class SeedValidator {
                 yield d >= FAR_MIN_BLOCKS && d <= FAR_MAX_BLOCKS;
             }
             case NEVER -> !biomeChecker.exists(ctx, cx, cz, biomeRadiusChunks, canonical);
+            case ONLY -> {
+                BiomeField f2 = biomeChecker.sampleField(ctx, cx, cz,
+                        VanillaBiomeChecker.SURFACE_Y >> 2, biomeRadiusChunks, surfaceStep);
+                ResourceKey<Biome> k2 = (biomeChecker instanceof VanillaBiomeChecker v) ? v.keyOf(canonical) : null;
+                yield k2 != null && f2.count(k2, biomeRadiusChunks * 16) == 1;
+            }
+            case BETWEEN -> {
+                int bRadius = biomeTermRadiusChunks(term);
+                BiomeField f2 = biomeChecker.sampleField(ctx, cx, cz,
+                        VanillaBiomeChecker.SURFACE_Y >> 2, bRadius, surfaceStep);
+                ResourceKey<Biome> k2 = (biomeChecker instanceof VanillaBiomeChecker v) ? v.keyOf(canonical) : null;
+                int d = k2 != null ? f2.nearestDistanceBlocks(k2, term.betweenMin, term.betweenMax) : -1;
+                yield d >= term.betweenMin && d <= term.betweenMax;
+            }
             default -> biomeChecker.exists(ctx, cx, cz, biomeRadiusChunks, canonical);
         };
     }
@@ -323,10 +480,11 @@ public final class SeedValidator {
 
     private int biomeTermRadiusChunks(ParsedQuery.Term term) {
         return switch (term.modifier) {
-            case IN -> chunks(IN_ON_BLOCKS);
-            case NEAR -> chunks(NEAR_BLOCKS);
-            case FAR -> chunks(FAR_MAX_BLOCKS);
-            default -> biomeRadiusChunks;
+            case IN      -> chunks(IN_ON_BLOCKS);
+            case NEAR    -> chunks(NEAR_BLOCKS);
+            case FAR     -> chunks(FAR_MAX_BLOCKS);
+            case BETWEEN -> chunks(term.betweenMax);
+            default      -> biomeRadiusChunks;
         };
     }
 

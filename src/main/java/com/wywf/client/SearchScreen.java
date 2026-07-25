@@ -2,16 +2,19 @@ package com.wywf.client;
 
 import com.wywf.WYWFClient;
 import com.wywf.core.*;
-import com.wywf.core.ConfigStore;
 import com.wywf.search.SeedSearcher;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.StringWidget;
+import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
 import net.minecraft.network.chat.Component;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -29,8 +32,11 @@ public final class SearchScreen extends Screen {
     private long lastCheckedSeeds = 0;
     private long lastUpdateSpeed = 0;
 
+    private final List<StringWidget> textWidgets = new ArrayList<>();
+    private ProgressBarWidget progressBar;
+
     public SearchScreen(CreateWorldScreen parentScreen, String queryText, ParsedQuery parsedQuery, SearchConfig config) {
-        super(Minecraft.getInstance(), Minecraft.getInstance().font, Component.literal("Seed Search"));
+        super(Component.literal("Seed Search"));
         this.parentScreen = parentScreen;
         this.queryText    = queryText;
         this.parsedQuery  = parsedQuery;
@@ -40,6 +46,14 @@ public final class SearchScreen extends Screen {
     @Override
     protected void init() {
         int cx = this.width / 2;
+        textWidgets.clear();
+
+        for (int i = 0; i < 16; i++) {
+            addTextLine("");
+        }
+
+        progressBar = new ProgressBarWidget(cx - 161, 0, 322, 10);
+        this.addRenderableWidget(progressBar);
 
         this.addRenderableWidget(Button.builder(Component.literal("Cancel"), b -> {
             WYWFClient.searcher().cancel();
@@ -47,6 +61,13 @@ public final class SearchScreen extends Screen {
         }).bounds(cx - 75, this.height - 40, 150, 20).build());
 
         startSearch();
+    }
+
+    private void addTextLine(String text) {
+        StringWidget w = new StringWidget(0, 0, this.width, 12,
+                Component.literal(text), this.font);
+        textWidgets.add(w);
+        this.addRenderableWidget(w);
     }
 
     @Override
@@ -58,7 +79,7 @@ public final class SearchScreen extends Screen {
         WYWFClient.applyQueryLanguage(config.queryLanguage());
         SeedSearcher searcher = WYWFClient.searcher();
         if (searcher.isRunning()) {
-            WYWFClient.LOGGER.warn("Search already running, ignoring start");
+            WYWFClient.LOGGER.info("Search already running, ignoring start");
             return;
         }
 
@@ -69,8 +90,20 @@ public final class SearchScreen extends Screen {
     }
 
     private void onSearchFinished(SearchResult result) {
-        WYWFClient.LOGGER.info("Found seed: {}", result);
-        WYWFClient.worldCreator().create(result, queryText, parentScreen);
+        WYWFClient.LOGGER.info("Search finished: {}", result);
+
+        List<SearchResult> candidates = WYWFClient.searcher().candidates();
+        String reason = (result != null) ? result.stopReason : null;
+        boolean limitReached = reason != null && reason.contains("limit reached");
+
+        if (limitReached || result == null || result.primaryDescription == null) {
+            if (reason == null) reason = "search complete \u2014 no matching seeds found";
+            SearchLimitReachedScreen screen = new SearchLimitReachedScreen(
+                    parentScreen, queryText, parsedQuery, config, reason, candidates);
+            Minecraft.getInstance().setScreenAndShow(screen);
+        } else {
+            WYWFClient.worldCreator().create(result, queryText, parentScreen);
+        }
     }
 
     @Override
@@ -89,6 +122,94 @@ public final class SearchScreen extends Screen {
             lastCheckedSeeds = lastSnapshot.checkedSeeds();
             lastUpdateTime = now;
         }
+
+        rebuildTextLines();
+    }
+
+    private void rebuildTextLines() {
+        int cx = this.width / 2;
+        int y = 30;
+        int idx = 0;
+
+        idx = setTextLine(idx, "\u00a7l\u00a7nSeed Search\u00a7r", cx, y); y += 18;
+        idx = setTextLine(idx, "\u00a77Query:\u00a7r \u00a7e" + truncate(queryText, 60), cx, y); y += 14;
+
+        if (parsedQuery != null) {
+            idx = setTextLine(idx, "\u00a78" + parsedQuery, cx, y); y += 14;
+        }
+        y += 8;
+
+        if (lastSnapshot == null) {
+            setTextLine(idx, "Preparing...", cx, y);
+            if (progressBar != null) progressBar.setVisible(false);
+            return;
+        }
+
+        long checked = lastSnapshot.checkedSeeds();
+        long maxSeeds = config.maxSeedsToCheck();
+
+        if (progressBar != null) {
+            progressBar.setVisible(true);
+            progressBar.setX(cx - 161);
+            progressBar.setY(y);
+        }
+        y += 18;
+
+        idx = setTextLine(idx, "\u00a77Checked seeds:\u00a7f " + formatNumber(checked)
+                + "        \u00a77Discarded:\u00a7f " + formatNumber(lastSnapshot.discardedSeeds()), cx, y);
+        y += 14;
+
+        idx = setTextLine(idx, "\u00a77Threads:\u00a7f " + lastSnapshot.threads()
+                + "        \u00a77Time:\u00a7f " + formatTime(lastSnapshot.elapsedMs()), cx, y);
+        y += 14;
+
+        idx = setTextLine(idx, "\u00a77Speed:\u00a7f " + formatNumber(lastUpdateSpeed) + "/s"
+                + "        \u00a77Average:\u00a7f " + formatNumber(lastSnapshot.seedsPerSecond()) + "/s", cx, y);
+        y += 14;
+
+        int cpuUsage = estimateCpuUsage();
+        idx = setTextLine(idx, "\u00a77CPU:\u00a7f " + cpuUsage + "%"
+                + "        \u00a77Seed limit:\u00a7f " + formatNumber(maxSeeds), cx, y);
+        y += 20;
+
+        SearchResult best = lastCandidate();
+        if (best != null) {
+            String header = "\u00a7a\u2713 " + best.seed
+                    + " @ (" + best.centerX + ", " + best.centerZ + ")";
+            if (best.stopReason != null && !best.stopReason.isBlank()) {
+                header += "  \u00a78[" + best.stopReason + "]";
+            }
+            idx = setTextLine(idx, header, cx, y); y += 12;
+
+            if (!best.matchedStructures.isEmpty()) {
+                idx = setTextLine(idx, "\u00a77structures:\u00a7f " + String.join(", ", best.matchedStructures), cx, y);
+                y += 12;
+            }
+            if (!best.matchedBiomes.isEmpty()) {
+                idx = setTextLine(idx, "\u00a77biomes:\u00a7f " + String.join(", ", best.matchedBiomes), cx, y);
+                y += 12;
+            }
+        } else if (lastSnapshot.finished()) {
+            idx = setTextLine(idx, "\u00a7cNo matching seed found.", cx, y); y += 12;
+        } else {
+            idx = setTextLine(idx, "\u00a77Searching candidates...", cx, y); y += 12;
+        }
+
+        if (parsedQuery != null && !parsedQuery.ignoredWords().isEmpty()) {
+            setTextLine(idx, "\u00a7eUnknown words ignored:\u00a7f " + String.join(", ", parsedQuery.ignoredWords()), cx, this.height - 60);
+        }
+    }
+
+    private int setTextLine(int idx, String text, int cx, int y) {
+        if (idx < textWidgets.size()) {
+            StringWidget w = textWidgets.get(idx);
+            w.setMessage(Component.literal(text));
+            w.setY(y);
+            int tw = this.font.width(text);
+            w.setWidth(tw);
+            w.setX(cx - tw / 2);
+        }
+        return idx + 1;
     }
 
     private SearchResult lastCandidate() {
@@ -97,115 +218,8 @@ public final class SearchScreen extends Screen {
     }
 
     @Override
-    public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
-        super.extractRenderState(g, mouseX, mouseY, partialTick);
-
-        Font font = this.font;
-        int cx = this.width / 2;
-        int y  = 30;
-
-        g.centeredText(font, Component.literal("§l§nSeed Search§r"), cx, y, 0xFFFFFF);
-        y += 18;
-
-        g.centeredText(font, Component.literal("§7Query:§r §e" + truncate(queryText, 60)), cx, y, 0xFFFFFF);
-        y += 14;
-
-        if (parsedQuery != null) {
-            g.centeredText(font, Component.literal("§8" + parsedQuery), cx, y, 0xAAAAAA);
-            y += 14;
-        }
-
-        y += 8;
-
-        if (lastSnapshot == null) {
-            g.centeredText(font, Component.literal("Preparing..."), cx, y, 0xCCCCCC);
-            return;
-        }
-
-        long checked = lastSnapshot.checkedSeeds();
-        long maxSeeds = config.maxSeeds();
-        int barWidth = 320;
-        int barX = cx - barWidth / 2;
-        int barY = y;
-
-        g.fill(barX - 1, barY - 1, barX + barWidth + 1, barY + 11, 0xFF404040);
-        g.fill(barX, barY, barX + barWidth, barY + 10, 0xFF202020);
-
-        if (config.unbounded()) {
-            if (!lastSnapshot.finished()) {
-                int segW = barWidth / 4;
-                int travel = barWidth + segW;
-                int pos = (int) ((System.currentTimeMillis() / 8) % travel) - segW;
-                int segStart = Math.max(barX, barX + pos);
-                int segEnd = Math.min(barX + barWidth, barX + pos + segW);
-                if (segEnd > segStart) g.fill(segStart, barY, segEnd, barY + 10, 0xFF00AA00);
-            }
-        } else {
-            double ratio = maxSeeds > 0 ? (double) checked / maxSeeds : 0;
-            if (ratio > 1) ratio = 1;
-            int filled = (int) (barWidth * ratio);
-            g.fill(barX, barY, barX + filled, barY + 10, 0xFF00AA00);
-        }
-
-        y += 18;
-
-        int leftCol = cx - 160;
-        int rightCol = cx + 20;
-        int rowH = 14;
-
-        drawRow(g, leftCol, y,  "Checked seeds:",   formatNumber(checked));
-        drawRow(g, rightCol, y, "Discarded:",       formatNumber(lastSnapshot.discardedSeeds()));
-        y += rowH;
-
-        drawRow(g, leftCol, y,  "Threads:",         String.valueOf(lastSnapshot.threads()));
-        drawRow(g, rightCol, y, "Time:",            formatTime(lastSnapshot.elapsedMs()));
-        y += rowH;
-
-        drawRow(g, leftCol, y,  "Speed:",           formatNumber(lastUpdateSpeed) + "/s");
-        drawRow(g, rightCol, y, "Average:",         formatNumber(lastSnapshot.seedsPerSecond()) + "/s");
-        y += rowH;
-
-        int cpuUsage = estimateCpuUsage();
-        drawRow(g, leftCol, y,  "CPU:",             cpuUsage + "%");
-        drawRow(g, rightCol, y, "Seed limit:",      config.unbounded() ? "\u221e" : formatNumber(maxSeeds));
-        y += rowH + 6;
-
-        SearchResult best = lastCandidate();
-        String candidateText;
-        if (best != null) {
-            StringBuilder sb = new StringBuilder();
-            sb.append("§a✓ ").append(best.seed)
-              .append(" @ (").append(best.centerX).append(", ").append(best.centerZ).append(")");
-            if (best.stopReason != null && !best.stopReason.isBlank()) {
-                sb.append("  §8[").append(best.stopReason).append("]");
-            }
-            if (!best.matchedStructures.isEmpty()) {
-                sb.append("\n§7structures: §f").append(String.join(", ", best.matchedStructures));
-            }
-            if (!best.matchedBiomes.isEmpty()) {
-                sb.append("\n§7biomes: §f").append(String.join(", ", best.matchedBiomes));
-            }
-            candidateText = sb.toString();
-        } else if (lastSnapshot.finished()) {
-            candidateText = "§cNo matching seed found.";
-        } else {
-            candidateText = "§7Searching candidates...";
-        }
-        for (String line : candidateText.split("\n")) {
-            g.centeredText(font, Component.literal(line), cx, y, 0xFFFFFF);
-            y += 12;
-        }
-
-        if (parsedQuery != null && !parsedQuery.ignoredWords().isEmpty()) {
-            g.centeredText(font,
-                    Component.literal("§eUnknown words ignored: §f" + String.join(", ", parsedQuery.ignoredWords())),
-                    cx, this.height - 60, 0xFFFFFF);
-        }
-    }
-
-    private void drawRow(GuiGraphicsExtractor g, int x, int y, String label, String value) {
-        g.text(this.font, Component.literal("§7" + label), x, y, 0xAAAAAA);
-        g.text(this.font, Component.literal("§f" + value), x + 110, y, 0xFFFFFF);
+    public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        super.render(g, mouseX, mouseY, partialTick);
     }
 
     private int estimateCpuUsage() {
@@ -232,9 +246,51 @@ public final class SearchScreen extends Screen {
 
     private static String truncate(String s, int max) {
         if (s == null) return "";
-        return s.length() <= max ? s : s.substring(0, max - 1) + "…";
+        return s.length() <= max ? s : s.substring(0, max - 1) + "\u2026";
     }
 
     @Override
     public boolean shouldCloseOnEsc() { return false; }
+
+    private final class ProgressBarWidget extends AbstractWidget {
+        private boolean visible = true;
+
+        ProgressBarWidget(int x, int y, int width, int height) {
+            super(x, y, width, height, Component.empty());
+        }
+
+        void setVisible(boolean v) { this.visible = v; }
+
+        @Override
+        public void renderWidget(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+            if (!visible || lastSnapshot == null) return;
+
+            int x = this.getX();
+            int y = this.getY();
+            int barWidth = this.getWidth();
+            long checked = lastSnapshot.checkedSeeds();
+            long maxSeeds = config.maxSeedsToCheck();
+
+            g.fill(x - 1, y - 1, x + barWidth + 1, y + 11, 0xFF404040);
+            g.fill(x, y, x + barWidth, y + 10, 0xFF202020);
+
+            if (lastSnapshot.finished()) {
+                double ratio = maxSeeds > 0 ? (double) checked / maxSeeds : 0;
+                if (ratio > 1) ratio = 1;
+                int filled = (int) (barWidth * ratio);
+                g.fill(x, y, x + filled, y + 10, 0xFF00AA00);
+            } else {
+                int segW = barWidth / 4;
+                int travel = barWidth + segW;
+                int pos = (int) ((System.currentTimeMillis() / 8) % travel) - segW;
+                int segStart = Math.max(x, x + pos);
+                int segEnd = Math.min(x + barWidth, x + pos + segW);
+                if (segEnd > segStart) g.fill(segStart, y, segEnd, y + 10, 0xFF00AA00);
+            }
+        }
+
+        @Override
+        protected void updateWidgetNarration(NarrationElementOutput output) {
+        }
+    }
 }

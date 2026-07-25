@@ -4,6 +4,7 @@ package com.wywf.core;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import com.wywf.core.Modifier;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -123,5 +124,89 @@ class QueryParserTest {
         ParsedQuery q = parser.parse("village on sand");
         assertTrue(q.structures().contains("minecraft:village"));
         assertTrue(q.spawns().contains("minecraft:sand"));
+    }
+
+    @Test
+    void abbreviationSuggestion_mnsn_mansion() {
+        KeywordDictionary dict = new KeywordDictionary();
+        assertEquals("mansion", dict.findSuggestion("mnsn"));
+    }
+
+    @Test
+    void abbreviationSuggestion_vllg_village() {
+        KeywordDictionary dict = new KeywordDictionary();
+        assertEquals("village", dict.findSuggestion("vllg"));
+    }
+
+    @Test
+    void abbreviationSuggestion_vallage_village() {
+        KeywordDictionary dict = new KeywordDictionary();
+        assertEquals("village", dict.findSuggestion("vallage"));
+    }
+
+    @Test
+    void abbreviationSuggestion_dsrt_desert() {
+        KeywordDictionary dict = new KeywordDictionary();
+        assertEquals("desert", dict.findSuggestion("dsrt"));
+    }
+
+    @Test
+    void abbreviationSuggestion_dsert_desert() {
+        KeywordDictionary dict = new KeywordDictionary();
+        assertEquals("desert", dict.findSuggestion("dsert"));
+    }
+
+    @Test
+    void abbreviationSuggestion_tooShortIgnored() {
+        KeywordDictionary dict = new KeywordDictionary();
+        assertNull(dict.findSuggestion("a"));
+        assertNull(dict.findSuggestion("ab"));
+    }
+
+    @Test
+    void abbreviationSuggestion_tooManyConsonantsIgnored() {
+        KeywordDictionary dict = new KeywordDictionary();
+        assertNull(dict.findSuggestion("vldajndakndage"));
+    }
+
+    @Test
+    void mansionAutoAddsDarkForest() {
+        ParsedQuery q = parser.parse("mansion");
+        assertTrue(q.structures().contains("minecraft:mansion"));
+        assertTrue(q.biomes().contains("minecraft:dark_forest"));
+    }
+
+    @Test
+    void desertPyramidAutoAddsDesert() {
+        ParsedQuery q = parser.parse("desert pyramid");
+        assertTrue(q.structures().contains("minecraft:desert_pyramid"));
+        assertTrue(q.biomes().contains("minecraft:desert"));
+    }
+
+    @Test
+    void swampHutAutoAddsSwamp() {
+        ParsedQuery q = parser.parse("swamp hut");
+        assertTrue(q.structures().contains("minecraft:swamp_hut"));
+        assertTrue(q.biomes().contains("minecraft:swamp"));
+    }
+
+    @Test
+    void explicitBiomeOverridesImplicit() {
+        ParsedQuery q = parser.parse("dark forest mansion");
+        assertTrue(q.structures().contains("minecraft:mansion"));
+        assertTrue(q.biomes().contains("minecraft:dark_forest"));
+    }
+
+    @Test
+    void villageDoesNotAutoAddBiome() {
+        ParsedQuery q = parser.parse("village");
+        assertTrue(q.structures().contains("minecraft:village"));
+        assertTrue(q.biomes().isEmpty());
+    }
+
+    @Test
+    void danglingModifierNotAppliedToNextWord() {
+        ParsedQuery q = parser.parse("near xyz village");
+        assertEquals(Modifier.DEFAULT, q.terms().get(0).modifier, () -> q.terms().toString());
     }
 }

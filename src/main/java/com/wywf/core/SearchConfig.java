@@ -9,21 +9,36 @@ public final class SearchConfig {
         MAX
     }
 
+    public enum SearchCenter {
+        ORIGIN,
+        SPAWN,
+        BOTH
+    }
+
     public static final long UNBOUNDED = Long.MAX_VALUE;
+
+    public static final int MIN_TIME_LIMIT_MINUTES = 5;
+    public static final int DEFAULT_TIME_LIMIT_MINUTES = 30;
+    public static final long MIN_MAX_SEEDS = 1_000_000;
+    public static final long DEFAULT_MAX_SEEDS = 10_000_000;
+    public static final long ABSOLUTE_MAX_SEEDS = 100_000_000_000L;
 
     private Mode mode = Mode.MAX;
     private int manualThreads = 0;
     private int searchRadiusChunks = 40;
     private int biomeCheckRadiusChunks = 16;
     private int biomeSampleStepChunks = 4;
-    private long maxSeeds = UNBOUNDED;
-    private long timeLimitMs = 0L;
+    private int timeLimitMinutes = DEFAULT_TIME_LIMIT_MINUTES;
+    private long maxSeedsToCheck = DEFAULT_MAX_SEEDS;
+    private boolean infiniteSeeds = false;
     private int candidatesToCollect = 8;
     private int minCandidates = 3;
     private int candidateRampDownSeconds = 10;
     private boolean randomizeStart = true;
     private boolean stopAtFirstCandidate = false;
+    private boolean sortCandidatesByDistance = false;
     private KeywordDictionary.Lang queryLanguage = KeywordDictionary.Lang.EN;
+    private SearchCenter searchCenter = SearchCenter.SPAWN;
 
     public SearchConfig() {}
 
@@ -56,13 +71,23 @@ public final class SearchConfig {
     public int biomeSampleStepChunks()               { return Math.max(1, biomeSampleStepChunks); }
     public SearchConfig biomeSampleStepChunks(int v) { this.biomeSampleStepChunks = v; return this; }
 
-    public long maxSeeds()                  { return maxSeeds; }
-    public SearchConfig maxSeeds(long v)    { this.maxSeeds = v; return this; }
+    /** Time limit in minutes. Minimum 5, default 30. */
+    public int timeLimitMinutes()                     { return timeLimitMinutes; }
+    public SearchConfig timeLimitMinutes(int v)       { this.timeLimitMinutes = Math.max(MIN_TIME_LIMIT_MINUTES, v); return this; }
 
-    public boolean unbounded()              { return maxSeeds >= UNBOUNDED; }
+    /** Time limit converted to milliseconds. */
+    public long timeLimitMs()                         { return (long) timeLimitMinutes * 60_000L; }
 
-    public long timeLimitMs()               { return timeLimitMs; }
-    public SearchConfig timeLimitMs(long v) { this.timeLimitMs = v; return this; }
+    /** Max seeds to check. Minimum 1M, default 10M. */
+    public long maxSeedsToCheck()                     { return infiniteSeeds ? UNBOUNDED : maxSeedsToCheck; }
+    public SearchConfig maxSeedsToCheck(long v)       { this.maxSeedsToCheck = Math.max(MIN_MAX_SEEDS, Math.min(ABSOLUTE_MAX_SEEDS, v)); return this; }
+
+    /** Raw max seeds value (ignoring infinite flag). */
+    public long rawMaxSeedsToCheck()                  { return maxSeedsToCheck; }
+
+    /** When true, seed limit is ignored — search runs until time limit or candidates found. */
+    public boolean infiniteSeeds()                     { return infiniteSeeds; }
+    public SearchConfig infiniteSeeds(boolean v)       { this.infiniteSeeds = v; return this; }
 
     public int candidatesToCollect()                 { return candidatesToCollect; }
     public SearchConfig candidatesToCollect(int v)   { this.candidatesToCollect = Math.max(1, v); return this; }
@@ -97,7 +122,16 @@ public final class SearchConfig {
     public boolean stopAtFirstCandidate()                  { return stopAtFirstCandidate; }
     public SearchConfig stopAtFirstCandidate(boolean v)    { this.stopAtFirstCandidate = v; return this; }
 
+    /** When true the final candidate is chosen by distance to the nearest structure
+     *  (closest first), rather than randomly. Defaults to false. */
+    public boolean sortCandidatesByDistance()                  { return sortCandidatesByDistance; }
+    public SearchConfig sortCandidatesByDistance(boolean v)    { this.sortCandidatesByDistance = v; return this; }
+
     /** Which synonym language the query parser uses. AUTO merges EN + RU. */
     public KeywordDictionary.Lang queryLanguage()                 { return queryLanguage; }
     public SearchConfig queryLanguage(KeywordDictionary.Lang v)   { this.queryLanguage = (v == null) ? KeywordDictionary.Lang.AUTO : v; return this; }
+
+    /** Where to center structure/biome checks: origin (0,0), approximate spawn, or both. */
+    public SearchCenter searchCenter()                 { return searchCenter; }
+    public SearchConfig searchCenter(SearchCenter v)   { this.searchCenter = (v == null) ? SearchCenter.ORIGIN : v; return this; }
 }

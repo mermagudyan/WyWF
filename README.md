@@ -1,22 +1,41 @@
 # What you Want to Find (WyWF)
 
-A client-side Fabric mod for Minecraft 26.x that turns the **Seed** field in the world-creation screen into a
+A client-side Fabric mod for Minecraft 1.21.x that turns the **Seed** field in the world-creation screen into a
 natural-language search bar. Instead of a number, you describe the world you want
 and the mod searches for a seed that matches — fully offline, without generating
 chunks.
+
+## Version compatibility
+
+<table>
+<tr><th rowspan="2">Minecraft version</th><th colspan="4" style="text-align:center">Version of mod</th></tr>
+<tr><th>1.3.x</th><th>1.2.x</th><th>1.1.x</th><th>1.0.x</th></tr>
+<tr><td>1.16.5</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>1.17.1</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>1.18.2</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>1.19.2</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>1.20.1</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>1.20.4</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>1.21.1</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>1.21.5</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>1.21.11</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>26.1</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+<tr><td>26.1.2</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+<tr><td>26.2</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+</table>
+
+Each MC version has its own jar — pick the one matching your Minecraft version.
 
 ## What it does
 
 Type a description into the Seed field, for example:
 
 ```
-village near warm ocean
-деревня возле теплого океана
-mansion dark forest
-desert temple in desert
-near deep dark
-spawn on sand
-на блоке песок
+village near warm ocean       mansion dark forest
+desert temple in desert       near deep dark
+spawn on sand                 some 4 village
+never plains village          only desert pyramid
+between 500 to 800 village   spawn on any solid
 ```
 
 When you press **Create New World**, the mod:
@@ -34,15 +53,17 @@ Keywords are recognized in **Russian and English**.
 
 A query is a list of keywords, each optionally preceded by a modifier:
 
-| Modifier (EN / RU)                     | Meaning                                   |
-|----------------------------------------|-------------------------------------------|
-| *(none)*                               | present within the default radius         |
-| `near` / рядом, около, возле…          | within ~200 blocks                        |
-| `in` / в, на…                         | within ~64 blocks (right where you spawn) |
-| `far` / далеко, вдали…                 | far away (~1000–2000 blocks)              |
-| `some` / несколько, много…             | several of them nearby (structures)       |
-| `under` / под, снизу                   | the surface biome at that spot            |
-| `no`, `not`, `without` / нет, не, без  | must **not** be present                   |
+| Modifier (EN / RU)                            | Meaning                                                                                                                                 |
+|-----------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------|
+| *(none)*                                      | present within the default radius                                                                                                       |
+| `near` / рядом, около, возле…                 | within ~200 blocks                                                                                                                      |
+| `in` / в, на…                                 | within ~64 blocks (right where you spawn)                                                                                               |
+| `far` / далеко, вдали…                        | far away (~500–1000 blocks)                                                                                                             |
+| `some N` / несколько, много…                  | N or more structures nearby (if the number of structures is not specified (i.e., N structures), it searches for 2 structures by default |
+| `only` / только, лишь, одна…                  | exactly one structure nearby (~500 blocks)                                                                                              |
+| `between x1 to x2 (x1..x2)` / между, от…      | structure within a distance range                                                                                                       |
+| `under` / под, снизу                          | the surface biome at that spot                                                                                                          |
+| `no`, `not`, `without` `never` / нет, не, без | must **not** be present (~500-1000 blocks)                                                                                              |
 
 Keywords fall into four categories:
 
@@ -129,6 +150,9 @@ Defaults (`SearchConfig`):
   (`minCandidates`, `candidateRampDownSeconds`).
 - Start position: randomized across the 48-bit space by default
   (`randomizeStart`), so a re-run over the same query explores different seeds.
+- Search center: `ORIGIN` (default), `SPAWN`, or `BOTH` — structures/biomes
+  are checked at origin `(0, 0)`, approximate world spawn, or both (first
+  match wins).
 
 ## Example: a seed found by WyWF
 
@@ -157,8 +181,6 @@ Copy-paste the seed:
 
 ## Limitations
 
-- **Strongholds are not supported.** They use concentric-ring placement, which
-  this mod does not compute yet — stronghold queries won't match.
 - **Objects** (`tree`, `water`, `lava`) are recognized but not searched.
 - Matches are found around the origin `(0, 0)`; the world spawn is not moved.
 
@@ -183,7 +205,7 @@ Copy-paste the seed:
   (`gradlew` / `gradlew.bat`), which downloads the correct Gradle version
   automatically.
 - **Internet access on the first build.** Fabric Loom downloads Minecraft
-  26.2, the Yarn mappings, Fabric Loader and Fabric API and caches them under
+  1.21.11, the Yarn mappings, Fabric Loader and Fabric API and caches them under
   `~/.gradle` / `.gradle`. Later builds are offline-friendly.
 
 ### Commands
@@ -217,7 +239,7 @@ dependency, so it works out of the box.
 The built mod jar is written to:
 
 ```
-build/libs/wywf-1.1.0+26.1.jar
+build/libs/wywf-1.3.0+1.21.x.jar
 ```
 
 (the name is `<archives_base_name>-<mod_version>.jar`, taken from
@@ -233,7 +255,7 @@ build/libs/wywf-1.1.0+26.1.jar
 
 ## Installation
 
-1. Install Fabric Loader 0.19+ for Minecraft 26.x (tested on 26.2) and Fabric API.
+1. Install Fabric Loader 0.19+ for Minecraft 1.21.x (tested on 1.21.11) and Fabric API.
 2. Drop the jar into your `mods/` folder.
 
 ## Extending the dictionary

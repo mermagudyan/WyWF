@@ -15,17 +15,21 @@
   "environment": "client",
   "accessWidener": "wywf.accesswidener",
   "entrypoints": {
-    "client": ["com.wywf.WYWFClient"]
+    "client": ["com.wywf.WYWFClient"],
+    "modmenu": ["com.wywf.client.ModMenuIntegration"]
   },
   "mixins": [
     "wywf.mixins.json",
     "wywf.client.mixins.json"
   ],
   "depends": {
-    "fabricloader": ">=0.19.0",
-    "minecraft": ">=26.0 <27",
-    "java": ">=25",
+    "fabricloader": ">=0.18.0",
+    "minecraft": ">=1.21.1 <1.22",
+    "java": ">=21",
     "fabric-api": "*"
   },
-  "suggests": {}
+  "suggests": {
+    "modmenu": "*",
+    "yet-another-config-lib": "*"
+  }
 }

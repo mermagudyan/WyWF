@@ -5,7 +5,6 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.util.KeyDispatchDataCodec;
 import net.minecraft.util.RandomSource;
-import net.minecraft.world.level.biome.Climate;
 import net.minecraft.world.level.levelgen.DensityFunction;
 import net.minecraft.world.level.levelgen.DensityFunctions;
 import net.minecraft.world.level.levelgen.LegacyRandomSource;
@@ -23,52 +22,39 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * A {@link Climate.Sampler} whose density-function graph is built <b>once</b> and
- * reused across seeds. The 73% of per-seed construction cost that vanilla spends
- * rebuilding the (seed-independent) wrapper graph is paid a single time; only the
- * six {@link NormalNoise} leaves are recreated per seed via {@link #reseed(long)}.
+ * Wraps the {@code finalDensity} density function from vanilla's NoiseRouter
+ * to compute terrain height at arbitrary (x, z) coordinates. Uses the same
+ * mutable-noise-leaf pattern as {@link ReusableClimateSampler} so the expensive
+ * graph is built once and only noise leaves are reseeded per seed.
  *
- * <p>The graph is produced from vanilla's overworld climate density functions with
- * only the noise-reading leaves ({@code ShiftA}, {@code ShiftB}, {@code ShiftedNoise})
- * swapped for the mutable-noise versions below; all other nodes are the genuine
- * vanilla implementations, so sampled values are bit-identical to a real
- * {@code RandomState} (verified by {@code ReusableClimateSamplerTest}).
- *
- * <p><b>Not thread-safe:</b> the noise leaves are mutated by {@link #reseed(long)},
- * so each searcher thread must own its own instance.
+ * <p><b>Not thread-safe:</b> each searcher thread must own its own instance.
  */
-final class ReusableClimateSampler {
+final class ReusableTerrainSampler {
 
     private final NoiseGeneratorSettings settings;
     private final HolderGetter<NormalNoise.NoiseParameters> noises;
     private final List<Slot> slots;
-    private final Climate.Sampler sampler;
+    private final DensityFunction finalDensity;
+    private final int minY;
+    private final int maxY;
     private long currentSeed;
     private boolean seeded;
 
-    ReusableClimateSampler(NoiseGeneratorSettings settings,
+    ReusableTerrainSampler(NoiseGeneratorSettings settings,
                            HolderGetter<NormalNoise.NoiseParameters> noises) {
         this.settings = settings;
         this.noises = noises;
         this.slots = new ArrayList<>();
 
-        // One-time build using seed 0 so parent nodes can compute (seed-independent) maxValue.
         Builder builder = new Builder(0L, settings, noises, slots);
         NoiseRouter r = settings.noiseRouter();
-        this.sampler = new Climate.Sampler(
-                r.temperature().mapAll(builder),
-                r.vegetation().mapAll(builder),
-                r.continents().mapAll(builder),
-                r.erosion().mapAll(builder),
-                r.depth().mapAll(builder),
-                r.ridges().mapAll(builder),
-                settings.spawnTarget());
+        this.finalDensity = r.finalDensity().mapAll(builder);
+
+        net.minecraft.world.level.levelgen.NoiseSettings ns = settings.noiseSettings();
+        this.minY = ns.minY();
+        this.maxY = ns.minY() + ns.height();
         this.currentSeed = 0L;
         this.seeded = true;
-    }
-
-    Climate.Sampler sampler() {
-        return sampler;
     }
 
     void reseed(long seed) {
@@ -84,15 +70,24 @@ final class ReusableClimateSampler {
         seeded = true;
     }
 
+    /**
+     * Compute terrain height at (blockX, blockZ) by scanning downward
+     * from maxY. Returns the Y of the highest solid block (density > 0).
+     */
+    int computeHeight(int blockX, int blockZ) {
+        for (int y = maxY; y >= minY; y--) {
+            if (finalDensity.compute(new DensityFunction.SinglePointContext(blockX, y, blockZ)) > 0.0) {
+                return y;
+            }
+        }
+        return minY;
+    }
+
     private interface Slot {
         ResourceKey<NormalNoise.NoiseParameters> key();
         void setNoise(NormalNoise noise);
     }
 
-    /**
-     * Wires noises (like vanilla's {@code NoiseWiringHelper}) and, in {@link #apply},
-     * replaces the three noise-reading leaf types with mutable-noise equivalents.
-     */
     private static final class Builder implements DensityFunction.Visitor {
         private final Map<DensityFunction, DensityFunction> wrapped = new HashMap<>();
         private final Map<ResourceKey<NormalNoise.NoiseParameters>, NormalNoise> instances =
@@ -117,22 +112,13 @@ final class ReusableClimateSampler {
         }
 
         private NormalNoise getOrCreateNoise(ResourceKey<NormalNoise.NoiseParameters> key) {
-            return instances.computeIfAbsent(key, k -> Noises.instantiate(noises, random, k));
+            return instances.computeIfAbsent(key, k ->
+                    Noises.instantiate(noises, random, k));
         }
 
         @Override
         public DensityFunction.NoiseHolder visitNoise(DensityFunction.NoiseHolder noiseHolder) {
             var data = noiseHolder.noiseData();
-            // TODO: In 1.21.x, Noises.TEMPERATURE_NETHER / VEGETATION_NETHER may not exist.
-            // If they do, uncomment these blocks to use legacy nether biome noise.
-            // if (data.is(Noises.TEMPERATURE_NETHER)) {
-            //     return new DensityFunction.NoiseHolder(data,
-            //             NormalNoise.createLegacyNetherBiome(newLegacyInstance(0L), data.value()));
-            // }
-            // if (data.is(Noises.VEGETATION_NETHER)) {
-            //     return new DensityFunction.NoiseHolder(data,
-            //             NormalNoise.createLegacyNetherBiome(newLegacyInstance(1L), data.value()));
-            // }
             ResourceKey<NormalNoise.NoiseParameters> key = data.unwrapKey().orElseThrow();
             return new DensityFunction.NoiseHolder(data, getOrCreateNoise(key));
         }
@@ -174,98 +160,72 @@ final class ReusableClimateSampler {
         }
     }
 
-    // ---- mutable-noise leaves (replicate vanilla ShiftA / ShiftB / ShiftedNoise) ----
-
     private static final class MutShiftA implements DensityFunction, Slot {
         private final ResourceKey<NormalNoise.NoiseParameters> key;
         private NormalNoise noise;
-
         MutShiftA(ResourceKey<NormalNoise.NoiseParameters> key, NormalNoise noise) {
-            this.key = key;
-            this.noise = noise;
+            this.key = key; this.noise = noise;
         }
-
         @Override public ResourceKey<NormalNoise.NoiseParameters> key() { return key; }
         @Override public void setNoise(NormalNoise n) { this.noise = n; }
-
         @Override public double compute(DensityFunction.FunctionContext c) {
             return noise.getValue(c.blockX() * 0.25, 0.0, c.blockZ() * 0.25) * 4.0;
         }
-        @Override public void fillArray(double[] array, DensityFunction.ContextProvider provider) {
-            provider.fillAllDirectly(array, this);
-        }
+        @Override public void fillArray(double[] array, DensityFunction.ContextProvider p) { p.fillAllDirectly(array, this); }
         @Override public DensityFunction mapAll(DensityFunction.Visitor visitor) { return this; }
         @Override public double minValue() { return -maxValue(); }
         @Override public double maxValue() { return noise.maxValue() * 4.0; }
         @Override public KeyDispatchDataCodec<? extends DensityFunction> codec() {
-            throw new UnsupportedOperationException("wywf reusable climate leaf is not serializable");
+            throw new UnsupportedOperationException("wywf terrain leaf");
         }
     }
 
     private static final class MutShiftB implements DensityFunction, Slot {
         private final ResourceKey<NormalNoise.NoiseParameters> key;
         private NormalNoise noise;
-
         MutShiftB(ResourceKey<NormalNoise.NoiseParameters> key, NormalNoise noise) {
-            this.key = key;
-            this.noise = noise;
+            this.key = key; this.noise = noise;
         }
-
         @Override public ResourceKey<NormalNoise.NoiseParameters> key() { return key; }
         @Override public void setNoise(NormalNoise n) { this.noise = n; }
-
         @Override public double compute(DensityFunction.FunctionContext c) {
             return noise.getValue(c.blockZ() * 0.25, c.blockX() * 0.25, 0.0) * 4.0;
         }
-        @Override public void fillArray(double[] array, DensityFunction.ContextProvider provider) {
-            provider.fillAllDirectly(array, this);
-        }
+        @Override public void fillArray(double[] array, DensityFunction.ContextProvider p) { p.fillAllDirectly(array, this); }
         @Override public DensityFunction mapAll(DensityFunction.Visitor visitor) { return this; }
         @Override public double minValue() { return -maxValue(); }
         @Override public double maxValue() { return noise.maxValue() * 4.0; }
         @Override public KeyDispatchDataCodec<? extends DensityFunction> codec() {
-            throw new UnsupportedOperationException("wywf reusable climate leaf is not serializable");
+            throw new UnsupportedOperationException("wywf terrain leaf");
         }
     }
 
     private static final class MutShiftedNoise implements DensityFunction, Slot {
-        private final DensityFunction shiftX;
-        private final DensityFunction shiftY;
-        private final DensityFunction shiftZ;
-        private final double xzScale;
-        private final double yScale;
+        private final DensityFunction shiftX, shiftY, shiftZ;
+        private final double xzScale, yScale;
         private final ResourceKey<NormalNoise.NoiseParameters> key;
         private NormalNoise noise;
-
         MutShiftedNoise(DensityFunction shiftX, DensityFunction shiftY, DensityFunction shiftZ,
                         double xzScale, double yScale,
                         ResourceKey<NormalNoise.NoiseParameters> key, NormalNoise noise) {
-            this.shiftX = shiftX;
-            this.shiftY = shiftY;
-            this.shiftZ = shiftZ;
-            this.xzScale = xzScale;
-            this.yScale = yScale;
-            this.key = key;
-            this.noise = noise;
+            this.shiftX = shiftX; this.shiftY = shiftY; this.shiftZ = shiftZ;
+            this.xzScale = xzScale; this.yScale = yScale;
+            this.key = key; this.noise = noise;
         }
-
         @Override public ResourceKey<NormalNoise.NoiseParameters> key() { return key; }
         @Override public void setNoise(NormalNoise n) { this.noise = n; }
-
         @Override public double compute(DensityFunction.FunctionContext c) {
             double d = c.blockX() * xzScale + shiftX.compute(c);
             double e = c.blockY() * yScale + shiftY.compute(c);
             double f = c.blockZ() * xzScale + shiftZ.compute(c);
             return noise.getValue(d, e, f);
         }
-        @Override public void fillArray(double[] array, DensityFunction.ContextProvider provider) {
-            provider.fillAllDirectly(array, this);
-        }
+        @Override public void fillArray(double[] array, DensityFunction.ContextProvider p) { p.fillAllDirectly(array, this); }
         @Override public DensityFunction mapAll(DensityFunction.Visitor visitor) { return this; }
         @Override public double minValue() { return -maxValue(); }
         @Override public double maxValue() { return noise.maxValue(); }
         @Override public KeyDispatchDataCodec<? extends DensityFunction> codec() {
-            throw new UnsupportedOperationException("wywf reusable climate leaf is not serializable");
+            throw new UnsupportedOperationException("wywf terrain leaf");
         }
     }
 }
