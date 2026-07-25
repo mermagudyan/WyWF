@@ -38,7 +38,7 @@ public final class SearchConfig {
     private boolean stopAtFirstCandidate = false;
     private boolean sortCandidatesByDistance = false;
     private KeywordDictionary.Lang queryLanguage = KeywordDictionary.Lang.EN;
-    private SearchCenter searchCenter = SearchCenter.ORIGIN;
+    private SearchCenter searchCenter = SearchCenter.SPAWN;
 
     public SearchConfig() {}
 

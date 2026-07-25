@@ -176,14 +176,27 @@ public final class KeywordDictionary {
         Objects.requireNonNull(entry, "entry");
         entries.put(entry.canonical, entry);
 
-        synonymToCanonical.put(entry.canonical.toLowerCase(Locale.ROOT), entry.canonical);
+        String canonicalKey = entry.canonical.toLowerCase(Locale.ROOT);
+        synonymToCanonical.put(canonicalKey, entry.canonical);
+
+        if (entry.category == Category.MODIFIER) {
+            modifierCanonical.put(canonicalKey, entry.canonical);
+        } else if (entry.category == Category.SPAWN_TRIGGER) {
+            spawnTriggers.add(canonicalKey);
+        }
 
         if (entry.displayName != null && !entry.displayName.isBlank()) {
             synonymToCanonical.put(entry.displayName.toLowerCase(Locale.ROOT).trim(), entry.canonical);
         }
         for (String s : synonyms) {
             if (s != null && !s.isBlank()) {
-                synonymToCanonical.put(s.toLowerCase(Locale.ROOT).trim(), entry.canonical);
+                String key = s.toLowerCase(Locale.ROOT).trim();
+                synonymToCanonical.put(key, entry.canonical);
+                if (entry.category == Category.MODIFIER) {
+                    modifierCanonical.put(key, entry.canonical);
+                } else if (entry.category == Category.SPAWN_TRIGGER) {
+                    spawnTriggers.add(key);
+                }
             }
         }
     }
@@ -229,7 +242,7 @@ public final class KeywordDictionary {
                 int next = start + len;
                 if (next < text.length()) {
                     char c = text.charAt(next);
-                    if (Character.isLetter(c) || c == '-' || c == '_') continue;
+                    if (Character.isLetter(c) || c == '-' || c == '_' || c == '.') continue;
                 }
                 if (isSpawnKey(key)) continue;
                 if (isModifierKey(key)) continue;
@@ -255,7 +268,7 @@ public final class KeywordDictionary {
                 int next = start + len;
                 if (next < text.length()) {
                     char c = text.charAt(next);
-                    if (Character.isLetter(c) || c == '-' || c == '_') continue;
+                    if (Character.isLetter(c) || c == '-' || c == '_' || c == '.') continue;
                 }
                 outCanonical[0] = synonymToCanonical.get(key);
                 return len;

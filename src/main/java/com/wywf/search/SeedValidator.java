@@ -15,8 +15,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public final class SeedValidator {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger("wywf-search");
 
     public enum Reason {
         ACCEPTED("matches"),
@@ -142,33 +146,25 @@ public final class SeedValidator {
      * the first chunk whose climate parameters match the overworld spawn target.
      * Returns block coordinates [x, z].
      */
+    private static final java.util.concurrent.atomic.AtomicInteger SPAWN_LOG_COUNTER = new java.util.concurrent.atomic.AtomicInteger();
+
     public static int[] findApproxSpawnPos(BiomeSource biomeSource, Climate.Sampler sampler,
                                             Set<String> waterBiomes) {
         BlockPos pos = sampler.findSpawnPosition();
+        int[] result;
         if (pos != null && !BlockPos.ZERO.equals(pos)) {
-            return new int[]{pos.getX(), pos.getZ()};
+            result = new int[]{pos.getX(), pos.getZ()};
+        } else {
+            result = new int[]{8, 8};
         }
-        if (isSpawnBiome(biomeSource, sampler, 8, 8, waterBiomes)) return new int[]{8, 8};
-        int maxRadius = 128;
-        for (int r = 1; r <= maxRadius; r++) {
-            int step = r > 32 ? 2 : 1;
-            for (int dx = -r; dx <= r; dx += step) {
-                for (int dz = -r; dz <= r; dz += step) {
-                    if (Math.abs(dx) != r && Math.abs(dz) != r) continue;
-                    int bx = dx * 16 + 8;
-                    int bz = dz * 16 + 8;
-                    if (isSpawnBiome(biomeSource, sampler, bx, bz, waterBiomes)) return new int[]{bx, bz};
-                }
-            }
+        int logCount = SPAWN_LOG_COUNTER.get();
+        if (logCount < 30) {
+            SPAWN_LOG_COUNTER.incrementAndGet();
+            LOGGER.warn("[findApproxSpawnPos] findSpawnPosition()={} → ({}, {})",
+                    pos == null ? "null" : pos.getX() + "," + pos.getY() + "," + pos.getZ(),
+                    result[0], result[1]);
         }
-        return new int[]{8, 8};
-    }
-
-    private static boolean isSpawnBiome(BiomeSource source, Climate.Sampler sampler, int bx, int bz,
-                                        Set<String> waterBiomes) {
-        Holder<Biome> biome = source.getNoiseBiome(bx >> 2, 64 >> 2, bz >> 2, sampler);
-        String id = biome.unwrapKey().map(k -> k.identifier().toString()).orElse(null);
-        return id != null && !waterBiomes.contains(id);
+        return result;
     }
 
     public Outcome validate(WorldContextFactory factory, long seed, ParsedQuery query, boolean accurateRings) {
@@ -336,6 +332,8 @@ public final class SeedValidator {
         if (mod == Modifier.IN && distance > IN_ON_BLOCKS) return null;
         if (mod == Modifier.NEAR && distance > NEAR_BLOCKS) return null;
 
+        LOGGER.warn("[SeedValidator] seed {} structure FOUND: {} @({},{}) center=({},{}) dist={} scanChunks={}",
+                ctx.seed, canonical, found[0], found[1], cx, cz, distance, scanChunks);
         return StructureChecker.Result.found(found[0], found[1], canonical);
     }
 
@@ -365,7 +363,7 @@ public final class SeedValidator {
         if (predictor == null) return true;
         if (!predictor.isPossibleSurfaceBlock(requested)) return true;
 
-        String block = predictor.predict(ctx, seed, cx, cz);
+        String block = predictor.predict(ctx, cx, cz);
         if (block == null) return true;
         return requested.equals(block);
     }

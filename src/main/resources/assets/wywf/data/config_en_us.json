@@ -24,7 +24,7 @@
   "wywf.config.search.scan.biome_step.desc": "How often to sample biomes. Lower = more accurate, slower.\n\n1 = check every block (most accurate, slowest)\n4 = check every 4th block (default)\n8 = check every 8th block (fast, rough)\n\nDefault: 4.",
 
   "wywf.config.search.center.name": "Search center",
-  "wywf.config.search.center.desc": "Where to start searching for structures and biomes.\n\nORIGIN (0, 0): from world center (default).\nSPAWN: from player world spawn.\nBOTH: checks both origin and spawn.\n\nORIGIN — faster and more accurate.\nSPAWN — finds near your spawn point.\nBOTH — combines both options.",
+  "wywf.config.search.center.desc": "Where to start searching for structures and biomes.\n\nSPAWN: from predicted world spawn (RECOMMENDED).\nORIGIN: from world center (0, 0).\nBOTH: checks spawn first, then origin.\n\nSPAWN — finds structures near where you actually spawn.\nORIGIN — structures may be far from your spawn point.\nBOTH — spawn first, origin as fallback.",
   "wywf.config.search.center.option": "Search center",
 
   "wywf.config.search.limits.name": "Limits",

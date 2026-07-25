@@ -274,20 +274,22 @@ public final class SeedSearcher {
     public synchronized void cancel() {
         cancelledByUser = true;
         running.set(false);
+        progress.finish();
         shutdownPool();
     }
 
     private void shutdownPool() {
-        if (pool != null) {
-            pool.shutdownNow();
+        ExecutorService p = pool;
+        pool = null;
+        if (p != null) {
+            p.shutdownNow();
             try {
-                if (!pool.awaitTermination(2, TimeUnit.SECONDS)) {
+                if (!p.awaitTermination(2, TimeUnit.SECONDS)) {
 
                 }
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
             }
-            pool = null;
         }
     }
 

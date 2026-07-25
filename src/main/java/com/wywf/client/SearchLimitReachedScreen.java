@@ -74,11 +74,17 @@ public final class SearchLimitReachedScreen extends Screen {
         extended.maxSeedsToCheck(config.rawMaxSeedsToCheck() * 2);
         extended.infiniteSeeds(config.infiniteSeeds());
         extended.mode(config.mode());
+        extended.manualThreads(config.manualThreads());
         extended.searchRadiusChunks(config.searchRadiusChunks());
         extended.biomeCheckRadiusChunks(config.biomeCheckRadiusChunks());
         extended.biomeSampleStepChunks(config.biomeSampleStepChunks());
         extended.candidatesToCollect(config.candidatesToCollect());
+        extended.minCandidates(config.minCandidates());
+        extended.candidateRampDownSeconds(config.candidateRampDownSeconds());
+        extended.randomizeStart(config.randomizeStart());
+        extended.stopAtFirstCandidate(config.stopAtFirstCandidate());
         extended.sortCandidatesByDistance(config.sortCandidatesByDistance());
+        extended.searchCenter(config.searchCenter());
         extended.queryLanguage(config.queryLanguage());
 
         SearchScreen screen = new SearchScreen(parentScreen, queryText, parsedQuery, extended);

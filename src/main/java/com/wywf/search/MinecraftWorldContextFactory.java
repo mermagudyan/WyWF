@@ -39,6 +39,9 @@ public final class MinecraftWorldContextFactory implements WorldContextFactory {
     private final ThreadLocal<ReusableClimateSampler> reusableSampler =
             ThreadLocal.withInitial(() -> new ReusableClimateSampler(noiseSettings, noiseParameters));
 
+    private final ThreadLocal<ReusableTerrainSampler> reusableTerrainSampler =
+            ThreadLocal.withInitial(() -> new ReusableTerrainSampler(noiseSettings, noiseParameters));
+
     private synchronized void ensureInit() {
         if (registries != null) return;
 
@@ -88,7 +91,15 @@ public final class MinecraftWorldContextFactory implements WorldContextFactory {
         ensureInit();
         return new WorldContext(seed, biomeSource, () -> samplerFor(seed),
                 placementsByStructure, spawnPredictor,
-                registries, NoiseGeneratorSettings.OVERWORLD, structureSets);
+                registries, NoiseGeneratorSettings.OVERWORLD, structureSets,
+                noiseSettings, () -> terrainSamplerFor(seed));
+    }
+
+    private ReusableTerrainSampler terrainSamplerFor(long seed) {
+        ensureInit();
+        ReusableTerrainSampler s = reusableTerrainSampler.get();
+        s.reseed(seed);
+        return s;
     }
 
     @Override

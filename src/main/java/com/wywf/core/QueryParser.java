@@ -220,7 +220,7 @@ public final class QueryParser {
                         if (e != null && e.category == KeywordDictionary.Category.SPAWN) {
                             String dedupeKey = canonical + "#SPAWN";
                             if (seen.add(dedupeKey)) {
-                                terms.add(new ParsedQuery.Term(canonical, e.category, Modifier.DEFAULT));
+                                terms.add(new ParsedQuery.Term(canonical, e.category, pending));
                             }
                         }
                     }
@@ -267,14 +267,16 @@ public final class QueryParser {
             }
         }
 
-        if ((pending == Modifier.BETWEEN || pending == Modifier.SOME) && !terms.isEmpty()) {
+        if (pending != Modifier.DEFAULT && !terms.isEmpty()) {
             ParsedQuery.Term last = terms.remove(terms.size() - 1);
             if (pending == Modifier.BETWEEN) {
                 terms.add(new ParsedQuery.Term(last.canonical, last.category, pending,
                         2, pendingBetweenMin, pendingBetweenMax));
-            } else {
+            } else if (pending == Modifier.SOME) {
                 terms.add(new ParsedQuery.Term(last.canonical, last.category, pending,
                         pendingSomeCount, 0, 0));
+            } else {
+                terms.add(new ParsedQuery.Term(last.canonical, last.category, pending));
             }
         }
 

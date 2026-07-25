@@ -108,7 +108,7 @@ public final class WywfConfigScreen {
                                 .option(Option.<SearchConfig.SearchCenter>createBuilder()
                                         .name(tr("wywf.config.search.center.option"))
                                         .binding(
-                                                SearchConfig.SearchCenter.ORIGIN,
+                                                SearchConfig.SearchCenter.SPAWN,
                                                 () -> config.searchCenter(),
                                                 v -> config.searchCenter(v)
                                         )

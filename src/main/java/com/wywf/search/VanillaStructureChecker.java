@@ -49,6 +49,17 @@ public final class VanillaStructureChecker implements StructureChecker {
 
     private static final Map<String, Set<ResourceKey<Biome>>> STRUCTURE_BIOME_KEYS = buildBiomeKeys();
 
+    /** Structures that need relatively flat terrain to generate. */
+    private static final Set<String> NEEDS_FLAT_TERRAIN = Set.of(
+            "minecraft:village",
+            "minecraft:village_plains", "minecraft:village_desert",
+            "minecraft:village_savanna", "minecraft:village_snowy",
+            "minecraft:village_taiga",
+            "minecraft:desert_pyramid", "minecraft:jungle_pyramid",
+            "minecraft:swamp_hut", "minecraft:igloo",
+            "minecraft:mansion", "minecraft:pillager_outpost"
+    );
+
     private static Map<String, Set<ResourceKey<Biome>>> buildBiomeKeys() {
         Map<String, Set<ResourceKey<Biome>>> out = new HashMap<>();
         for (Map.Entry<String, Set<String>> e : STRUCTURE_BIOMES.entrySet()) {
@@ -222,14 +233,44 @@ public final class VanillaStructureChecker implements StructureChecker {
     private boolean structureChunk(WorldContext ctx, ResourceKey<Structure> key,
                                     int cx, int cz, boolean checkBiome) {
         long seed = ctx.seed;
-        for (StructurePlacement placement : ctx.placementsFor(key)) {
-            if (isStructureChunk(ctx, placement, seed, cx, cz)) {
-                if (!checkBiome) return true;
-                Set<ResourceKey<Biome>> allowed = STRUCTURE_BIOME_KEYS.get(key.identifier().toString());
-                if (allowed == null) return true;
-                int bx = cx * 16 + 8, bz = cz * 16 + 8;
-                return VanillaBiomeChecker.quartYForSurfaceMatches(ctx, bx, bz, allowed);
+        List<StructurePlacement> placements = ctx.placementsFor(key);
+        if (!placements.isEmpty()) {
+            return checkPlacements(ctx, key, placements, cx, cz, seed, checkBiome);
+        }
+        // key may be a StructureSet name (e.g. "minecraft:village") —
+        // look up all structures in that set and check their placements
+        String setId = key.identifier().toString();
+        ResourceKey<StructureSet> setKey = resolveSetKey(setId);
+        if (setKey != null) {
+            var holder = ctx.structureSets().get(setKey);
+            if (holder.isPresent()) {
+                StructureSet set = holder.get().value();
+                for (StructureSet.StructureSelectionEntry entry : set.structures()) {
+                    ResourceKey<Structure> structKey = entry.structure().unwrapKey().orElse(null);
+                    if (structKey == null) continue;
+                    List<StructurePlacement> structPlacements = ctx.placementsFor(structKey);
+                    if (!structPlacements.isEmpty()
+                            && checkPlacements(ctx, structKey, structPlacements, cx, cz, seed, checkBiome)) {
+                        return true;
+                    }
+                }
             }
+        }
+        return false;
+    }
+
+    private boolean checkPlacements(WorldContext ctx, ResourceKey<Structure> key,
+                                     List<StructurePlacement> placements,
+                                     int cx, int cz, long seed, boolean checkBiome) {
+        for (StructurePlacement placement : placements) {
+            if (!isStructureChunk(ctx, placement, seed, cx, cz)) continue;
+            if (!checkBiome) return true;
+            int bx = cx * 16 + 8, bz = cz * 16 + 8;
+            Set<ResourceKey<Biome>> allowed = STRUCTURE_BIOME_KEYS.get(key.identifier().toString());
+            if (allowed != null && !VanillaBiomeChecker.quartYForSurfaceMatches(ctx, bx, bz, allowed)) {
+                return false;
+            }
+            return true;
         }
         return false;
     }
@@ -270,18 +311,6 @@ public final class VanillaStructureChecker implements StructureChecker {
             }
         }
 
-        // 2) Try canonical as StructureSet
-        if (out.isEmpty()) {
-            collectFromStructureSet(ctx, canonical, minX, maxX, minZ, maxZ, seen, out);
-        }
-        // 3) Try each variant as StructureSet
-        if (out.isEmpty()) {
-            for (String variant : dict.getVariants(canonical)) {
-                if (variant.equals(canonical)) continue;
-                collectFromStructureSet(ctx, variant, minX, maxX, minZ, maxZ, seen, out);
-                if (!out.isEmpty()) break;
-            }
-        }
         return out;
     }
 
@@ -319,16 +348,6 @@ public final class VanillaStructureChecker implements StructureChecker {
             }
         }
 
-        if (out.isEmpty()) {
-            collectFromStructureSet(ctx, canonical, minX, maxX, minZ, maxZ, seen, out);
-        }
-        if (out.isEmpty()) {
-            for (String variant : dict.getVariants(canonical)) {
-                if (variant.equals(canonical)) continue;
-                collectFromStructureSet(ctx, variant, minX, maxX, minZ, maxZ, seen, out);
-                if (!out.isEmpty()) break;
-            }
-        }
         return out;
     }
 
@@ -364,17 +383,6 @@ public final class VanillaStructureChecker implements StructureChecker {
             }
         }
 
-        // 2) Try canonical as StructureSet
-        int[] r = firstFromStructureSet(ctx, canonical, minX, maxX, minZ, maxZ);
-        if (r != null) return r;
-
-        // 3) Try each variant as a StructureSet
-        for (String variant : dict.getVariants(canonical)) {
-            if (variant.equals(canonical)) continue;
-            r = firstFromStructureSet(ctx, variant, minX, maxX, minZ, maxZ);
-            if (r != null) return r;
-        }
-
         return null;
     }
 
@@ -408,20 +416,25 @@ public final class VanillaStructureChecker implements StructureChecker {
             }
         }
 
-        int[] r = firstFromStructureSet(ctx, canonical, minX, maxX, minZ, maxZ);
-        if (r != null) return r;
-
-        for (String variant : dict.getVariants(canonical)) {
-            if (variant.equals(canonical)) continue;
-            r = firstFromStructureSet(ctx, variant, minX, maxX, minZ, maxZ);
-            if (r != null) return r;
-        }
-
         return null;
     }
 
+    /** Returns true if at least one structure in the set has a valid biome at (cx,cz). */
+    private boolean structureSetBiomeOk(WorldContext ctx, StructureSet set, int cx, int cz) {
+        int bx = cx * 16 + 8, bz = cz * 16 + 8;
+        for (StructureSet.StructureSelectionEntry entry : set.structures()) {
+            ResourceKey<Structure> key = entry.structure().unwrapKey().orElse(null);
+            if (key == null) continue;
+            Set<ResourceKey<Biome>> allowed = STRUCTURE_BIOME_KEYS.get(key.identifier().toString());
+            if (allowed == null) return true;
+            if (VanillaBiomeChecker.quartYForSurfaceMatches(ctx, bx, bz, allowed)) return true;
+        }
+        return false;
+    }
+
     private int[] firstFromStructureSet(WorldContext ctx, String canonical,
-                                         int minX, int maxX, int minZ, int maxZ) {
+                                         int minX, int maxX, int minZ, int maxZ,
+                                         boolean checkBiome) {
         ResourceKey<StructureSet> setKey = resolveSetKey(canonical);
         if (setKey == null) return null;
         var holder = ctx.structureSets().get(setKey);
@@ -432,6 +445,7 @@ public final class VanillaStructureChecker implements StructureChecker {
         for (int cx = minX; cx <= maxX; cx++) {
             for (int cz = minZ; cz <= maxZ; cz++) {
                 if (isStructureChunk(ctx, placement, seed, cx, cz)) {
+                    if (checkBiome && !structureSetBiomeOk(ctx, s, cx, cz)) continue;
                     return new int[]{cx * 16 + 8, cz * 16 + 8};
                 }
             }
@@ -441,7 +455,8 @@ public final class VanillaStructureChecker implements StructureChecker {
 
     private void collectFromStructureSet(WorldContext ctx, String canonical,
                                           int minX, int maxX, int minZ, int maxZ,
-                                          Set<Long> seen, List<int[]> out) {
+                                          Set<Long> seen, List<int[]> out,
+                                          boolean checkBiome) {
         ResourceKey<StructureSet> setKey = resolveSetKey(canonical);
         if (setKey == null) return;
         var holder = ctx.structureSets().get(setKey);
@@ -452,6 +467,7 @@ public final class VanillaStructureChecker implements StructureChecker {
         for (int cx = minX; cx <= maxX; cx++) {
             for (int cz = minZ; cz <= maxZ; cz++) {
                 if (!isStructureChunk(ctx, placement, seed, cx, cz)) continue;
+                if (checkBiome && !structureSetBiomeOk(ctx, s, cx, cz)) continue;
                 long pk = (((long) cx) << 32) ^ (cz & 0xffffffffL);
                 if (!seen.add(pk)) continue;
                 out.add(new int[]{cx * 16 + 8, cz * 16 + 8});
@@ -466,7 +482,6 @@ public final class VanillaStructureChecker implements StructureChecker {
         int minZ = cZ - radiusChunks, maxZ = cZ + radiusChunks;
 
         // 0) Try canonical directly as a Structure key
-        //    (e.g. "minecraft:village_desert" IS a valid Structure key in the compile-time registry)
         ResourceKey<Structure> canonicalKey = resolveKey(canonical);
         if (canonicalKey != null) {
             for (int cx = minX; cx <= maxX; cx++) {
@@ -488,15 +503,6 @@ public final class VanillaStructureChecker implements StructureChecker {
             }
         }
 
-        // 2) Try canonical as StructureSet key
-        if (tryStructureSet(ctx, canonical, minX, maxX, minZ, maxZ)) return true;
-
-        // 3) Try each variant as a StructureSet key
-        for (String variant : dict.getVariants(canonical)) {
-            if (variant.equals(canonical)) continue;
-            if (tryStructureSet(ctx, variant, minX, maxX, minZ, maxZ)) return true;
-        }
-
         return false;
     }
 
@@ -511,7 +517,9 @@ public final class VanillaStructureChecker implements StructureChecker {
         long seed = ctx.seed;
         for (int cx = minX; cx <= maxX; cx++) {
             for (int cz = minZ; cz <= maxZ; cz++) {
-                if (isStructureChunk(ctx, placement, seed, cx, cz)) return true;
+                if (!isStructureChunk(ctx, placement, seed, cx, cz)) continue;
+                if (!structureSetBiomeOk(ctx, s, cx, cz)) continue;
+                return true;
             }
         }
         return false;

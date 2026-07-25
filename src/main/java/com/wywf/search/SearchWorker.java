@@ -53,6 +53,7 @@ public final class SearchWorker implements Runnable {
 
     private static final long SIZE48 = 1L << 48;
     private static final long SIZE16 = 1L << 16;
+    private static final java.util.concurrent.atomic.AtomicInteger SPAWN_DEBUG_COUNTER = new java.util.concurrent.atomic.AtomicInteger();
 
     private final long startOffset;
 
@@ -84,14 +85,6 @@ public final class SearchWorker implements Runnable {
         long step = Math.max(1, threadCount);
         long localChecked = 0;
 
-        int[] vanillaSpawn = null;
-        if (center == SearchConfig.SearchCenter.SPAWN || center == SearchConfig.SearchCenter.BOTH) {
-            WorldContext tmpCtx = contextFactory.create(0L, accurateRings);
-            Set<String> waterBiomes = tmpCtx.spawnPredictor != null
-                    ? tmpCtx.spawnPredictor.waterBiomes() : Set.of();
-            vanillaSpawn = SeedValidator.findApproxSpawnPos(tmpCtx.biomeSource, tmpCtx.sampler(), waterBiomes);
-        }
-
         for (long i = threadIndex; i < SIZE48; i += step) {
             long a = (i + offset) % SIZE48;
             if (!running.get()) {
@@ -101,11 +94,14 @@ public final class SearchWorker implements Runnable {
 
             WorldContext pfCtx = contextFactory.create(a, accurateRings);
 
-            int[] spawn = vanillaSpawn;
-            if (spawn == null && (center == SearchConfig.SearchCenter.SPAWN || center == SearchConfig.SearchCenter.BOTH)) {
+            int[] spawn = null;
+            if (center == SearchConfig.SearchCenter.SPAWN || center == SearchConfig.SearchCenter.BOTH) {
                 Set<String> waterBiomes = pfCtx.spawnPredictor != null
                         ? pfCtx.spawnPredictor.waterBiomes() : Set.of();
                 spawn = SeedValidator.findApproxSpawnPos(pfCtx.biomeSource, pfCtx.sampler(), waterBiomes);
+                if (SPAWN_DEBUG_COUNTER.getAndIncrement() < 5) {
+                    LOGGER.warn("[runQuad] seed base={} → spawn=({},{})", a, spawn[0], spawn[1]);
+                }
             }
 
             if (!prefilterStructures(pfCtx, center, spawn)) {
@@ -123,7 +119,15 @@ public final class SearchWorker implements Runnable {
                 long seed = (a & 0xFFFFFFFFFFFFL) | ((long) h << 48);
 
                 try {
-                    SeedValidator.Outcome outcome = validateSeed(seed, accurateRings, center, spawn);
+                    int[] fullSpawn = spawn;
+                    if (spawn != null) {
+                        WorldContext fullCtx = contextFactory.create(seed, accurateRings);
+                        Set<String> wb = fullCtx.spawnPredictor != null
+                                ? fullCtx.spawnPredictor.waterBiomes() : Set.of();
+                        fullSpawn = SeedValidator.findApproxSpawnPos(fullCtx.biomeSource, fullCtx.sampler(), wb);
+                    }
+
+                    SeedValidator.Outcome outcome = validateSeed(seed, accurateRings, center, fullSpawn);
 
                     globalSeedCursor.incrementAndGet();
                     localChecked++;
@@ -156,14 +160,6 @@ public final class SearchWorker implements Runnable {
         long rank = threadIndex / 2;
         long localChecked = 0;
 
-        int[] vanillaSpawn = null;
-        if (center == SearchConfig.SearchCenter.SPAWN || center == SearchConfig.SearchCenter.BOTH) {
-            WorldContext tmpCtx = contextFactory.create(0L, accurateRings);
-            Set<String> waterBiomes = tmpCtx.spawnPredictor != null
-                    ? tmpCtx.spawnPredictor.waterBiomes() : Set.of();
-            vanillaSpawn = SeedValidator.findApproxSpawnPos(tmpCtx.biomeSource, tmpCtx.sampler(), waterBiomes);
-        }
-
         if (step <= 0) {
             LOGGER.info("[thread {}] no {} direction available, exiting", threadIndex, positive ? "positive" : "negative");
             return;
@@ -179,7 +175,18 @@ public final class SearchWorker implements Runnable {
             long seed = positive ? inner : (-1L - inner);
 
             try {
-                SeedValidator.Outcome outcome = validateSeed(seed, accurateRings, center, vanillaSpawn);
+                int[] spawn = null;
+                if (center == SearchConfig.SearchCenter.SPAWN || center == SearchConfig.SearchCenter.BOTH) {
+                    WorldContext seedCtx = contextFactory.create(seed, accurateRings);
+                    Set<String> waterBiomes = seedCtx.spawnPredictor != null
+                            ? seedCtx.spawnPredictor.waterBiomes() : Set.of();
+                    spawn = SeedValidator.findApproxSpawnPos(seedCtx.biomeSource, seedCtx.sampler(), waterBiomes);
+                    if (SPAWN_DEBUG_COUNTER.getAndIncrement() < 5) {
+                        LOGGER.warn("[runLinear] seed={} → spawn=({},{})", seed, spawn[0], spawn[1]);
+                    }
+                }
+
+                SeedValidator.Outcome outcome = validateSeed(seed, accurateRings, center, spawn);
 
                 globalSeedCursor.incrementAndGet();
                 localChecked++;
@@ -212,12 +219,42 @@ public final class SearchWorker implements Runnable {
     private SeedValidator.Outcome validateSeed(long seed, boolean accurateRings,
                                                SearchConfig.SearchCenter center, int[] spawn) {
         return switch (center) {
-            case ORIGIN -> validator.validate(contextFactory, seed, query, accurateRings);
+            case ORIGIN -> {
+                WorldContext ctx = contextFactory.create(seed, accurateRings);
+                Set<String> wb = ctx.spawnPredictor != null
+                        ? ctx.spawnPredictor.waterBiomes() : Set.of();
+                int[] predictedSpawn = SeedValidator.findApproxSpawnPos(ctx.biomeSource, ctx.sampler(), wb);
+                SeedValidator.Outcome outcome = validator.validate(contextFactory, seed, query, accurateRings);
+                if (outcome.accepted && SPAWN_DEBUG_COUNTER.getAndIncrement() < 20) {
+                    LOGGER.warn("[ORIGIN] seed={} center=(0,0) predictedSpawn=({},{}) struct=({},{}) dist={}",
+                            seed, predictedSpawn[0], predictedSpawn[1],
+                            outcome.structureX, outcome.structureZ,
+                            (int) Math.round(Math.sqrt(
+                                    Math.pow(outcome.structureX, 2) + Math.pow(outcome.structureZ, 2))));
+                }
+                yield outcome;
+            }
             case SPAWN -> validator.validate(contextFactory, seed, query, accurateRings, spawn[0], spawn[1]);
             case BOTH -> {
-                SeedValidator.Outcome origin = validator.validate(contextFactory, seed, query, accurateRings);
-                if (origin.accepted) yield origin;
-                yield validator.validate(contextFactory, seed, query, accurateRings, spawn[0], spawn[1]);
+                SeedValidator.Outcome spawnOutcome = validator.validate(contextFactory, seed, query, accurateRings, spawn[0], spawn[1]);
+                if (spawnOutcome.accepted) {
+                    if (SPAWN_DEBUG_COUNTER.getAndIncrement() < 20) {
+                        LOGGER.warn("[BOTH-SPAWN] seed={} spawn=({},{}) struct=({},{})",
+                                seed, spawn[0], spawn[1], spawnOutcome.structureX, spawnOutcome.structureZ);
+                    }
+                    yield spawnOutcome;
+                }
+                WorldContext ctx = contextFactory.create(seed, accurateRings);
+                Set<String> wb = ctx.spawnPredictor != null
+                        ? ctx.spawnPredictor.waterBiomes() : Set.of();
+                int[] predictedSpawn = SeedValidator.findApproxSpawnPos(ctx.biomeSource, ctx.sampler(), wb);
+                SeedValidator.Outcome originOutcome = validator.validate(contextFactory, seed, query, accurateRings);
+                if (originOutcome.accepted && SPAWN_DEBUG_COUNTER.getAndIncrement() < 20) {
+                    LOGGER.warn("[BOTH-ORIGIN] seed={} center=(0,0) predictedSpawn=({},{}) struct=({},{})",
+                            seed, predictedSpawn[0], predictedSpawn[1],
+                            originOutcome.structureX, originOutcome.structureZ);
+                }
+                yield originOutcome;
             }
         };
     }
@@ -308,8 +345,10 @@ public final class SearchWorker implements Runnable {
         sb.append("[thread ").append(threadIndex).append("] candidate seed ").append(r.seed);
         if (config.searchCenter() == SearchConfig.SearchCenter.SPAWN) {
             sb.append(" → spawn (").append(r.centerX).append(", ").append(r.centerZ).append(")");
+        } else if (config.searchCenter() == SearchConfig.SearchCenter.BOTH) {
+            sb.append(" → BOTH center=(").append(r.centerX).append(", ").append(r.centerZ).append(")");
         } else {
-            sb.append(" → center (").append(r.centerX).append(", ").append(r.centerZ).append(")");
+            sb.append(" → origin (").append(r.centerX).append(", ").append(r.centerZ).append(")");
         }
         for (var entry : r.structurePositions.entrySet()) {
             int[] pos = entry.getValue();
@@ -317,11 +356,12 @@ public final class SearchWorker implements Runnable {
             double dz = pos[1] - r.centerZ;
             int dist = (int) Math.round(Math.sqrt(dx * dx + dz * dz));
             sb.append(", ").append(entry.getKey()).append(" ~").append(dist).append(" blocks");
+            sb.append(" @(").append(pos[0]).append(", ").append(pos[1]).append(")");
         }
         for (var entry : r.biomeDistances.entrySet()) {
             sb.append(", ").append(entry.getKey()).append(" ~").append(entry.getValue()).append(" blocks");
         }
-        LOGGER.info("{}", sb);
+        LOGGER.warn("{}", sb);
         synchronized (candidates) {
             if (candidates.size() < config.candidatesToCollect()) {
                 candidates.add(r);

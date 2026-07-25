@@ -107,11 +107,11 @@ public final class SpawnBlockPredictor {
      * Vanilla searches up to ~20 blocks from the spawn point, so we scan
      * ±2 chunks (32 blocks) to cover that range.
      */
-    public String predict(WorldContext ctx, long seed, int centerBlockX, int centerBlockZ) {
+    public String predict(WorldContext ctx, int centerBlockX, int centerBlockZ) {
         Climate.Sampler sampler = ctx.sampler();
         final int SCAN_CHUNKS = 2;
-        for (int z = centerBlockZ - SCAN_CHUNKS * 16; z < centerBlockZ + SCAN_CHUNKS * 16; z++) {
-            for (int x = centerBlockX - SCAN_CHUNKS * 16; x < centerBlockX + SCAN_CHUNKS * 16; x++) {
+        for (int z = centerBlockZ - SCAN_CHUNKS * 16; z <= centerBlockZ + SCAN_CHUNKS * 16; z++) {
+            for (int x = centerBlockX - SCAN_CHUNKS * 16; x <= centerBlockX + SCAN_CHUNKS * 16; x++) {
                 Holder<Biome> biome = biomeSource.getNoiseBiome(x >> 2, 64 >> 2, z >> 2, sampler);
                 String biomeId = biome.unwrapKey().map(k -> k.identifier().toString()).orElse(null);
                 if (biomeId == null || waterBiomes.contains(biomeId)) continue;
@@ -121,7 +121,7 @@ public final class SpawnBlockPredictor {
         return null;
     }
 
-    public String predict(WorldContext ctx, long seed) {
-        return predict(ctx, seed, 8, 8);
+    public String predict(WorldContext ctx) {
+        return predict(ctx, 8, 8);
     }
 }

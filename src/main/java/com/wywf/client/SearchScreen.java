@@ -23,6 +23,7 @@ public final class SearchScreen extends Screen {
     private final SearchConfig config;
 
     private volatile SearchProgress.Snapshot lastSnapshot;
+    private volatile List<SearchResult> lastCandidates = List.of();
     private final AtomicReference<SearchResult> foundResult = new AtomicReference<>(null);
 
     private long lastUpdateTime = 0;
@@ -71,17 +72,16 @@ public final class SearchScreen extends Screen {
     private void onSearchFinished(SearchResult result) {
         WYWFClient.LOGGER.info("Search finished: {}", result);
 
-        List<SearchResult> candidates = WYWFClient.searcher().candidates();
+        List<SearchResult> candidates = List.copyOf(WYWFClient.searcher().candidates());
         String reason = (result != null) ? result.stopReason : null;
-        boolean limitReached = reason != null && reason.contains("limit reached");
 
-        if (limitReached || result == null || result.primaryDescription == null) {
+        if (result != null && result.primaryDescription != null) {
+            WYWFClient.worldCreator().create(result, queryText, parentScreen);
+        } else {
             if (reason == null) reason = "search complete — no matching seeds found";
             SearchLimitReachedScreen screen = new SearchLimitReachedScreen(
                     parentScreen, queryText, parsedQuery, config, reason, candidates);
             Minecraft.getInstance().setScreenAndShow(screen);
-        } else {
-            WYWFClient.worldCreator().create(result, queryText, parentScreen);
         }
     }
 
@@ -91,6 +91,7 @@ public final class SearchScreen extends Screen {
         SeedSearcher searcher = WYWFClient.searcher();
         if (searcher != null) {
             lastSnapshot = searcher.progress().snapshot();
+            lastCandidates = List.copyOf(searcher.candidates());
         }
 
         long now = System.currentTimeMillis();
@@ -104,7 +105,7 @@ public final class SearchScreen extends Screen {
     }
 
     private SearchResult lastCandidate() {
-        List<SearchResult> cs = WYWFClient.searcher().candidates();
+        List<SearchResult> cs = lastCandidates;
         return cs.isEmpty() ? null : cs.get(cs.size() - 1);
     }
 
@@ -209,7 +210,7 @@ public final class SearchScreen extends Screen {
         if (parsedQuery != null && !parsedQuery.ignoredWords().isEmpty()) {
             g.centeredText(font,
                     Component.literal("§eUnknown words ignored: §f" + String.join(", ", parsedQuery.ignoredWords())),
-                    cx, this.height - 60, 0xFFFFFFFF);
+                    cx, this.height - 65, 0xFFFFFFFF);
         }
     }
 

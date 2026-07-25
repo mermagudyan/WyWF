@@ -23,7 +23,7 @@ class SpawnBlockPredictorTest {
     @Test
     void predictsANonNullSurfaceBlock() {
         WorldContext ctx = factory.create(0L, false);
-        String block = ctx.spawnPredictor.predict(ctx, 0L);
+        String block = ctx.spawnPredictor.predict(ctx);
         assertNotNull(block, "spawn block should be determined");
         assertTrue(block.equals("any_solid") || block.startsWith("minecraft:"),
                 "unexpected block id: " + block);
