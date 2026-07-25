@@ -75,15 +75,15 @@ public final class DidYouMeanScreen extends Screen {
         Font font = this.font;
         int cx = this.width / 2;
 
-        g.centeredText(font, Component.literal("§lDid you mean?§r"), cx, this.height / 2 - 60, 0xFFFFFF);
-        g.centeredText(font, Component.literal("§7You typed:§r §c\"" + truncate(originalQuery, 60) + "\""), cx, this.height / 2 - 38, 0xFFFFFF);
+        g.centeredText(font, Component.literal("§lDid you mean?§r"), cx, this.height / 2 - 60, 0xFFFFFFFF);
+        g.centeredText(font, Component.literal("§7You typed:§r §c\"" + truncate(originalQuery, 60) + "\""), cx, this.height / 2 - 38, 0xFFFFFFFF);
 
         StringBuilder sb = new StringBuilder();
         for (Map.Entry<String, String> e : corrections.entrySet()) {
             if (!sb.isEmpty()) sb.append(", ");
             sb.append("§c").append(e.getKey()).append("§r → §a").append(e.getValue());
         }
-        g.centeredText(font, Component.literal("§7Suggested:§r " + sb), cx, this.height / 2 - 22, 0xFFFFFF);
+        g.centeredText(font, Component.literal("§7Suggested:§r " + sb), cx, this.height / 2 - 22, 0xFFFFFFFF);
     }
 
     static String applyCorrections(String original, Map<String, String> corrections) {

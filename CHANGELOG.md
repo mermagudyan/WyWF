@@ -123,6 +123,16 @@
   resource loader from attempting to parse them as language files (which
   expected string values, not arrays). Updated `KeywordDictionary` loader
   paths.
+- **Empty query handling.** `SeedSearcher.start()` now fires `onFound` with a
+  `SearchResult(primaryDescription=null)` when all terms are filtered out
+  (e.g. unsupported biomes/structures for the MC version), instead of silently
+  never completing — the UI no longer gets stuck on "Preparing...". The null
+  description routes to `SearchLimitReachedScreen` instead of trying to create
+  a world with seed 0.
+- **Text rendering on MC 26.x.** `GuiGraphicsExtractor.text()` and
+  `centeredText()` check `ARGB.alpha(color) == 0` and skip the draw. All UI
+  text colors now use `0xFFFFFFFF` (with alpha byte) instead of `0xFFFFFF`,
+  which was silently dropped.
 
 ## 1.2.0
 

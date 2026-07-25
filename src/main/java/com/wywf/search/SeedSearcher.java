@@ -50,6 +50,12 @@ public final class SeedSearcher {
 
         if (query.isEmpty()) {
             LOGGER.info("No searchable terms in query \"{}\" — nothing to search, aborting", rawQuery.raw());
+            String reason = rawQuery.ignoredWords().isEmpty()
+                    ? "query is empty — no recognized keywords"
+                    : "all keywords not available in this game version: " + String.join(", ", rawQuery.ignoredWords());
+            SearchResult emptyResult = new SearchResult(
+                    0, 0, 0, 0, 0, null, List.of(), List.of(), reason, Map.of(), Map.of());
+            onFound.accept(emptyResult);
             return;
         }
 

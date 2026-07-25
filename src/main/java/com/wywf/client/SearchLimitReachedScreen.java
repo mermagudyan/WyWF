@@ -96,13 +96,13 @@ public final class SearchLimitReachedScreen extends Screen {
         Font font = this.font;
         int cx = this.width / 2;
 
-        g.centeredText(font, Component.literal("§lSearch Limit Reached§r"), cx, this.height / 2 - 50, 0xFFFFFF);
-        g.centeredText(font, Component.literal("§c" + stopReason), cx, this.height / 2 - 30, 0xFFFFFF);
+        g.centeredText(font, Component.literal("§lSearch Limit Reached§r"), cx, this.height / 2 - 50, 0xFFFFFFFF);
+        g.centeredText(font, Component.literal("§c" + stopReason), cx, this.height / 2 - 30, 0xFFFFFFFF);
 
         if (candidates.isEmpty()) {
-            g.centeredText(font, Component.literal("§7No matching seeds found."), cx, this.height / 2 - 10, 0xAAAAAA);
+            g.centeredText(font, Component.literal("§7No matching seeds found."), cx, this.height / 2 - 10, 0xFFAAAAAA);
         } else {
-            g.centeredText(font, Component.literal("§7Found §f" + candidates.size() + " §7candidate(s)"), cx, this.height / 2 - 10, 0xAAAAAA);
+            g.centeredText(font, Component.literal("§7Found §f" + candidates.size() + " §7candidate(s)"), cx, this.height / 2 - 10, 0xFFAAAAAA);
         }
     }
 

@@ -75,7 +75,7 @@ public final class SearchScreen extends Screen {
         String reason = (result != null) ? result.stopReason : null;
         boolean limitReached = reason != null && reason.contains("limit reached");
 
-        if (limitReached || result == null) {
+        if (limitReached || result == null || result.primaryDescription == null) {
             if (reason == null) reason = "search complete — no matching seeds found";
             SearchLimitReachedScreen screen = new SearchLimitReachedScreen(
                     parentScreen, queryText, parsedQuery, config, reason, candidates);
@@ -116,21 +116,21 @@ public final class SearchScreen extends Screen {
         int cx = this.width / 2;
         int y  = 30;
 
-        g.centeredText(font, Component.literal("§l§nSeed Search§r"), cx, y, 0xFFFFFF);
+        g.centeredText(font, Component.literal("§l§nSeed Search§r"), cx, y, 0xFFFFFFFF);
         y += 18;
 
-        g.centeredText(font, Component.literal("§7Query:§r §e" + truncate(queryText, 60)), cx, y, 0xFFFFFF);
+        g.centeredText(font, Component.literal("§7Query:§r §e" + truncate(queryText, 60)), cx, y, 0xFFFFFFFF);
         y += 14;
 
         if (parsedQuery != null) {
-            g.centeredText(font, Component.literal("§8" + parsedQuery), cx, y, 0xAAAAAA);
+            g.centeredText(font, Component.literal("§8" + parsedQuery), cx, y, 0xFFAAAAAA);
             y += 14;
         }
 
         y += 8;
 
         if (lastSnapshot == null) {
-            g.centeredText(font, Component.literal("Preparing..."), cx, y, 0xCCCCCC);
+            g.centeredText(font, Component.literal("Preparing..."), cx, y, 0xFFCCCCCC);
             return;
         }
 
@@ -202,20 +202,20 @@ public final class SearchScreen extends Screen {
             candidateText = "§7Searching candidates...";
         }
         for (String line : candidateText.split("\n")) {
-            g.centeredText(font, Component.literal(line), cx, y, 0xFFFFFF);
+            g.centeredText(font, Component.literal(line), cx, y, 0xFFFFFFFF);
             y += 12;
         }
 
         if (parsedQuery != null && !parsedQuery.ignoredWords().isEmpty()) {
             g.centeredText(font,
                     Component.literal("§eUnknown words ignored: §f" + String.join(", ", parsedQuery.ignoredWords())),
-                    cx, this.height - 60, 0xFFFFFF);
+                    cx, this.height - 60, 0xFFFFFFFF);
         }
     }
 
     private void drawRow(GuiGraphicsExtractor g, int x, int y, String label, String value) {
-        g.text(this.font, Component.literal("§7" + label), x, y, 0xAAAAAA);
-        g.text(this.font, Component.literal("§f" + value), x + 110, y, 0xFFFFFF);
+        g.text(this.font, Component.literal("§7" + label), x, y, 0xFFAAAAAA);
+        g.text(this.font, Component.literal("§f" + value), x + 110, y, 0xFFFFFFFF);
     }
 
     private int estimateCpuUsage() {

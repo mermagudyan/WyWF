@@ -5,18 +5,37 @@ natural-language search bar. Instead of a number, you describe the world you wan
 and the mod searches for a seed that matches — fully offline, without generating
 chunks.
 
+## Version compatibility
+
+<table>
+<tr><th rowspan="2">Minecraft version</th><th colspan="4" style="text-align:center">Version of mod</th></tr>
+<tr><th>1.3.x</th><th>1.2.x</th><th>1.1.x</th><th>1.0.x</th></tr>
+<tr><td>1.16.5</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>1.17.1</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>1.18.2</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>1.19.2</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>1.20.1</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>1.20.4</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>1.21.1</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>1.21.5</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>1.21.11</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>26.1</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+<tr><td>26.1.2</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+<tr><td>26.2</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+</table>
+
+Each MC version has its own jar — pick the one matching your Minecraft version.
+
 ## What it does
 
 Type a description into the Seed field, for example:
 
 ```
-village near warm ocean
-деревня возле теплого океана
-mansion dark forest
-desert temple in desert
-near deep dark
-spawn on sand
-на блоке песок
+village near warm ocean       mansion dark forest
+desert temple in desert       near deep dark
+spawn on sand                 some 4 village
+never plains village          only desert pyramid
+between 500 to 800 village   spawn on any solid
 ```
 
 When you press **Create New World**, the mod:
@@ -34,17 +53,17 @@ Keywords are recognized in **Russian and English**.
 
 A query is a list of keywords, each optionally preceded by a modifier:
 
-| Modifier (EN / RU)                          | Meaning                                   |
-|---------------------------------------------|-------------------------------------------|
-| *(none)*                                    | present within the default radius         |
-| `near` / рядом, около, возле…              | within ~200 blocks                        |
-| `in` / в, на…                              | within ~64 blocks (right where you spawn) |
-| `far` / далеко, вдали…                     | far away (~500–1000 blocks)               |
-| `some N` / несколько, много…               | N or more structures nearby               |
-| `only` / только, лишь, одна…               | exactly one structure nearby              |
-| `between 500 to 800` / между, от…          | structure within a distance range         |
-| `under` / под, снизу                       | the surface biome at that spot            |
-| `no`, `not`, `without` / нет, не, без      | must **not** be present                   |
+| Modifier (EN / RU)                            | Meaning                                                                                                                                 |
+|-----------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------|
+| *(none)*                                      | present within the default radius                                                                                                       |
+| `near` / рядом, около, возле…                 | within ~200 blocks                                                                                                                      |
+| `in` / в, на…                                 | within ~64 blocks (right where you spawn)                                                                                               |
+| `far` / далеко, вдали…                        | far away (~500–1000 blocks)                                                                                                             |
+| `some N` / несколько, много…                  | N or more structures nearby (if the number of structures is not specified (i.e., N structures), it searches for 2 structures by default |
+| `only` / только, лишь, одна…                  | exactly one structure nearby (~500 blocks)                                                                                              |
+| `between x1 to x2 (x1..x2)` / между, от…      | structure within a distance range                                                                                                       |
+| `under` / под, снизу                          | the surface biome at that spot                                                                                                          |
+| `no`, `not`, `without` `never` / нет, не, без | must **not** be present (~500-1000 blocks)                                                                                              |
 
 Keywords fall into four categories:
 
