@@ -273,7 +273,6 @@ public final class QueryParser {
                 pendingSomeCount = 2;
                 pendingBetweenMin = 0;
                 pendingBetweenMax = 0;
-                pendingSpawn = false;
                 i = wordEnd;
             }
         }
