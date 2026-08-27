@@ -90,8 +90,5 @@ jar {
     }
 }
 
-// Make the native library a real resource so DEV runs (IDEA/loom) also see it.
-// Placed under natives/ to match the packaged jar layout that the bridge checks.
-sourceSets.main.resources {
-    srcDir 'natives'
-}
+// Native DLL for packaged jar is handled by jar { from("natives") into "natives" } above.
+// DEV runs use the fallback `run/natives/wywf_native.dll` seeded on first build.
