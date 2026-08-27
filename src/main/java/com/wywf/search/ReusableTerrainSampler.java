@@ -1,6 +1,7 @@
 package com.wywf.search;
 
 import net.minecraft.core.HolderGetter;
+import net.minecraft.core.Holder;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.util.KeyDispatchDataCodec;
@@ -20,14 +21,19 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 
 /**
  * Wraps the {@code finalDensity} density function from vanilla's NoiseRouter
- * to compute terrain height at arbitrary (x, z) coordinates. Uses the same
- * mutable-noise-leaf pattern as {@link ReusableClimateSampler} so the expensive
- * graph is built once and only noise leaves are reseeded per seed.
+ * to compute terrain height at arbitrary (x, z) coordinates.
  *
- * <p><b>Not thread-safe:</b> each searcher thread must own its own instance.
+ * <p>Every seed-dependent leaf is registered as a {@link Slot}: plain noise
+ * holders ({@link DensityFunctions.Noise}), shift wrappers
+ * ({@code ShiftA}/{@code ShiftB}/{@code ShiftedNoise}) and {@link BlendedNoise}.
+ * {@link #reseed(long)} swaps every slot to freshly instantiated noise for the
+ * new seed, so heights are correct for arbitrary seeds.</p>
+ *
+ * <p><b>Not thread-safe:</b> each searcher thread must own its own instance.</p>
  */
 final class ReusableTerrainSampler {
 
@@ -61,10 +67,10 @@ final class ReusableTerrainSampler {
         if (seeded && seed == currentSeed) return;
         PositionalRandomFactory random = settings.getRandomSource().newInstance(seed).forkPositional();
         Map<ResourceKey<NormalNoise.NoiseParameters>, NormalNoise> cache = new HashMap<>();
+        Function<ResourceKey<NormalNoise.NoiseParameters>, NormalNoise> factory =
+                k -> Noises.instantiate(noises, random, k);
         for (Slot slot : slots) {
-            NormalNoise noise = cache.computeIfAbsent(slot.key(),
-                    k -> Noises.instantiate(noises, random, k));
-            slot.setNoise(noise);
+            slot.reseed(seed, cache, factory, random);
         }
         currentSeed = seed;
         seeded = true;
@@ -84,8 +90,53 @@ final class ReusableTerrainSampler {
     }
 
     private interface Slot {
-        ResourceKey<NormalNoise.NoiseParameters> key();
-        void setNoise(NormalNoise noise);
+        void reseed(long seed,
+                    Map<ResourceKey<NormalNoise.NoiseParameters>, NormalNoise> cache,
+                    Function<ResourceKey<NormalNoise.NoiseParameters>, NormalNoise> noiseFactory,
+                    PositionalRandomFactory random);
+    }
+
+    /**
+     * Reflection-based accessor for the plain noise-holder density function node
+     * (Mojang mappings: {@code DensityFunctions.Noise}). Some mapped artifacts
+     * expose the nested class with restricted visibility, so the class is located
+     * structurally (methods {@code noise(): NoiseHolder}, {@code xzScale()},
+     * {@code yScale()}) instead of by name.
+     */
+    private static final class NoiseNodeAccess {
+        final Class<?> type;
+        final java.lang.reflect.Method noise;
+        final java.lang.reflect.Method xzScale;
+        final java.lang.reflect.Method yScale;
+
+        NoiseNodeAccess(Class<?> type, java.lang.reflect.Method noise,
+                        java.lang.reflect.Method xzScale, java.lang.reflect.Method yScale) {
+            this.type = type;
+            this.noise = noise;
+            this.xzScale = xzScale;
+            this.yScale = yScale;
+        }
+    }
+
+    private static final NoiseNodeAccess NOISE_NODE = findNoiseNode();
+
+    private static NoiseNodeAccess findNoiseNode() {
+        for (Class<?> c : DensityFunctions.class.getDeclaredClasses()) {
+            try {
+                java.lang.reflect.Method n = c.getMethod("noise");
+                if (n.getReturnType() != DensityFunction.NoiseHolder.class) continue;
+                java.lang.reflect.Method xz = c.getMethod("xzScale");
+                java.lang.reflect.Method ys = c.getMethod("yScale");
+                if (xz.getReturnType() != double.class || ys.getReturnType() != double.class) continue;
+                n.setAccessible(true);
+                xz.setAccessible(true);
+                ys.setAccessible(true);
+                return new NoiseNodeAccess(c, n, xz, ys);
+            } catch (NoSuchMethodException | SecurityException ignored) {
+                // try next nested class
+            }
+        }
+        return null;
     }
 
     private static final class Builder implements DensityFunction.Visitor {
@@ -118,6 +169,8 @@ final class ReusableTerrainSampler {
 
         @Override
         public DensityFunction.NoiseHolder visitNoise(DensityFunction.NoiseHolder noiseHolder) {
+            // Pre-instantiates seed-0 noise; mutability comes from the Mut* wrappers
+            // installed later in wrapNew().
             var data = noiseHolder.noiseData();
             if (data.is(Noises.TEMPERATURE_NETHER)) {
                 return new DensityFunction.NoiseHolder(data,
@@ -153,11 +206,28 @@ final class ReusableTerrainSampler {
                 slots.add(leaf);
                 return leaf;
             }
+            NoiseNodeAccess na = NOISE_NODE;
+            if (na != null && na.type.isInstance(function)) {
+                try {
+                    DensityFunction.NoiseHolder holder =
+                            (DensityFunction.NoiseHolder) na.noise.invoke(function);
+                    double xzs = (Double) na.xzScale.invoke(function);
+                    double ys = (Double) na.yScale.invoke(function);
+                    MutNoiseLeaf leaf = new MutNoiseLeaf(holder.noiseData(), xzs, ys,
+                            getOrCreateNoise(keyOf(holder)));
+                    slots.add(leaf);
+                    return leaf;
+                } catch (Exception ignored) {
+                    // fall through — leave the node untouched rather than fail
+                }
+            }
             if (function instanceof BlendedNoise blended) {
                 RandomSource rs = useLegacyInit
                         ? newLegacyInstance(0L)
                         : random.fromHashOf(Identifier.withDefaultNamespace("terrain"));
-                return blended.withNewRandom(rs);
+                MutBlended leaf = new MutBlended(useLegacyInit, blended.withNewRandom(rs));
+                slots.add(leaf);
+                return leaf;
             }
             return function;
         }
@@ -168,14 +238,54 @@ final class ReusableTerrainSampler {
         }
     }
 
+    /** Plain noise-holder leaf ({@link DensityFunctions.Noise}) with swappable noise. */
+    private static final class MutNoiseLeaf implements DensityFunction, Slot {
+        private final Holder<NormalNoise.NoiseParameters> noiseData;
+        private final double xzScale;
+        private final double yScale;
+        private NormalNoise noise;
+
+        MutNoiseLeaf(Holder<NormalNoise.NoiseParameters> noiseData,
+                     double xzScale, double yScale, NormalNoise noise) {
+            this.noiseData = noiseData;
+            this.xzScale = xzScale;
+            this.yScale = yScale;
+            this.noise = noise;
+        }
+
+        @Override
+        public void reseed(long seed,
+                           Map<ResourceKey<NormalNoise.NoiseParameters>, NormalNoise> cache,
+                           Function<ResourceKey<NormalNoise.NoiseParameters>, NormalNoise> noiseFactory,
+                           PositionalRandomFactory random) {
+            this.noise = cache.computeIfAbsent(noiseData.unwrapKey().orElseThrow(), noiseFactory);
+        }
+
+        @Override public double compute(DensityFunction.FunctionContext c) {
+            return noise.getValue(c.blockX() * xzScale, c.blockY() * yScale, c.blockZ() * xzScale);
+        }
+        @Override public void fillArray(double[] array, DensityFunction.ContextProvider p) { p.fillAllDirectly(array, this); }
+        @Override public DensityFunction mapChildren(DensityFunction.Visitor v) { return this; }
+        @Override public double minValue() { return -maxValue(); }
+        @Override public double maxValue() { return noise.maxValue() * Math.max(Math.abs(xzScale), Math.abs(yScale)); }
+        @Override public KeyDispatchDataCodec<? extends DensityFunction> codec() {
+            throw new UnsupportedOperationException("wywf terrain leaf");
+        }
+    }
+
     private static final class MutShiftA implements DensityFunction, Slot {
         private final ResourceKey<NormalNoise.NoiseParameters> key;
         private NormalNoise noise;
         MutShiftA(ResourceKey<NormalNoise.NoiseParameters> key, NormalNoise noise) {
             this.key = key; this.noise = noise;
         }
-        @Override public ResourceKey<NormalNoise.NoiseParameters> key() { return key; }
-        @Override public void setNoise(NormalNoise n) { this.noise = n; }
+        @Override
+        public void reseed(long seed,
+                           Map<ResourceKey<NormalNoise.NoiseParameters>, NormalNoise> cache,
+                           Function<ResourceKey<NormalNoise.NoiseParameters>, NormalNoise> noiseFactory,
+                           PositionalRandomFactory random) {
+            this.noise = cache.computeIfAbsent(key, noiseFactory);
+        }
         @Override public double compute(DensityFunction.FunctionContext c) {
             return noise.getValue(c.blockX() * 0.25, 0.0, c.blockZ() * 0.25) * 4.0;
         }
@@ -194,8 +304,13 @@ final class ReusableTerrainSampler {
         MutShiftB(ResourceKey<NormalNoise.NoiseParameters> key, NormalNoise noise) {
             this.key = key; this.noise = noise;
         }
-        @Override public ResourceKey<NormalNoise.NoiseParameters> key() { return key; }
-        @Override public void setNoise(NormalNoise n) { this.noise = n; }
+        @Override
+        public void reseed(long seed,
+                           Map<ResourceKey<NormalNoise.NoiseParameters>, NormalNoise> cache,
+                           Function<ResourceKey<NormalNoise.NoiseParameters>, NormalNoise> noiseFactory,
+                           PositionalRandomFactory random) {
+            this.noise = cache.computeIfAbsent(key, noiseFactory);
+        }
         @Override public double compute(DensityFunction.FunctionContext c) {
             return noise.getValue(c.blockZ() * 0.25, c.blockX() * 0.25, 0.0) * 4.0;
         }
@@ -220,8 +335,13 @@ final class ReusableTerrainSampler {
             this.xzScale = xzScale; this.yScale = yScale;
             this.key = key; this.noise = noise;
         }
-        @Override public ResourceKey<NormalNoise.NoiseParameters> key() { return key; }
-        @Override public void setNoise(NormalNoise n) { this.noise = n; }
+        @Override
+        public void reseed(long seed,
+                           Map<ResourceKey<NormalNoise.NoiseParameters>, NormalNoise> cache,
+                           Function<ResourceKey<NormalNoise.NoiseParameters>, NormalNoise> noiseFactory,
+                           PositionalRandomFactory random) {
+            this.noise = cache.computeIfAbsent(key, noiseFactory);
+        }
         @Override public double compute(DensityFunction.FunctionContext c) {
             double d = c.blockX() * xzScale + shiftX.compute(c);
             double e = c.blockY() * yScale + shiftY.compute(c);
@@ -232,6 +352,39 @@ final class ReusableTerrainSampler {
         @Override public DensityFunction mapChildren(DensityFunction.Visitor v) { return this; }
         @Override public double minValue() { return -maxValue(); }
         @Override public double maxValue() { return noise.maxValue(); }
+        @Override public KeyDispatchDataCodec<? extends DensityFunction> codec() {
+            throw new UnsupportedOperationException("wywf terrain leaf");
+        }
+    }
+
+    /** {@link BlendedNoise} leaf whose random state can be swapped per seed. */
+    private static final class MutBlended implements DensityFunction, Slot {
+        private final boolean useLegacyInit;
+        private BlendedNoise blended;
+
+        MutBlended(boolean useLegacyInit, BlendedNoise blended) {
+            this.useLegacyInit = useLegacyInit;
+            this.blended = blended;
+        }
+
+        @Override
+        public void reseed(long seed,
+                           Map<ResourceKey<NormalNoise.NoiseParameters>, NormalNoise> cache,
+                           Function<ResourceKey<NormalNoise.NoiseParameters>, NormalNoise> noiseFactory,
+                           PositionalRandomFactory random) {
+            RandomSource rs = useLegacyInit
+                    ? new LegacyRandomSource(seed)
+                    : random.fromHashOf(Identifier.withDefaultNamespace("terrain"));
+            this.blended = blended.withNewRandom(rs);
+        }
+
+        @Override public double compute(DensityFunction.FunctionContext c) {
+            return blended.compute(c);
+        }
+        @Override public void fillArray(double[] array, DensityFunction.ContextProvider p) { blended.fillArray(array, p); }
+        @Override public DensityFunction mapChildren(DensityFunction.Visitor v) { return this; }
+        @Override public double minValue() { return blended.minValue(); }
+        @Override public double maxValue() { return blended.maxValue(); }
         @Override public KeyDispatchDataCodec<? extends DensityFunction> codec() {
             throw new UnsupportedOperationException("wywf terrain leaf");
         }

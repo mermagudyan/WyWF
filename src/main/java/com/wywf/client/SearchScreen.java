@@ -72,7 +72,10 @@ public final class SearchScreen extends Screen {
     private void onSearchFinished(SearchResult result) {
         WYWFClient.LOGGER.info("Search finished: {}", result);
 
-        List<SearchResult> candidates = List.copyOf(WYWFClient.searcher().candidates());
+        List<SearchResult> candidates;
+        synchronized (WYWFClient.searcher().candidates()) {
+            candidates = List.copyOf(WYWFClient.searcher().candidates());
+        }
         String reason = (result != null) ? result.stopReason : null;
 
         if (result != null && result.primaryDescription != null) {
@@ -91,7 +94,11 @@ public final class SearchScreen extends Screen {
         SeedSearcher searcher = WYWFClient.searcher();
         if (searcher != null) {
             lastSnapshot = searcher.progress().snapshot();
-            lastCandidates = List.copyOf(searcher.candidates());
+            List<SearchResult> snap;
+            synchronized (searcher.candidates()) {
+                snap = List.copyOf(searcher.candidates());
+            }
+            lastCandidates = snap;
         }
 
         long now = System.currentTimeMillis();
@@ -176,9 +183,17 @@ public final class SearchScreen extends Screen {
         drawRow(g, rightCol, y, "Average:",         formatNumber(lastSnapshot.seedsPerSecond()) + "/s");
         y += rowH;
 
-        int cpuUsage = estimateCpuUsage();
-        drawRow(g, leftCol, y,  "CPU:",             cpuUsage + "%");
-        drawRow(g, rightCol, y, "Seed limit:",      formatNumber(maxSeeds));
+        // Make a missing accelerator visible instead of silently crawling in Java mode.
+        boolean nativeOn = com.wywf.search.CubiomesBridge.isAvailable();
+        drawRow(g, leftCol, y, "Accelerator:",
+                nativeOn ? "native (fast)" : "MISSING - slow mode!");
+        if (!nativeOn) {
+            g.fill(leftCol - 2, y - 1, leftCol + 158, y + 11, 0x50AA0000);
+        }
+        drawRow(g, rightCol, y, "CPU:",             estimateCpuUsage() + "%");
+        y += rowH;
+
+        drawRow(g, leftCol, y,  "Seed limit:",      formatNumber(maxSeeds));
         y += rowH + 6;
 
         SearchResult best = lastCandidate();

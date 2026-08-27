@@ -42,6 +42,9 @@ loom {
         client {
             client()
             programArgs "--username", "mermagudyan", "--uuid", "ad96c39f1b2047a58b5802365e1cad34"
+            if (project.hasProperty('audit')) {
+                systemProperty 'wywf.audit', 'true'
+            }
         }
     }
 }
@@ -50,6 +53,10 @@ dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     implementation "net.fabricmc:fabric-loader:${project.loader_version}"
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+    // JNA for native cubiomes acceleration
+    implementation "net.java.dev.jna:jna:5.14.0"
+    implementation "net.java.dev.jna:jna-platform:5.14.0"
 
     // Optional: YACL config screen (suggested, not required)
     compileOnly "dev.isxander:yet-another-config-lib:${project.yacl_version}+${project.minecraft_version}-fabric"
@@ -90,4 +97,13 @@ jar {
     from("LICENSE") {
         rename { "${it}_${project.base.archivesName}"}
     }
+
+    // Native DLL now comes via sourceSets.main.resources (see below),
+    // so dev runs and packaged jars share the same path.
+}
+
+// Make the native library a real resource so DEV runs (IDEA/loom) also see it:
+// CubiomesBridge reads it from the mod container roots at runtime.
+sourceSets.main.resources {
+    srcDir 'natives'
 }

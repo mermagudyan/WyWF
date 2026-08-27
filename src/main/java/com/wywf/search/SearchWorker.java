@@ -54,31 +54,43 @@ public final class SearchWorker implements Runnable {
     private static final long SIZE48 = 1L << 48;
     private static final long SIZE16 = 1L << 16;
     private static final java.util.concurrent.atomic.AtomicInteger SPAWN_DEBUG_COUNTER = new java.util.concurrent.atomic.AtomicInteger();
+    private static final java.util.concurrent.atomic.AtomicInteger REJECTION_LOG_COUNTER = new java.util.concurrent.atomic.AtomicInteger();
 
     private final long startOffset;
 
     @Override
     public void run() {
+        // Pin native mode for this worker thread so mid-search config changes don't flip the branch
+        CubiomesBridge.setThreadMode(config.nativeMode());
+        try {
         boolean accurateRings = query.structures().contains("minecraft:stronghold");
         SearchConfig.SearchCenter center = config.searchCenter();
 
-        if (usesSplit()) {
-            LOGGER.info("[thread {}] start: threads={}, center={}, 48/16 split",
-                    threadIndex, threadCount, center);
-            runSplit(startOffset, accurateRings, center);
-        } else {
-            LOGGER.info("[thread {}] start: threads={}, center={}, linear (biome-only)",
+        if (config.linearBiomeSearch() && center == SearchConfig.SearchCenter.ORIGIN && isBiomeOnlyQuery()) {
+            LOGGER.info("[thread {}] start: threads={}, center={}, linear (biome-only, opt-in)",
                     threadIndex, threadCount, center);
             runLinear(accurateRings, center);
+            return;
+        }
+
+        LOGGER.info("[thread {}] start: threads={}, center={}, 48/16 split",
+                threadIndex, threadCount, center);
+        runSplit(startOffset, accurateRings, center);
+        } finally {
+            CubiomesBridge.clearThreadMode();
+            CubiomesBridge.destroyCurrentGenerator();
         }
     }
 
-    private boolean usesSplit() {
+    /** True when no structure term needs block-level placement gating. */
+    private boolean isBiomeOnlyQuery() {
         for (ParsedQuery.Term term : query.terms()) {
             if (term.category != KeywordDictionary.Category.STRUCTURE) continue;
-            return true;
+            Modifier mod = term.modifier;
+            if (mod == Modifier.NEVER || mod == Modifier.FAR) continue;
+            return false;
         }
-        return false;
+        return true;
     }
 
     private void runSplit(long offset, boolean accurateRings, SearchConfig.SearchCenter center) {
@@ -94,17 +106,17 @@ public final class SearchWorker implements Runnable {
 
             WorldContext pfCtx = contextFactory.create(a, accurateRings);
 
-            int[] spawn = null;
-            if (center == SearchConfig.SearchCenter.SPAWN || center == SearchConfig.SearchCenter.BOTH) {
-                Set<String> waterBiomes = pfCtx.spawnPredictor != null
-                        ? pfCtx.spawnPredictor.waterBiomes() : Set.of();
-                spawn = SeedValidator.findApproxSpawnPos(pfCtx.biomeSource, pfCtx.sampler(), waterBiomes);
-                if (SPAWN_DEBUG_COUNTER.getAndIncrement() < 5) {
-                    LOGGER.warn("[runQuad] seed base={} → spawn=({},{})", a, spawn[0], spawn[1]);
-                }
+            if (CubiomesBridge.isActive()) {
+                CubiomesBridge.applySeed(a);
             }
 
-            if (!prefilterStructures(pfCtx, center, spawn)) {
+            if (center == SearchConfig.SearchCenter.ORIGIN) {
+                if (!prefilterStructures(pfCtx, center, null)) {
+                    globalSeedCursor.addAndGet(SIZE16);
+                    progress.onSeedsDiscarded(SIZE16);
+                    continue;
+                }
+            } else if (!prefilterStructuresExpanded(pfCtx, center)) {
                 globalSeedCursor.addAndGet(SIZE16);
                 progress.onSeedsDiscarded(SIZE16);
                 continue;
@@ -118,16 +130,27 @@ public final class SearchWorker implements Runnable {
 
                 long seed = (a & 0xFFFFFFFFFFFFL) | ((long) h << 48);
 
+                if (CubiomesBridge.isActive()) {
+                    CubiomesBridge.applySeed(seed);
+                }
+
                 try {
-                    int[] fullSpawn = spawn;
-                    if (spawn != null) {
-                        WorldContext fullCtx = contextFactory.create(seed, accurateRings);
-                        Set<String> wb = fullCtx.spawnPredictor != null
-                                ? fullCtx.spawnPredictor.waterBiomes() : Set.of();
-                        fullSpawn = SeedValidator.findApproxSpawnPos(fullCtx.biomeSource, fullCtx.sampler(), wb);
+                    int[] spawn = null;
+                    WorldContext seedCtx = contextFactory.create(seed, accurateRings);
+                    if (center == SearchConfig.SearchCenter.SPAWN || center == SearchConfig.SearchCenter.BOTH) {
+                        spawn = SeedValidator.findApproxSpawnPos(seedCtx, false);
+                        if (spawn == null) {
+                            globalSeedCursor.incrementAndGet();
+                            localChecked++;
+                            progress.onSeedDiscarded();
+                            continue;
+                        }
+                        if (SPAWN_DEBUG_COUNTER.getAndIncrement() < 5) {
+                            LOGGER.debug("[runSplit] seed={} -> spawn=({},{})", seed, spawn[0], spawn[1]);
+                        }
                     }
 
-                    SeedValidator.Outcome outcome = validateSeed(seed, accurateRings, center, fullSpawn);
+                    SeedValidator.Outcome outcome = validateCtx(seedCtx, center, spawn);
 
                     globalSeedCursor.incrementAndGet();
                     localChecked++;
@@ -175,18 +198,27 @@ public final class SearchWorker implements Runnable {
             long seed = positive ? inner : (-1L - inner);
 
             try {
+                if (CubiomesBridge.isActive()) {
+                    CubiomesBridge.applySeed(seed);
+                }
+
                 int[] spawn = null;
+                WorldContext seedCtx = contextFactory.create(seed, accurateRings);
                 if (center == SearchConfig.SearchCenter.SPAWN || center == SearchConfig.SearchCenter.BOTH) {
-                    WorldContext seedCtx = contextFactory.create(seed, accurateRings);
-                    Set<String> waterBiomes = seedCtx.spawnPredictor != null
-                            ? seedCtx.spawnPredictor.waterBiomes() : Set.of();
-                    spawn = SeedValidator.findApproxSpawnPos(seedCtx.biomeSource, seedCtx.sampler(), waterBiomes);
+                    spawn = SeedValidator.findApproxSpawnPos(seedCtx, false);
+                    if (spawn == null) {
+                        globalSeedCursor.incrementAndGet();
+                        localChecked++;
+                        progress.onSeedDiscarded();
+                        continue;
+                    }
                     if (SPAWN_DEBUG_COUNTER.getAndIncrement() < 5) {
-                        LOGGER.warn("[runLinear] seed={} → spawn=({},{})", seed, spawn[0], spawn[1]);
+                        LOGGER.debug("[runLinear] seed={} -> spawn=({},{})", seed, spawn[0], spawn[1]);
                     }
                 }
 
-                SeedValidator.Outcome outcome = validateSeed(seed, accurateRings, center, spawn);
+                SeedValidator.Outcome outcome = validateCtx(seedCtx, center,
+                        spawn != null ? spawn : new int[]{0, 0});
 
                 globalSeedCursor.incrementAndGet();
                 localChecked++;
@@ -216,51 +248,50 @@ public final class SearchWorker implements Runnable {
         }
     }
 
-    private SeedValidator.Outcome validateSeed(long seed, boolean accurateRings,
-                                               SearchConfig.SearchCenter center, int[] spawn) {
+    /** Single-context validation: reuses the per-seed context for spawn lookup
+     *  and every term evaluation. */
+    private SeedValidator.Outcome validateCtx(WorldContext ctx,
+                                              SearchConfig.SearchCenter center, int[] spawn) {
         return switch (center) {
-            case ORIGIN -> {
-                WorldContext ctx = contextFactory.create(seed, accurateRings);
-                Set<String> wb = ctx.spawnPredictor != null
-                        ? ctx.spawnPredictor.waterBiomes() : Set.of();
-                int[] predictedSpawn = SeedValidator.findApproxSpawnPos(ctx.biomeSource, ctx.sampler(), wb);
-                SeedValidator.Outcome outcome = validator.validate(contextFactory, seed, query, accurateRings);
-                if (outcome.accepted && SPAWN_DEBUG_COUNTER.getAndIncrement() < 20) {
-                    LOGGER.warn("[ORIGIN] seed={} center=(0,0) predictedSpawn=({},{}) struct=({},{}) dist={}",
-                            seed, predictedSpawn[0], predictedSpawn[1],
-                            outcome.structureX, outcome.structureZ,
-                            (int) Math.round(Math.sqrt(
-                                    Math.pow(outcome.structureX, 2) + Math.pow(outcome.structureZ, 2))));
-                }
-                yield outcome;
-            }
-            case SPAWN -> validator.validate(contextFactory, seed, query, accurateRings, spawn[0], spawn[1]);
-            case BOTH -> {
-                SeedValidator.Outcome spawnOutcome = validator.validate(contextFactory, seed, query, accurateRings, spawn[0], spawn[1]);
-                if (spawnOutcome.accepted) {
-                    if (SPAWN_DEBUG_COUNTER.getAndIncrement() < 20) {
-                        LOGGER.warn("[BOTH-SPAWN] seed={} spawn=({},{}) struct=({},{})",
-                                seed, spawn[0], spawn[1], spawnOutcome.structureX, spawnOutcome.structureZ);
-                    }
-                    yield spawnOutcome;
-                }
-                WorldContext ctx = contextFactory.create(seed, accurateRings);
-                Set<String> wb = ctx.spawnPredictor != null
-                        ? ctx.spawnPredictor.waterBiomes() : Set.of();
-                int[] predictedSpawn = SeedValidator.findApproxSpawnPos(ctx.biomeSource, ctx.sampler(), wb);
-                SeedValidator.Outcome originOutcome = validator.validate(contextFactory, seed, query, accurateRings);
-                if (originOutcome.accepted && SPAWN_DEBUG_COUNTER.getAndIncrement() < 20) {
-                    LOGGER.warn("[BOTH-ORIGIN] seed={} center=(0,0) predictedSpawn=({},{}) struct=({},{})",
-                            seed, predictedSpawn[0], predictedSpawn[1],
-                            originOutcome.structureX, originOutcome.structureZ);
-                }
-                yield originOutcome;
+            case ORIGIN -> validator.validate(ctx, query, 0, 0);
+            case SPAWN  -> validator.validate(ctx, query, spawn[0], spawn[1]);
+            case BOTH   -> {
+                SeedValidator.Outcome s = validator.validate(ctx, query, spawn[0], spawn[1]);
+                if (s.accepted) yield s;
+                yield validator.validate(ctx, query, 0, 0);
             }
         };
     }
 
     private static final int FAR_MAX_CHUNKS = (1000 + 15) / 16;
     private static final int FAR_MIN_BLOCKS = 500;
+    private static final int SPAWN_DRIFT_BLOCKS = 2048;
+
+    private boolean prefilterStructuresExpanded(WorldContext ctx, SearchConfig.SearchCenter center) {
+        int expandBlocks = SPAWN_DRIFT_BLOCKS;
+        for (ParsedQuery.Term term : query.terms()) {
+            if (term.category != KeywordDictionary.Category.STRUCTURE) continue;
+            Modifier mod = term.modifier;
+            if (mod == Modifier.NEVER || mod == Modifier.FAR || mod == Modifier.BETWEEN) continue;
+            // Rings are full-seed dependent — cannot be gated at block level.
+            if (structureChecker.hasConcentricRings(ctx, term.canonical)) continue;
+
+            if (mod == Modifier.SOME && term.someCount > 1) {
+                int effectiveBlocks = SeedValidator.effectiveSomeBlocks(term.someCount);
+                int scanChunks = (effectiveBlocks + expandBlocks + 15) / 16;
+                int count = countPlacements(ctx, 0, 0, scanChunks, effectiveBlocks + expandBlocks, term.canonical);
+                if (count < term.someCount) return false;
+                continue;
+            }
+
+            int baseRadius = validator.structureScanRadiusChunks(term);
+            int expandedChunks = baseRadius + (expandBlocks + 15) / 16;
+            if (structureChecker.firstPositionPlacementOnly(ctx, 0, 0, expandedChunks, term.canonical) == null) {
+                return false;
+            }
+        }
+        return true;
+    }
 
     private boolean prefilterStructures(WorldContext ctx, SearchConfig.SearchCenter center, int[] spawn) {
         boolean checkOrigin = center == SearchConfig.SearchCenter.ORIGIN
@@ -271,6 +302,10 @@ public final class SearchWorker implements Runnable {
         for (ParsedQuery.Term term : query.terms()) {
             if (term.category != KeywordDictionary.Category.STRUCTURE) continue;
             Modifier mod = term.modifier;
+
+            // Ring layouts (stronghold) depend on the FULL seed — block-level
+            // gating would judge 65536 variants by one variant's rings.
+            if (structureChecker.hasConcentricRings(ctx, term.canonical)) continue;
 
             if (mod == Modifier.NEVER) {
                 continue;
@@ -299,10 +334,13 @@ public final class SearchWorker implements Runnable {
             int radius = validator.structureScanRadiusChunks(term);
             boolean found = false;
             if (checkOrigin) {
-                found = structureChecker.hasAnyPlacementWithin(ctx, 0, 0, radius, term.canonical);
+                // Placement-only: structure placement depends only on low-48 bits,
+                // but biome viability is per-full-seed. Checking biome here would
+                // reject whole 65536-seed blocks based on the base seed's biomes.
+                found = structureChecker.firstPositionPlacementOnly(ctx, 0, 0, radius, term.canonical) != null;
             }
             if (!found && checkSpawn) {
-                found = structureChecker.hasAnyPlacementWithin(ctx, spawn[0], spawn[1], radius, term.canonical);
+                found = structureChecker.firstPositionPlacementOnly(ctx, spawn[0], spawn[1], radius, term.canonical) != null;
             }
             if (!found) return false;
         }
@@ -310,27 +348,30 @@ public final class SearchWorker implements Runnable {
     }
 
     private boolean farWouldFail(WorldContext ctx, int cx, int cz, String canonical) {
+        // Placement-only superset is exact for this verdict: if even the nearest
+        // candidate placement is < FAR_MIN, no viable instance can be farther.
         List<int[]> pos = structureChecker.positionsPlacementOnly(ctx, cx, cz, FAR_MAX_CHUNKS, canonical);
         if (pos.isEmpty()) return true;
-        int nearestDist = Integer.MAX_VALUE;
+        long minDistSq = Long.MAX_VALUE;
+        long farMinBlocksSq = (long) FAR_MIN_BLOCKS * FAR_MIN_BLOCKS;
         for (int[] p : pos) {
-            double dx = p[0] - cx;
-            double dz = p[1] - cz;
-            int d = (int) Math.round(Math.sqrt(dx * dx + dz * dz));
-            if (d < nearestDist) nearestDist = d;
+            long dx = p[0] - cx;
+            long dz = p[1] - cz;
+            long d2 = dx * dx + dz * dz;
+            if (d2 < minDistSq) minDistSq = d2;
         }
-        return nearestDist < FAR_MIN_BLOCKS;
+        return minDistSq < farMinBlocksSq;
     }
 
     private int countPlacements(WorldContext ctx, int cx, int cz, int radiusChunks, int effectiveBlocks, String canonical) {
         List<int[]> pos = structureChecker.positionsPlacementOnly(ctx, cx, cz, radiusChunks, canonical);
         int count = 0;
+        long effectiveBlocksSq = (long) effectiveBlocks * effectiveBlocks;
         for (int[] p : pos) {
             long dx = p[0] - cx;
             long dz = p[1] - cz;
             long d2 = dx * dx + dz * dz;
-            int d = (int) Math.round(Math.sqrt(d2));
-            if (d <= effectiveBlocks) count++;
+            if (d2 <= effectiveBlocksSq) count++;
         }
         return count;
     }
@@ -352,8 +393,8 @@ public final class SearchWorker implements Runnable {
         }
         for (var entry : r.structurePositions.entrySet()) {
             int[] pos = entry.getValue();
-            double dx = pos[0] - r.centerX;
-            double dz = pos[1] - r.centerZ;
+            long dx = pos[0] - r.centerX;
+            long dz = pos[1] - r.centerZ;
             int dist = (int) Math.round(Math.sqrt(dx * dx + dz * dz));
             sb.append(", ").append(entry.getKey()).append(" ~").append(dist).append(" blocks");
             sb.append(" @(").append(pos[0]).append(", ").append(pos[1]).append(")");
@@ -361,7 +402,7 @@ public final class SearchWorker implements Runnable {
         for (var entry : r.biomeDistances.entrySet()) {
             sb.append(", ").append(entry.getKey()).append(" ~").append(entry.getValue()).append(" blocks");
         }
-        LOGGER.warn("{}", sb);
+        LOGGER.info("{}", sb);
         synchronized (candidates) {
             if (candidates.size() < config.candidatesToCollect()) {
                 candidates.add(r);
@@ -375,19 +416,14 @@ public final class SearchWorker implements Runnable {
     private void logOutcome(long seed, SeedValidator.Outcome outcome) {
         if (outcome.accepted) return;
 
-        switch (outcome.reason) {
-            case NO_STRUCTURE ->
-                    LOGGER.trace("seed {} rejected: {}", seed, outcome.reason.description);
-            case BIOME_MISMATCH, OBJECT_MISMATCH -> {
-                if (outcome.structuresMatched) {
-                    LOGGER.debug("seed {} rejected: structure {} present @({}, {}), but {}",
-                            seed, outcome.structureId, outcome.structureX, outcome.structureZ,
-                            outcome.reason.description);
-                } else {
-                    LOGGER.trace("seed {} rejected: {}", seed, outcome.reason.description);
-                }
+        if (REJECTION_LOG_COUNTER.getAndIncrement() < 30) {
+            if (outcome.structuresMatched) {
+                LOGGER.debug("seed {} rejected: structure {} present @({}, {}), but {}",
+                        seed, outcome.structureId, outcome.structureX, outcome.structureZ,
+                        outcome.reason.description);
+            } else {
+                LOGGER.debug("seed {} rejected: {}", seed, outcome.reason.description);
             }
-            default -> LOGGER.trace("seed {} rejected: {}", seed, outcome.reason.description);
         }
     }
 }

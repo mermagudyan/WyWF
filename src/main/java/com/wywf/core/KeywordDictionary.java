@@ -382,25 +382,6 @@ public final class KeywordDictionary {
         return i == input.length();
     }
 
-    private static int levenshtein(String a, String b) {
-        int m = a.length(), n = b.length();
-        int[] prev = new int[n + 1];
-        for (int j = 0; j <= n; j++) prev[j] = j;
-        for (int i = 1; i <= m; i++) {
-            int[] curr = new int[n + 1];
-            curr[0] = i;
-            for (int j = 1; j <= n; j++) {
-                int cost = (a.charAt(i - 1) == b.charAt(j - 1)) ? 0 : 1;
-                curr[j] = Math.min(Math.min(
-                        curr[j - 1] + 1,
-                        prev[j] + 1),
-                        prev[j - 1] + cost);
-            }
-            prev = curr;
-        }
-        return prev[n];
-    }
-
     /** Hardcoded fallback used only if no lang file could be loaded. */
     private void registerDefaults() {
         // ---- biomes (surface) ----
@@ -496,7 +477,23 @@ public final class KeywordDictionary {
                 "shipwreck", "ship", "wreck", "sunken ship", "wrecked ship");
         registerStructure("minecraft:igloo", "иглу", "igloo", "ice house", "snow house");
         registerStructure("minecraft:stronghold", "крепость",
-                "stronghold", "fortress", "end portal", "stone stronghold");
+                "stronghold", "end portal", "stone stronghold");
+        registerStructure("minecraft:fortress", "крепость незера", "незер fortress",
+                "fortress", "nether fortress", "незер крепость");
+        registerStructure("minecraft:bastion", "бастион", "остатки бастиона",
+                "bastion", "bastion remnants", "bastion remnant");
+        registerStructure("minecraft:end_city", "город энда", "энд город",
+                "end city", "end cities", "end ship");
+        registerStructure("minecraft:village_plains", "равнинная деревня",
+                "plains village");
+        registerStructure("minecraft:village_desert", "пустынная деревня",
+                "desert village");
+        registerStructure("minecraft:village_savanna", "саванная деревня",
+                "savanna village");
+        registerStructure("minecraft:village_snowy", "снежная деревня",
+                "snowy village");
+        registerStructure("minecraft:village_taiga", "тайговая деревня",
+                "taiga village");
         registerStructure("minecraft:trial_chambers", "trial chambers", "триал чамберс",
                 "trial chamber", "copper chambers");
         registerStructure("minecraft:ancient_city", "древний город",

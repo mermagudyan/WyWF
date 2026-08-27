@@ -82,7 +82,10 @@ public final class WorldContext {
     public int computeHeight(int blockX, int blockZ) {
         ReusableTerrainSampler sampler = terrainSamplerSupplier != null
                 ? terrainSamplerSupplier.get() : null;
-        if (sampler == null) return (terrainMinY + terrainMaxY) / 2;
+        if (sampler == null) {
+            // Fail visibly instead of masking init errors with a fake height
+            throw new IllegalStateException("Terrain sampler not initialized for seed " + seed);
+        }
         return sampler.computeHeight(blockX, blockZ);
     }
 

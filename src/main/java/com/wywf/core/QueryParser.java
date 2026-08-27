@@ -20,18 +20,15 @@ public final class QueryParser {
         bind(m, "minecraft:snowy_plains",   "minecraft:village",  "minecraft:village_snowy");
         bind(m, "minecraft:taiga",         "minecraft:village",  "minecraft:village_taiga");
         bind(m, "minecraft:desert",        "minecraft:desert_pyramid", "minecraft:desert_pyramid");
-        bind(m, "minecraft:jungle",        "minecraft:jungle_temple",  "minecraft:jungle_pyramid");
-        bind(m, "minecraft:bamboo_jungle",  "minecraft:jungle_temple",  "minecraft:jungle_pyramid");
+        bind(m, "minecraft:jungle",        "minecraft:jungle_temple",  "minecraft:jungle_temple");
+        bind(m, "minecraft:bamboo_jungle",  "minecraft:jungle_temple",  "minecraft:jungle_temple");
         bind(m, "minecraft:swamp",         "minecraft:swamp_hut", "minecraft:swamp_hut");
         bind(m, "minecraft:dark_forest",    "minecraft:mansion",       "minecraft:mansion");
         bind(m, "minecraft:snowy_plains",  "minecraft:igloo", "minecraft:igloo");
         bind(m, "minecraft:snowy_taiga",   "minecraft:igloo", "minecraft:igloo");
         bind(m, "minecraft:snowy_slopes",  "minecraft:igloo", "minecraft:igloo");
         bind(m, "minecraft:ocean",         "minecraft:ocean_monument", "minecraft:ocean_monument");
-        bind(m, "minecraft:ocean",         "minecraft:ocean_ruins", "minecraft:ocean_ruin_cold");
-        bind(m, "minecraft:nether",        "minecraft:fortress", "minecraft:fortress");
-        bind(m, "minecraft:nether",        "minecraft:bastion",  "minecraft:bastion");
-        bind(m, "minecraft:end",           "minecraft:end_city", "minecraft:end_city");
+        bind(m, "minecraft:ocean",         "minecraft:ocean_ruins", "minecraft:ocean_ruins");
         return Map.copyOf(m);
     }
 
@@ -45,8 +42,8 @@ public final class QueryParser {
         m.put("minecraft:swamp_hut",      "minecraft:swamp");
         m.put("minecraft:ocean_monument", "minecraft:ocean");
         m.put("minecraft:ocean_ruins",    "minecraft:ocean");
-        m.put("minecraft:fortress",       "minecraft:nether");
-        m.put("minecraft:bastion",        "minecraft:nether");
+        m.put("minecraft:fortress",       "minecraft:nether_wastes");
+        m.put("minecraft:bastion",        "minecraft:nether_wastes");
         m.put("minecraft:end_city",       "minecraft:end");
         m.put("minecraft:village_desert", "minecraft:desert");
         m.put("minecraft:village_plains", "minecraft:plains");
@@ -218,16 +215,29 @@ public final class QueryParser {
                     if (canonical != null) {
                         KeywordDictionary.Entry e = dict.get(canonical);
                         if (e != null && e.category == KeywordDictionary.Category.SPAWN) {
-                            String dedupeKey = canonical + "#SPAWN";
+                            String dedupeKey = buildDedupeKey(canonical, KeywordDictionary.Category.SPAWN, pending, pendingSomeCount, pendingBetweenMin, pendingBetweenMax);
                             if (seen.add(dedupeKey)) {
-                                terms.add(new ParsedQuery.Term(canonical, e.category, pending));
+                                if (pending == Modifier.SOME) {
+                                    terms.add(new ParsedQuery.Term(canonical, e.category, pending, pendingSomeCount, 0, 0));
+                                } else if (pending == Modifier.BETWEEN) {
+                                    terms.add(new ParsedQuery.Term(canonical, e.category, pending, 2, pendingBetweenMin, pendingBetweenMax));
+                                } else {
+                                    terms.add(new ParsedQuery.Term(canonical, e.category, pending));
+                                }
                             }
                         }
                     }
                     pendingSpawn = false;
                     pending = Modifier.DEFAULT;
+                    pendingSomeCount = 2;
+                    pendingBetweenMin = 0;
+                    pendingBetweenMax = 0;
                     i += matched;
                     continue;
+                } else {
+                    // No block matched after spawn trigger — keep pendingSpawn for next word if still plausible,
+                    // but if current word is clearly not a block prefix, drop the trigger to avoid stretching it
+                    // over multiple unrelated words. We keep it for now and let the non-block path below handle it.
                 }
             }
 
@@ -237,7 +247,7 @@ public final class QueryParser {
                 if (canonical != null) {
                     KeywordDictionary.Entry e = dict.get(canonical);
                     if (e != null) {
-                        String dedupeKey = canonical + "#" + pending.name();
+                        String dedupeKey = buildDedupeKey(canonical, e.category, pending, pendingSomeCount, pendingBetweenMin, pendingBetweenMax);
                         if (seen.add(dedupeKey)) {
                             if (pending == Modifier.SOME) {
                                 terms.add(new ParsedQuery.Term(canonical, e.category, pending,
@@ -263,21 +273,16 @@ public final class QueryParser {
                 pendingSomeCount = 2;
                 pendingBetweenMin = 0;
                 pendingBetweenMax = 0;
+                pendingSpawn = false;
                 i = wordEnd;
             }
         }
 
+        // Trailing modifier without a following term: treat as stray modifier
+        // instead of silently rewriting history (which bypasses dedupe and
+        // violates user intent, e.g. "village near" -> "near village").
         if (pending != Modifier.DEFAULT && !terms.isEmpty()) {
-            ParsedQuery.Term last = terms.remove(terms.size() - 1);
-            if (pending == Modifier.BETWEEN) {
-                terms.add(new ParsedQuery.Term(last.canonical, last.category, pending,
-                        2, pendingBetweenMin, pendingBetweenMax));
-            } else if (pending == Modifier.SOME) {
-                terms.add(new ParsedQuery.Term(last.canonical, last.category, pending,
-                        pendingSomeCount, 0, 0));
-            } else {
-                terms.add(new ParsedQuery.Term(last.canonical, last.category, pending));
-            }
+            ignored.add(pending.name().toLowerCase(Locale.ROOT));
         }
 
         List<ParsedQuery.Term> bound = bindCompound(terms);
@@ -342,6 +347,14 @@ public final class QueryParser {
             }
         }
         return out;
+    }
+
+    private static String buildDedupeKey(String canonical, KeywordDictionary.Category category,
+                                     Modifier mod, int someCount, int betweenMin, int betweenMax) {
+        String base = canonical + "#" + category.name() + "#" + mod.name();
+        if (mod == Modifier.SOME) return base + "#" + someCount;
+        if (mod == Modifier.BETWEEN) return base + "#" + betweenMin + ".." + betweenMax;
+        return base;
     }
 
     public boolean isQuery(String input) {

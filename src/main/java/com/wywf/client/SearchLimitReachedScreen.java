@@ -86,6 +86,8 @@ public final class SearchLimitReachedScreen extends Screen {
         extended.sortCandidatesByDistance(config.sortCandidatesByDistance());
         extended.searchCenter(config.searchCenter());
         extended.queryLanguage(config.queryLanguage());
+        extended.nativeMode(config.nativeMode());
+        extended.linearBiomeSearch(config.linearBiomeSearch());
 
         SearchScreen screen = new SearchScreen(parentScreen, queryText, parsedQuery, extended);
         Minecraft.getInstance().setScreenAndShow(screen);

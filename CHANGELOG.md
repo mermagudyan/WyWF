@@ -1,230 +1,242 @@
 # Changelog
 
-## 1.3.0
+Written in plain language — every change, explained so anyone can understand.
 
-### Added
-- **`only` modifier** (`only`, `just`, `single`, `только`, `лишь`, `одна`):
-  accept seeds with exactly one instance of the structure within range.
-  Example: `only desert pyramid` — exactly one pyramid within ~500 blocks.
-- **`between` modifier** (`between`, `mid`, `middle`, `от`, `между`,
-  `диапазон`): structure must be within a specific distance range.
-  Examples: `village between 500 to 800`, `500..800 village`,
-  `деревня от 500 до 800`. Supports separators `..`, `to`, `do`, `до`.
-- **`some N` count**: `some` now accepts an explicit count.
-  Example: `some 4 village` — at least 4 villages within ~320 blocks.
-  `some village` (no number) defaults to at least 2.
-- **Modifier display in search log**: Terms now show modifier details:
-  `some 4 minecraft:village`, `between 500..800 minecraft:village_plains`.
-- **Mod Menu + YACL config screen:** settings are now accessible via Mod Menu
-  (config button). Uses YACL for a beautiful categorized UI with sliders,
-  dropdowns, and toggles. Both Mod Menu and YACL are **optional** — the mod
-  works without them (settings via `config/wywf.json`). Available settings:
-  query language, thread mode, scan radii, sample step, candidate count,
-  stop-at-first toggle, sort-by-distance toggle.
-- **"Did you mean?" with consonant-skeleton matching:** when the query contains
-  misspelled words, the mod suggests corrections by matching consonant
-  skeletons (e.g. "mnsn" → "mansion", "vllg" → "village", "dsert" →
-  "desert"). Shows ALL corrections at once. Works even when ALL words are
-  misspelled.
-- **ExclusionZone enforcement:** structure placements now respect vanilla
-  exclusion zones — a structure whose placement is blocked by a nearby structure
-  from another set is correctly rejected.
-- **Spawn block prediction improvement:** spawn block scanning now covers ±2
-  chunks (32 blocks) around the origin, matching vanilla's spawn search area,
-  instead of only the origin chunk.
-- **Sort candidates by distance:** when ON, the final candidate is chosen by
-  distance to the nearest structure (closest first), rather than randomly.
-  Default: OFF. Toggle in Mod Menu → Search.
-- **Time limit:** maximum search time before stopping. Default: 30 minutes,
-  minimum: 5 minutes. When reached, a dialog asks whether to use the best
-  candidate found, double the limits and search more, or cancel.
-- **Max seeds to check:** hard limit on seeds evaluated. Default: 10,000,000,
-  minimum: 1,000,000. When reached, same dialog as time limit. Both limits
-  enforce minimums — inputting a lower value snaps to the minimum.
-- **Implicit biome for structures:** when a structure has a unique natural
-  biome and the query doesn't specify one, the biome is auto-added
-  (mansion → dark_forest, desert_pyramid → desert, swamp_hut → swamp,
-  ocean_monument → ocean, village_desert → desert, village_plains → plains,
-  village_taiga → taiga, village_savanna → savanna, village_snowy →
-  snowy_plains, etc.).
-- **Reverse variant mapping:** structure variants (village_desert,
-  village_plains, etc.) now resolve back to their base structure (village)
-  for placement checks. Without this, the prefilter couldn't find the
-  structure in StructureSets and discarded ALL seeds.
+## 1.4.0
+
+### New
+- **Much faster searches.** The mod now uses a built-in speed-up library
+  when available. Biome checks become up to ~50× faster. It turns on by
+  itself, and if the library is missing, the mod quietly keeps working
+  the old way.
+- **Nether structures finally work.** Searching for `nether fortress`
+  or `bastion` now finds real seeds. Before, these searches almost
+  always came back empty when the speed-up mode was active.
+- **Cave biomes work with "under".** Queries like `under lush caves`
+  now return results — before this version, they never did.
+- **Smarter spawn fallback.** When the game's own spawn finder comes up
+  empty, the mod now searches around for the nearest sensible spot
+  (plains, forest, taiga, meadow, sunflower plains) within a few
+  thousand blocks, instead of just guessing next to the origin.
 
 ### Changed
-- **Distance constants tuned:**
-  - `near`: 200 blocks (was default radius).
-  - `in`: 64 blocks.
-  - `far`: 500–1000 blocks (was ~1000–2000).
-  - `some`: 320 blocks scan radius.
-  - `only`: 500 blocks scan radius.
-- **NEVER prefilter removed.** The structure placement prefilter for `never`
-  was too aggressive for common structures (villages, etc.) — it mathematically
-  could never reject within the search radius. Full validation handles `never`
-  correctly without a prefilter.
-- **SOME/ONLY re-scan uses biome-aware `positions()`** (not placement-only).
-  BETWEEN still uses `positionsPlacementOnly()`.
+- **Spawn-centered search is more accurate.** Each seed now gets its own
+  spawn position and terrain height (before, many seeds shared the same
+  wrong height and an approximate position). When the predicted point
+  lands in water, nearby dry ground is preferred.
+- **Strongholds are placed correctly.** Each seed now gets its own true
+  ring positions. Before, seeds that differed only in their upper bits
+  shared one wrong set, giving both false finds and missed finds.
+- **Renamed biomes match again.** Looking for snowy plains, windswept
+  hills, old growth pine taiga, wooded badlands and friends now works
+  together with the speed-up mode — before, these biomes silently
+  never matched there.
+- **Village phrases work again.** Combinations like `plains village`,
+  `desert temple`, `snowy village` are recognized as one thing again,
+  and asking for a nether fortress, bastion or end city by name works.
+- **`some` counts honestly.** Asking for `some 2 stronghold`,
+  `some 2 mansion` and similar now truly requires that many — before,
+  one instance was enough.
+- **Even faster.** Removed hidden disk writing inside the speed-up
+  library that slowed down every checked seed, and sorted query parts
+  once per search instead of once per seed.
+- **More reliable caching.** An internal mix-up that could rarely swap
+  two different search results has been eliminated.
+- **Calmer logs.** Normal, successful events no longer shout like
+  warnings; genuine failures now report full details.
+- Small cleanup in the settings screen layout.
 
 ### Fixed
-- **NEVER false positives:** `never plains village` previously accepted seeds
-  with a village within range. Reverted to `firstPositionPlacementOnly` which
-  correctly resolves structure variants (e.g. `village_plains` → all village
-  placements via `minecraft:village` Structure key).
-- **SOME re-scan radius:** `structureScanRadiusChunks` for SOME returned the
-  full `searchRadiusChunks` (40 chunks / 640 blocks) instead of
-  `chunks(SOME_BLOCKS)` (20 chunks / 320 blocks). Villages at 668+ blocks
-  were incorrectly shown for `some 4 village`.
-- **BETWEEN parsing:** trailing `500 to 800` after a term (like
-  `village 500 to 800`) was not attached. Now retroactively applied to the
-  last term at end-of-loop.
-- **BETWEEN re-scan display:** positions outside `[betweenMin, betweenMax]`
-  were shown. Now filtered correctly.
-- **`evalBiomeTermDirect` step:** ONLY/BETWEEN biome cases now use
-  `effectiveStep(quartY)` for correct underground biome sampling.
-- **`evalBiomeTermDirect` BETWEEN biome bug:** now uses
-  `BiomeField.nearestDistanceBlocks(key, betweenMin, betweenMax)` for
-  correct range matching.
-- **`splitBetweenWord` helper:** handles single-word BETWEEN patterns
-  (`500..800`, `500до800`, `500to800`, `500do800`).
-- **Thread safety: structure cache race condition.** `SeedValidator.structureCache`
-  inner maps were plain `HashMap` shared across multiple search threads — could
-  cause `ConcurrentModificationException` or corrupted data during concurrent
-  reads. Changed to `ConcurrentHashMap`.
-- **Thread safety: `WorldContext.sampler()` non-volatile lazy init.** Multiple
-  threads could see a partially-constructed `Climate.Sampler` object. Added
-  `volatile`.
-- **`stopReason` not reset between searches.** If search A finished with a
-  stop reason (e.g. "time limit reached"), search B's completion handler
-  would show the wrong reason. Now cleared in `start()`.
-- **Duplicate implicit biomes.** `addImplicitBiomes` could add the same biome
-  multiple times if two structures mapped to the same biome (e.g. "ocean
-  monument ocean ruins" → two ocean biome terms). Now tracks already-added
-  biomes.
-- **Dangling modifier applied to wrong word.** "near xyz village" — the NEAR
-  modifier was intended for "xyz" (which was ignored), but was incorrectly
-  applied to "village". Now modifiers are reset when a word is ignored.
-- **All threads named the same.** Worker threads were all named
-  `"WYWF-Search-{count}"`, making them indistinguishable in thread dumps.
-  Now uses an `AtomicInteger` counter.
-- **Progress counter drift in linear (biome-only) search.** `SearchWorker.runLinear`
-  did not increment `globalSeedCursor` on error, causing the progress display
-  to undercount checked seeds. `runSplit` already did this correctly.
-- **Duplicate synonym warnings.** Removed duplicate structure entries
-  (`desert_pyramid`, `jungle_pyramid`, `swamp_hut`, `igloo`, `monument`) that
-  shared synonyms with generic entries and caused first-wins warnings at
-  startup. Unique synonyms from removed duplicates were merged into the
-  generic entries. Village variant entries (`village_plains`, etc.) kept for
-  compound binding.
-- **`woodland` synonym conflict.** Removed "woodland" from mansion synonyms —
-  it was already claimed by the forest biome entry.
-- **MC lang parser warning.** Moved synonym data files from `lang/` to `data/`
-  (`assets/wywf/data/en_us.json`, `ru_ru.json`) to prevent Minecraft's
-  resource loader from attempting to parse them as language files (which
-  expected string values, not arrays). Updated `KeywordDictionary` loader
-  paths.
-- **Empty query handling.** `SeedSearcher.start()` now fires `onFound` with a
-  `SearchResult(primaryDescription=null)` when all terms are filtered out
-  (e.g. unsupported biomes/structures for the MC version), instead of silently
-  never completing — the UI no longer gets stuck on "Preparing...". The null
-  description routes to `SearchLimitReachedScreen` instead of trying to create
-  a world with seed 0.
-- **Text rendering on MC 26.x.** `GuiGraphicsExtractor.text()` and
-  `centeredText()` check `ARGB.alpha(color) == 0` and skip the draw. All UI
-  text colors now use `0xFFFFFFFF` (with alpha byte) instead of `0xFFFFFF`,
-  which was silently dropped.
+- Searches centered on the spawn point no longer reject every seed up
+  front when structures are requested.
+- A crash while predicting the spawn point could silently stop a whole
+  search thread mid-run. It now skips just that one seed.
+- Very rare race: clicking "Create World" at exactly the wrong moment
+  could create a world with the wrong (or zero) seed.
+- Rare freezes and corrupted results when many search threads shared
+  one lookup table.
+- Saved search reports no longer scramble when several threads write
+  them at once.
+- The speed-up library's helper objects are properly released after
+  each search instead of leaking memory.
+
+## 1.3.0
+
+### New
+- **`only` modifier** (`only`, `just`, `single`, `только`, `лишь`,
+  `одна`): accept seeds with exactly one instance of the structure
+  nearby. Example: `only desert pyramid` — exactly one pyramid within
+  roughly 500 blocks.
+- **`between` modifier** (`between`, `mid`, `middle`, `от`, `между`,
+  `диапазон`): the structure must be within a specific distance range.
+  Examples: `village between 500 to 800`, `500..800 village`,
+  `деревня от 500 до 800`. Separators `..`, `to`, `do`, `до` all work,
+  including glued forms like `500..800`.
+- **`some N` count**: choose how many you need.
+  Example: `some 4 village` — at least 4 villages within ~320 blocks.
+  Plain `some village` still means "at least 2".
+- **Modifiers shown in the search log**: you can see exactly how your
+  request was understood, e.g. `some 4 minecraft:village`.
+- **Settings screen via Mod Menu.** All options in a tidy categorized
+  menu with sliders and toggles. Uses optional companion libraries —
+  without them everything still works through the config file. Options
+  include: query language, thread mode, scan radii, sample step,
+  candidate count, stop-at-first, sort-by-distance.
+- **"Did you mean?" suggestions.** Misspelled words get corrected using
+  letter-skeleton matching: "vllg" → village, "dsert" → desert,
+  "mnsn" → mansion. Shows all corrections at once, even when every
+  word in the query is misspelled.
+- **Exclusion zones respected.** Structures that vanilla blocks because
+  another structure set sits too close are now correctly rejected.
+- **Wider spawn-block scanning.** The block you will stand on is now
+  predicted across a ±32 block area (matching how the game itself
+  hunts for a spawn spot), not just the exact corner.
+- **Sort candidates by distance.** Optional: the final seed is picked
+  so the nearest structure is as close as possible, instead of random
+  among candidates.
+- **Time limit.** Maximum search time before stopping (default
+  30 minutes, minimum 5). When reached, a dialog offers: take the best
+  candidate so far, double the limits and continue, or cancel.
+- **Seed limit.** Hard cap on how many seeds may be checked (default
+  10 million). Same dialog when reached. Values below the minimums snap
+  up to the minimum.
+- **Automatic biome for structures.** If a structure lives in one
+  obvious biome and your query doesn't name one, it is added for you:
+  mansion → dark forest, desert pyramid → desert, witch hut → swamp,
+  ocean monument → ocean, desert village → desert, plains village →
+  plains, taiga village → taiga, savanna village → savanna, snowy
+  village → snowy plains, and so on.
+- **Village variants resolve correctly.** Named variants (desert
+  village, plains village…) are matched back to the general village
+  when checking placement, so requesting them no longer discards every
+  seed by mistake.
+
+### Changed
+- **Clearer distances.** `near` = 200 blocks, `in` = 64 blocks,
+  `far` = 500–1000 blocks (used to be ~1000–2000), `some` scans within
+  320 blocks, `only` within 500.
+- The "never" check no longer runs a pointless extra pass that could
+  never help; the main check handles it fully.
+- Re-counting structures for `some`/`only` now respects which biomes
+  they may generate in.
+
+### Fixed
+- `never plains village` wrongly accepted seeds that DID have a village
+  nearby.
+- `some 4 village` counted villages much farther away than promised
+  (up to 640+ blocks instead of 320).
+- A trailing range like `village 500 to 800` sometimes wasn't attached
+  to the village.
+- Distances outside your chosen range were shown in results for
+  `between` queries; now filtered.
+- Cave-biome sampling for `only`/`between` used too coarse a grid and
+  could miss underground biomes entirely.
+- Range checks for cave biomes measured the wrong thing and could
+  accept wrong seeds.
+- Glued ranges written as one word (`500..800`, `500до800`, `500to800`)
+  now parse everywhere.
+- Several rare crashes/freezes when multiple search threads shared one
+  lookup table.
+- Another race where two threads could briefly see a half-built
+  sampler.
+- A leftover "search stopped because…" message could leak into the next
+  search's summary.
+- Asking for two structures that share a natural biome added that biome
+  twice.
+- In "near xyz village", the word `near` could stick to `village`
+  instead of being dropped along with the unknown word `xyz`. Modifiers
+  now reset when a word is ignored.
+- All search threads were named identically, making problem reports
+  harder to read. They are numbered now.
+- The progress counter undercounted in one search mode when a seed
+  errored out.
+- Startup warnings about duplicate word definitions removed (the
+  duplicates were merged into the surviving entries).
+- The word "woodland" belonged to the forest biome but was also claimed
+  by "mansion"; it now means forest only.
+- Two data files lived in a folder where Minecraft tried to read them
+  as translations and printed warnings; they moved somewhere safe.
+- An empty (or fully unsupported) query froze the search screen on
+  "Preparing…" forever; it now finishes cleanly with a message.
+- Invisible text on Minecraft 26.x: text colors were written without
+  the transparency byte, which made whole labels disappear. All UI text
+  now renders.
 
 ## 1.2.0
 
-### Added
-- **Externalized all query synonyms to lang files** (`assets/wywf/lang/en_us.json`,
-  `ru_ru.json`). Modifiers, spawn triggers, biomes, structures, objects and spawn
-  blocks are now data-driven and no longer hardcoded in `QueryParser` /
-  `VanillaStructureChecker`. AUTO merges EN + RU (`queryLanguage` EN / RU / AUTO).
-- **New spawn blocks** for `spawn on …` / `на …`: `clay`, `terracotta`,
-  `red_sand`, `netherrack`, `soul_sand`, `basalt`, `blackstone`, `end_stone`,
-  `obsidian`, `ice`, `packed_ice`, `cobblestone`, `moss`, `rooted_dirt`
-  (RU synonyms included).
-- **Compound biome+structure terms** resolve to the specific structure variant:
-  `plains village` → `village_plains`, `desert temple` → `desert_pyramid`,
-  `jungle temple` → `jungle_pyramid`, `snowy village` → `village_snowy`, etc.
-  RU phrases supported (`равнинная деревня`, …).
-- **Query validation / ignored words:** unknown words are no longer silently dropped —
-  they are collected and logged (WARN) so the player knows part of the query was
-  not understood.
-- **Config persistence:** `SearchConfig` (incl. `queryLanguage`) is saved to
-  `~/.minecraft/config/wywf.json` and reloaded on the Create-World screen.
-- **Query language is now a mod-level setting (Mod Menu), not a per-search
-  button.** The in-search `Language:` button was removed. Only **EN** is
-  selectable in 1.2.0 — **RU and AUTO are NOT available yet** (the `ru_ru.json`
-  lexicon exists but is not wired to a UI control); the default and fallback is
-  EN. RU/AUTO will be exposed in a later release.
-- **Search-result reporting:** each found seed now lists the matched structures
-  and biomes (coordinates stay DEEP v1) plus the reason the search stopped
-  (`collected N candidates`, `search complete`, …).
-- **Unknown-word feedback:** if part of the query was not recognized, the search
-  screen prints `Unknown words ignored: …` so the player knows what was dropped.
+### New
+- **Every search word now lives in editable language files**
+  (English and Russian). Words for modifiers, biomes, structures,
+  objects and spawn blocks are loaded from data files instead of being
+  welded into the code. The query language setting supports EN / RU /
+  AUTO (AUTO merges both).
+- **Many new spawn blocks** for `spawn on …`: clay, terracotta,
+  red sand, netherrack, soul sand, basalt, blackstone, end stone,
+  obsidian, ice, packed ice, cobblestone, moss, rooted dirt — Russian
+  names included.
+- **Combined phrases** resolve to the exact structure variant:
+  `plains village` → plains village, `desert temple` → desert pyramid,
+  `jungle temple`, `snowy village`, and the same in Russian.
+- **Unknown words are reported.** Words the mod doesn't recognize are
+  collected and shown, so you know part of your request was skipped
+  instead of wondering why nothing matched.
+- **Your settings persist.** Choices are saved to `config/wywf.json`
+  and restored next time.
+- **Richer results.** Each found seed lists the structures and biomes
+  that matched, plus the reason the search stopped.
 
 ### Changed
-- `KeywordDictionary` now loads from lang JSON; `VanillaStructureChecker.EXPANSIONS`
-  moved to `wywf.variant.*` lang entries; hardcoded `buildModifiers()` /
-  `buildSpawnTriggers()` removed from `QueryParser`.
-- **Structure presence cache:** `SeedValidator` caches per-(seed, structure,
-  radius) placement results so a revisited seed does not recompute `firstPosition`
-  (internal optimization; no player-visible behaviour change).
+- The word dictionary is fully driven by the language files; old
+  built-in lists were removed.
+- Revisiting the same seed reuses earlier structure lookups instead of
+  recomputing them (no visible behavior change, just faster).
+
+### Known limitation in this release
+- Only English is selectable in the language menu yet; Russian and AUTO
+  arrive in a later update.
 
 ## 1.1.1
 
 ### Fixed
-- **Structure search parity (all placement types):** rewrote
-  `VanillaStructureChecker` to no longer rely on
-  `ChunkGeneratorStructureState.isStructureChunk(state, …)`, which both failed
-  to compile and threw `UnsupportedOperationException` at construction (offline /
-  test `RegistryAccess` lacks the datapack `has_structure` biome tags). It now
-  re-implements the placement check standalone:
-  - `RandomSpreadStructurePlacement` via its public
-    `getPotentialStructureChunk(seed, x, z)` (covers mineshaft, villages,
-    temples, monuments, bastions, fortresses, end cities, ruined portals, …).
-  - `ConcentricRingsStructurePlacement` via recomputed ring positions
-    (`BiomeSource.findBiomeHorizontal`, cached per `(placement, seed)`,
-    with an "any biome" fallback when the preferred-biome tag is unbound).
-  - `FrequencyReduction` is now honored through the public
-    `applyAdditionalChunkRestrictions`.
-  - Per-structure biome gate now calls
-    `VanillaBiomeChecker.quartYForSurfaceMatches`, unifying surface/cave quart-Y
-    with the biome checker.
-- **`WorldContext` build API:** removed the broken `structureState` field and
-  unused holders; now carries `HolderLookup.Provider` + `noiseSettingsKey`.
-- **`MinecraftWorldContextFactory`:** updated to construct `WorldContext` with
-  the registry provider + noise-settings key.
-
-### Known feature
-- `ExclusionZone` interactions between structure sets are not yet enforced
-  (accessor is `protected`; no vanilla structure of interest uses one).
+- **Structure search rebuilt from scratch.** The old approach depended
+  on a game system that simply cannot work outside a running world, and
+  crashed on startup. The mod now computes structure positions itself,
+  exactly like the game does:
+  - evenly-spread structures (villages, temples, monuments, mineshafts,
+    fortresses, bastions, end cities, ruined portals and more) via the
+    game's own placement math;
+  - stronghold rings recalculated per seed, including the land-search
+    step, with a safe fallback when the game's tag data is unavailable;
+  - rare "frequency reduction" restrictions honored;
+  - each structure still checks that its biome fits.
+- Internal plumbing modernized alongside the rebuild.
 
 ## 1.1.0
 
-### Added
-- **Search by spawn block** — find seeds by the block you stand on at the origin:
-  `spawn on sand`, `on the stone block`, `на блоке песок`, or `any solid`
-  (predicted from the origin biome via `SpawnBlockPredictor`; approximate).
-- **`ruined_portal_nether`** is now included in portal search.
-- **`sulfur_caves`** is now searchable (only with the `near` modifier).
-- **Adaptive candidate count** — for slow queries the required candidate target
-  ramps down from `8` to `3` after `10 s` (`SearchConfig` + `SearchWorker` +
-  `SeedSearcher` monitor). New `stopAtFirstCandidate` option stops at the first
-  match for the fastest possible result.
-- **Faster biome search**:
-  - `near` uses an early-exit presence check instead of scanning the whole grid.
-  - The sampled biome grid is cached per seed and reused across all biome terms
-    (`BiomeField`), so a multi-biome query pays the sampling cost once.
-  - Query terms are reordered so cheap checks (structures, spawn, positive biome
-    terms) run before expensive ones (`far` / `never`).
+### New
+- **Search by the block you land on.** Find worlds by spawn surface:
+  `spawn on sand`, `on the stone block`, `на блоке песок`, or just
+  `any solid`. (Predicted from the area's biome — close, though not
+  voxel-perfect.)
+- **Ruined portals in the nether** are included in portal searches.
+- **Sulfur caves** are searchable — with `near`, since they only exist
+  deep underground.
+- **Stop at first find.** A new option ends the search the moment one
+  matching seed appears — fastest possible result, fewer alternatives.
+- **Patient searches relax automatically.** If a query is hard, the
+  number of candidates the mod waits for ramps down from 8 to 3 after
+  10 seconds, so rare queries still produce an answer soon.
 
 ### Changed
-- **Removed the `ON` modifier** (merged into `in`, ~64 blocks). `on` / `на` now
-  belongs to spawn-block search when followed by a block name.
-- Removed the unused spawn-offset code in `PendingWorldCreation`.
+- **Faster biome searching:**
+  - "near" checks stop at the first hit instead of scanning everything;
+  - when a query names several biomes, the map of the surroundings is
+    sampled once and shared between them;
+  - cheap checks run before expensive ones, so most wrong seeds are
+    rejected sooner.
+- The old `on` modifier merged into `in` (~64 blocks); `on` now belongs
+  to spawn-block search (`spawn on sand`).
+- Dead code around spawn offsets removed.
 
-### Metadata
-- `fabric.mod.json` now lists `issues` and `homepage` (CurseForge) contact links.
+### Misc
+- The mod page now lists issue-tracker and homepage links.

@@ -15,10 +15,9 @@ public final class WorldCreator {
     }
 
     public void create(SearchResult result, String originalText, CreateWorldScreen screen) {
-        PendingWorldCreation.set(result.seed);
-
         Minecraft mc = Minecraft.getInstance();
         mc.execute(() -> {
+            PendingWorldCreation.set(result.seed);
             screen.getUiState().setSeed(Long.toString(result.seed));
             bypass = true;
             mc.setScreenAndShow(screen);

@@ -108,51 +108,54 @@ The search runs on a fixed thread pool (`SeedSearcher` + `SearchWorker`) and
 never blocks the game thread. For every seed a `WorldContext` is built and
 checked by `SeedValidator`:
 
-- **Structures** are located from placement math only
-  (`RandomSpreadStructurePlacement.getPotentialStructureChunk`) — no chunk
-  generation. Where a structure requires a specific biome (e.g. a plains
-  village), the biome at that spot is verified too.
-- **Biomes** are read from the vanilla `MultiNoiseBiomeSource` using a climate
-  sampler (see below). Cave biomes (`deep dark`, `lush caves`, `dripstone
-  caves`) are sampled underground; all others at the surface.
+- **Structures** are located from placement math
+  (`getPotentialStructureChunk` + `applyAdditionalChunkRestrictions` +
+  exclusion zones) — no chunk generation. Where a structure requires a
+  specific biome, the biome at that spot is verified (via tags when
+  available). Nether structures use a dedicated nether generator.
+- **Biomes** are sampled from the vanilla `MultiNoiseBiomeSource`. When the
+  native library is present, `CubiomesBridge` answers `getBiomeAt` up to
+  ~50× faster; otherwise a reusable Java sampler is used. Cave biomes
+  (`deep dark`, `lush caves`, `dripstone caves` and `sulfur_caves` with
+  `near`) are sampled underground at `Y≈-50`.
 
-### Two search strategies
+### Search strategy
 
-- **With a structure term** — structure placement depends only on the low 48
-  bits of the seed, so the space is split: an outer loop over the 48-bit base
-  and an inner loop over the high 16 bits. Before scanning the 65 536 inner
-  seeds, a cheap prefilter checks whether the required structure can be placed
-  near the origin at all, and skips the whole group if not.
-- **Biome-only** — a simple linear scan outward from seed `0`.
+The seed space is split 48/16: an outer loop over the low 48-bit base and an
+inner loop over the high 16 bits. Before scanning the 65 536 inner seeds, a
+cheap placement-only prefilter (region-scan, no biome check) can skip the
+whole group. Biome-only queries at origin may optionally use a linear walk
+(`0, +1, -1, …`) for small memorable seeds. Every candidate is re-checked
+exhaustively by `DeepVerifier` before it is shown.
 
-Work is divided across threads with no overlap, and progress counters use atomics.
+### Fast sampling
 
-### Fast climate sampling
-
-Biome lookups need a `Climate.Sampler`. Building the full vanilla `RandomState`
-per seed is expensive, so `ReusableClimateSampler` builds the (seed-independent)
-climate density-function graph **once per thread** and, for each new seed, only
-re-creates the six climate noises. The results are **bit-identical** to a real
-`RandomState` (verified by tests) while being several times faster.
+Biome lookups need a `Climate.Sampler`. Building the full vanilla
+`RandomState` per seed is expensive, so `ReusableClimateSampler` (and the
+matching `ReusableTerrainSampler` for heights) builds the density-function
+graph **once per thread** and, for each new seed, only re-creates the noise
+leaves. Results are **bit-identical** to vanilla (verified by tests) while
+being several times faster. When available, the native cubiomes path is even
+faster.
 
 ## Configuration
 
 Defaults (`SearchConfig`):
 
-- Threads: `MAX` (all CPU cores). Other modes: `HIGH` 75%, `AUTO` 65%,
-  `ECONOMY` 25%.
-- Structure search radius: 40 chunks.
-- Biome check radius: 16 chunks, sampled every 4 chunks.
-- Seed limit: unbounded.
-- Candidate count: collects up to `8` matching seeds, then stops. For slow /
-  rare queries the target **ramps down to `3` after 10 s** of searching, so a
-  result appears sooner instead of waiting for a full set
-  (`minCandidates`, `candidateRampDownSeconds`).
+- Threads: `MAX` (all CPU cores, or `manualThreads` if set). Other modes:
+  `HIGH` 75%, `AUTO` 65%, `ECONOMY` 25%.
+- Structure search radius: 40 chunks. Biome check radius: 16 chunks,
+  sampled every 4 chunks (configurable).
+- Seed limit: 10M seeds, time limit: 30 min (either stops the search; set
+  `infiniteSeeds` to ignore the seed limit). Candidate count: collects up to
+  `8` matching seeds, then stops. For slow / rare queries the target **ramps
+  down to `3` after 10 s** (`minCandidates`, `candidateRampDownSeconds`).
 - Start position: randomized across the 48-bit space by default
-  (`randomizeStart`), so a re-run over the same query explores different seeds.
-- Search center: `ORIGIN` (default), `SPAWN`, or `BOTH` — structures/biomes
-  are checked at origin `(0, 0)`, approximate world spawn, or both (first
-  match wins).
+  (`randomizeStart`), so a re-run explores different seeds.
+- Search center: `SPAWN` (default), `ORIGIN`, or `BOTH` (first match wins).
+- Native acceleration: `AUTO` (use DLL if present, otherwise Java),
+  `NATIVE` (require DLL) or `CLASSIC` (Java-only).
+- Query language: `EN` / `RU` / `AUTO` (both).
 
 ## Example: a seed found by WyWF
 
@@ -181,8 +184,10 @@ Copy-paste the seed:
 
 ## Limitations
 
-- **Objects** (`tree`, `water`, `lava`) are recognized but not searched.
-- Matches are found around the origin `(0, 0)`; the world spawn is not moved.
+- **Objects** (`tree`, `water`, `lava`) are recognized but not searched yet.
+- Matches are checked around your chosen center (`SPAWN` by default). When
+  `SPAWN` is used, the mod estimates the world spawn from the seed before
+  checking — an approximation that `DeepVerifier` re-checks before showing.
 
 ## Building
 
