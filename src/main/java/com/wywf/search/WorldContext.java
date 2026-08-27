@@ -74,13 +74,25 @@ public final class WorldContext {
 
     public NoiseGeneratorSettings noiseSettings() { return noiseSettings; }
 
+    /**
+     * Compute terrain height at (blockX, blockZ) by scanning downward
+     * through the finalDensity function. Returns the Y of the highest
+     * solid block (where density > 0).
+     */
     public int computeHeight(int blockX, int blockZ) {
         ReusableTerrainSampler sampler = terrainSamplerSupplier != null
                 ? terrainSamplerSupplier.get() : null;
-        if (sampler == null) return (terrainMinY + terrainMaxY) / 2;
+        if (sampler == null) {
+            // Fail visibly instead of masking init errors with a fake height
+            throw new IllegalStateException("Terrain sampler not initialized for seed " + seed);
+        }
         return sampler.computeHeight(blockX, blockZ);
     }
 
+    /**
+     * Check if terrain is flat enough around (blockX, blockZ) for structure generation.
+     * Samples a few points in a small radius and checks height delta.
+     */
     public boolean isTerrainFlatEnough(int blockX, int blockZ, int maxDelta) {
         int h0 = computeHeight(blockX, blockZ);
         int h1 = computeHeight(blockX + 4, blockZ);
@@ -92,6 +104,9 @@ public final class WorldContext {
         return (max - min) <= maxDelta;
     }
 
+    /**
+     * Check if terrain at (blockX, blockZ) is above sea level.
+     */
     public boolean isAboveSeaLevel(int blockX, int blockZ) {
         return computeHeight(blockX, blockZ) > noiseSettings.seaLevel();
     }

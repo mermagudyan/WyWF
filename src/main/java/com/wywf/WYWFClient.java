@@ -2,6 +2,7 @@ package com.wywf;
 
 import com.wywf.core.KeywordDictionary;
 import com.wywf.core.QueryParser;
+import com.wywf.search.AuditLogger;
 import com.wywf.search.SeedSearcher;
 import com.wywf.world.WorldCreator;
 import net.fabricmc.api.ClientModInitializer;
@@ -22,6 +23,7 @@ public final class WYWFClient implements ClientModInitializer {
     public void onInitializeClient() {
         worldCreator = new WorldCreator();
         applyQueryLanguage(KeywordDictionary.Lang.AUTO);
+        AuditLogger.enable();
 
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
             if (searcher.isRunning()) searcher.cancel();

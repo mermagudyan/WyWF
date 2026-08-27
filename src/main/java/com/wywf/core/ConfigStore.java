@@ -16,14 +16,27 @@ public final class ConfigStore {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
-    private static final Path CONFIG_PATH = Path.of(
+    private static Path configPath() {
+        try {
+            Path gameDir = net.fabricmc.loader.api.FabricLoader.getInstance().getGameDir();
+            return gameDir.resolve("config/wywf.json");
+        } catch (Throwable t) {
+            return Path.of(System.getProperty("user.home"), ".minecraft", "config", "wywf.json");
+        }
+    }
+    private static final Path LEGACY_PATH = Path.of(
             System.getProperty("user.home"), ".minecraft", "config", "wywf.json");
 
     private ConfigStore() {}
 
     public static SearchConfig load() {
-        if (!Files.exists(CONFIG_PATH)) return SearchConfig.defaults();
-        try (Reader r = Files.newBufferedReader(CONFIG_PATH, StandardCharsets.UTF_8)) {
+        Path p = configPath();
+        // Migrate legacy location if needed
+        if (!Files.exists(p) && Files.exists(LEGACY_PATH)) {
+            try { Files.createDirectories(p.getParent()); Files.copy(LEGACY_PATH, p); } catch (IOException ignored) {}
+        }
+        if (!Files.exists(p)) return SearchConfig.defaults();
+        try (Reader r = Files.newBufferedReader(p, StandardCharsets.UTF_8)) {
             SearchConfig cfg = GSON.fromJson(r, SearchConfig.class);
             return cfg != null ? cfg : SearchConfig.defaults();
         } catch (IOException | RuntimeException e) {
@@ -33,9 +46,10 @@ public final class ConfigStore {
     }
 
     public static void save(SearchConfig cfg) {
+        Path p = configPath();
         try {
-            Files.createDirectories(CONFIG_PATH.getParent());
-            try (Writer w = Files.newBufferedWriter(CONFIG_PATH, StandardCharsets.UTF_8)) {
+            Files.createDirectories(p.getParent());
+            try (Writer w = Files.newBufferedWriter(p, StandardCharsets.UTF_8)) {
                 GSON.toJson(cfg, w);
             }
         } catch (IOException e) {

@@ -20,12 +20,43 @@ public final class WywfConfigScreen {
     private WywfConfigScreen() {}
 
     private static Component tr(String key) {
-        return Component.literal(ConfigTranslations.tr(key));
+        String s = ConfigTranslations.tr(key);
+        s = s.trim();
+        if (s.endsWith(":") || s.endsWith("：")) s = s.substring(0, s.length() - 1).trim();
+        return Component.literal(s);
     }
 
     public static Screen create(Screen parent) {
         SearchConfig config = ConfigStore.load();
         ConfigTranslations.invalidate();
+
+        Option<Integer> maxSeedsOption = Option.<Integer>createBuilder()
+                .name(tr("wywf.config.search.limits.max_seeds"))
+                .description(OptionDescription.of(tr("wywf.config.search.limits.max_seeds.desc")))
+                .binding(
+                        (int) SearchConfig.DEFAULT_MAX_SEEDS,
+                        () -> (int) config.rawMaxSeedsToCheck(),
+                        v -> config.maxSeedsToCheck(v)
+                )
+                .controller(opt -> IntegerSliderControllerBuilder.create(opt)
+                        .range(1_000_000, 1_000_000_000)
+                        .step(10_000_000))
+                .available(!config.infiniteSeeds())
+                .build();
+
+        Option<Boolean> infiniteSeedsOption = Option.<Boolean>createBuilder()
+                .name(tr("wywf.config.search.limits.infinite"))
+                .description(OptionDescription.of(tr("wywf.config.search.limits.infinite.desc")))
+                .binding(
+                        false,
+                        () -> config.infiniteSeeds(),
+                        v -> {
+                            config.infiniteSeeds(v);
+                            maxSeedsOption.setAvailable(!v);
+                        }
+                )
+                .controller(BooleanControllerBuilder::create)
+                .build();
 
         return YetAnotherConfigLib.createBuilder()
                 .title(tr("wywf.config.title"))
@@ -58,6 +89,32 @@ public final class WywfConfigScreen {
                                         )
                                         .controller(opt -> EnumControllerBuilder.create(opt)
                                                 .enumClass(SearchConfig.Mode.class))
+                                        .build())
+                                .option(Option.<Integer>createBuilder()
+                                        .name(tr("wywf.config.general.performance.manual_threads"))
+                                        .description(OptionDescription.of(tr("wywf.config.general.performance.manual_threads.desc")))
+                                        .binding(
+                                                0,
+                                                () -> config.manualThreads(),
+                                                v -> config.manualThreads(v)
+                                        )
+                                        .controller(opt -> IntegerSliderControllerBuilder.create(opt)
+                                                .range(0, 64)
+                                                .step(1))
+                                        .build())
+                                .build())
+                        .group(OptionGroup.createBuilder()
+                                .name(tr("wywf.config.general.native.name"))
+                                .description(OptionDescription.of(tr("wywf.config.general.native.desc")))
+                                .option(Option.<SearchConfig.NativeMode>createBuilder()
+                                        .name(tr("wywf.config.general.native.mode"))
+                                        .binding(
+                                                SearchConfig.NativeMode.AUTO,
+                                                () -> config.nativeMode(),
+                                                v -> config.nativeMode(v)
+                                        )
+                                        .controller(opt -> EnumControllerBuilder.create(opt)
+                                                .enumClass(SearchConfig.NativeMode.class))
                                         .build())
                                 .build())
                         .build())
@@ -115,6 +172,16 @@ public final class WywfConfigScreen {
                                         .controller(opt -> EnumControllerBuilder.create(opt)
                                                 .enumClass(SearchConfig.SearchCenter.class))
                                         .build())
+                                .option(Option.<Boolean>createBuilder()
+                                        .name(tr("wywf.config.search.center.random_start"))
+                                        .description(OptionDescription.of(tr("wywf.config.search.center.random_start.desc")))
+                                        .binding(
+                                                true,
+                                                () -> config.randomizeStart(),
+                                                v -> config.randomizeStart(v)
+                                        )
+                                        .controller(BooleanControllerBuilder::create)
+                                        .build())
                                 .build())
                         .group(OptionGroup.createBuilder()
                                 .name(tr("wywf.config.search.limits.name"))
@@ -131,28 +198,8 @@ public final class WywfConfigScreen {
                                                 .range(5, 120)
                                                 .step(5))
                                         .build())
-                                .option(Option.<Boolean>createBuilder()
-                                        .name(tr("wywf.config.search.limits.infinite"))
-                                        .description(OptionDescription.of(tr("wywf.config.search.limits.infinite.desc")))
-                                        .binding(
-                                                false,
-                                                () -> config.infiniteSeeds(),
-                                                v -> config.infiniteSeeds(v)
-                                        )
-                                        .controller(BooleanControllerBuilder::create)
-                                        .build())
-                                .option(Option.<Integer>createBuilder()
-                                        .name(tr("wywf.config.search.limits.max_seeds"))
-                                        .description(OptionDescription.of(tr("wywf.config.search.limits.max_seeds.desc")))
-                                        .binding(
-                                                (int) SearchConfig.DEFAULT_MAX_SEEDS,
-                                                () -> (int) config.rawMaxSeedsToCheck(),
-                                                v -> config.maxSeedsToCheck(v)
-                                        )
-                                        .controller(opt -> IntegerSliderControllerBuilder.create(opt)
-                                                .range(1_000_000, 1_000_000_000)
-                                                .step(10_000_000))
-                                        .build())
+                                .option(maxSeedsOption)
+                                .option(infiniteSeedsOption)
                                 .build())
                         .group(OptionGroup.createBuilder()
                                 .name(tr("wywf.config.search.candidates.name"))
@@ -185,6 +232,16 @@ public final class WywfConfigScreen {
                                                 false,
                                                 () -> config.sortCandidatesByDistance(),
                                                 v -> config.sortCandidatesByDistance(v)
+                                        )
+                                        .controller(BooleanControllerBuilder::create)
+                                        .build())
+                                .option(Option.<Boolean>createBuilder()
+                                        .name(tr("wywf.config.search.candidates.linear"))
+                                        .description(OptionDescription.of(tr("wywf.config.search.candidates.linear.desc")))
+                                        .binding(
+                                                false,
+                                                () -> config.linearBiomeSearch(),
+                                                v -> config.linearBiomeSearch(v)
                                         )
                                         .controller(BooleanControllerBuilder::create)
                                         .build())

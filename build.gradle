@@ -24,6 +24,15 @@ loom {
 			sourceSet sourceSets.main
 		}
 	}
+	runs {
+		client {
+			client()
+			programArgs "--username", "mermagudyan", "--uuid", "ad96c39f1b2047a58b5802365e1cad34"
+			if (project.hasProperty('audit')) {
+				systemProperty 'wywf.audit', 'true'
+			}
+		}
+	}
 }
 
 dependencies {
@@ -31,6 +40,10 @@ dependencies {
 	mappings loom.officialMojangMappings()
 	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+    // JNA for native cubiomes acceleration
+    implementation "net.java.dev.jna:jna:5.14.0"
+    implementation "net.java.dev.jna:jna-platform:5.14.0"
 
     // Optional: YACL config screen
     modCompileOnly "dev.isxander:yet-another-config-lib:${project.yacl_version}+${project.minecraft_version}-fabric"
@@ -69,4 +82,16 @@ jar {
     from("LICENSE") {
         rename { "${it}_${project.base.archivesName}"}
     }
+
+    // Include native DLL (kept under natives/ in the jar)
+    from("natives") {
+        into "natives"
+        include "*.dll"
+    }
+}
+
+// Make the native library a real resource so DEV runs (IDEA/loom) also see it.
+// Placed under natives/ to match the packaged jar layout that the bridge checks.
+sourceSets.main.resources {
+    srcDir 'natives'
 }

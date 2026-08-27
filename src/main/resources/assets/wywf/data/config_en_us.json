@@ -5,30 +5,30 @@
   "wywf.config.category.search": "Search",
 
   "wywf.config.general.language.name": "Language",
-  "wywf.config.general.language.desc": "Which synonym language the query parser uses.\nEN: English only (default)\nRU: Russian only\nAUTO: merge EN + RU (all synonyms)",
+  "wywf.config.general.language.desc": "What language your search words are understood in.\n\nEN - English only\nRU - Russian only\nAUTO - both languages at once\n(all words from both files work)\n\nIf you type Russian words and they are not\nfound - check this setting.\n\nDefault: EN.",
   "wywf.config.general.language.option": "Query language",
 
   "wywf.config.general.performance.name": "Performance",
-  "wywf.config.general.performance.desc": "How many CPU cores the search may use.\nAUTO: ~65% (ECONOMY if CPU <= 4 threads)\nECONOMY: ~25% — quiet mode\nHIGH: ~75% — fast search\nMAX: all cores — maximum speed",
+  "wywf.config.general.performance.desc": "How much of your processor the search may use.\n\nAUTO - picks a sensible share (~65%)\nECONOMY - quiet mode, game stays smooth\nHIGH - faster, game may stutter a bit\nMAX - everything, fastest search\n\nDefault: AUTO.",
   "wywf.config.general.performance.thread_mode": "Thread mode",
 
   "wywf.config.search.scan.name": "Scan area",
 
   "wywf.config.search.scan.structure_radius": "Structure scan radius (blocks)",
-  "wywf.config.search.scan.structure_radius.desc": "How far from the search center to look for\nstructures (villages, temples, strongholds, etc.).\n\n1 chunk = 16 blocks = small terrain area.\nRecommended: 40-64 chunks.\nLarger = slower, but more likely to find.\nDefault: 40 (640 blocks from center).",
+  "wywf.config.search.scan.structure_radius.desc": "How far from the search center to look for\nstructures: villages, temples, mansions and so on.\n\nBigger = finds structures farther away,\nbut each search takes longer.\n\nDefault: 40 chunks = 640 blocks.",
 
   "wywf.config.search.scan.biome_radius": "Biome check radius (blocks)",
-  "wywf.config.search.scan.biome_radius.desc": "How far from the search center to check biomes\n(forest, desert, ocean, etc.).\n\n1 chunk = 16 blocks = small terrain area.\nRecommended: 16-32 chunks.\nIncrease if the biome is far away.\nDefault: 16 (256 blocks from center).",
+  "wywf.config.search.scan.biome_radius.desc": "How far from the search center to look for\nbiomes: forest, desert, mushroom island...\n\nMake this bigger if you want a biome that can\nspawn far away. Bigger = slower searches.\n\nDefault: 16 chunks = 256 blocks.",
 
   "wywf.config.search.scan.biome_step": "Biome sample step (blocks)",
-  "wywf.config.search.scan.biome_step.desc": "How often to sample biomes. Lower = more accurate, slower.\n\n1 = check every block (most accurate, slowest)\n4 = check every 4th block (default)\n8 = check every 8th block (fast, rough)\n\nDefault: 4.",
+  "wywf.config.search.scan.biome_step.desc": "How densely biomes are checked.\n\nSmaller number = fewer missed biomes,\nbut slower searching.\n\n1 - very thorough (slow)\n4 - good balance (recommended)\n8 - fast but may miss small biomes\n\nDefault: 4.",
 
   "wywf.config.search.center.name": "Search center",
-  "wywf.config.search.center.desc": "Where to start searching for structures and biomes.\n\nSPAWN: from predicted world spawn (RECOMMENDED).\nORIGIN: from world center (0, 0).\nBOTH: checks spawn first, then origin.\n\nSPAWN — finds structures near where you actually spawn.\nORIGIN — structures may be far from your spawn point.\nBOTH — spawn first, origin as fallback.",
+  "wywf.config.search.center.desc": "The point distances are measured from.\n\nSPAWN - near where YOU will appear.\nUse this for 'in mushroom', 'near village':\nyou want things around YOUR spawn point.\n\nORIGIN - near map corner (0, 0).\nFor when you plan to travel there first.\n\nBOTH - accepts either of the two.\nCareful: a match may sit at (0, 0) while\nyour actual spawn is hundreds of blocks away.",
   "wywf.config.search.center.option": "Search center",
 
   "wywf.config.search.limits.name": "Limits",
-  "wywf.config.search.limits.desc": "Search stops when either limit is reached.",
+  "wywf.config.search.limits.desc": "Safety limits so a rare query cannot run forever.",
 
   "wywf.config.search.limits.time": "Time limit (minutes)",
   "wywf.config.search.limits.time.desc": "Maximum search time.\nWhen time runs out, search stops and shows\nfound results.\n\nMinimum: 5 minutes. Default: 30 minutes.",
@@ -42,11 +42,21 @@
   "wywf.config.search.candidates.name": "Candidates",
 
   "wywf.config.search.candidates.collect": "Candidates to collect",
-  "wywf.config.search.candidates.collect.desc": "How many matching seeds to find before stopping.\n\nMore = more options to choose from.\nFewer = finishes faster.\n\nDefault: 8.",
+  "wywf.config.search.candidates.collect.desc": "How many matching seeds to collect before\nstopping the search.\n\nMore = better choice, longer wait.\nThe winner is picked by your ranking mode\n(see 'Sort by distance').\n\nDefault: 8.",
 
   "wywf.config.search.candidates.stop_first": "Stop at first candidate",
-  "wywf.config.search.candidates.stop_first.desc": "When ON, stops at the first match for\nfastest results, but no choice.\n\nDefault: OFF (collects multiple candidates).",
+  "wywf.config.search.candidates.stop_first.desc": "When ON, the search ends the moment ONE matching\nseed is found - fastest possible result, but no\nalternatives are collected.\n\nOverrides 'Candidates to collect'.\n\nDefault: OFF.",
 
+  "wywf.config.search.candidates.linear": "Linear biome search",
+  "wywf.config.search.candidates.linear.desc": "Special mode for biome-only queries with center ORIGIN:\nwalks seeds in order 0, +1, -1, +2... so tiny memorable\nseeds like 42 or -39 appear first.\n\nSlower than the default method for hard queries.\nDoes nothing for structure queries or SPAWN center.\n\nDefault: OFF.",
   "wywf.config.search.candidates.sort_distance": "Sort by distance",
-  "wywf.config.search.candidates.sort_distance.desc": "When ON, the final candidate is chosen by distance\nto the nearest structure (closest first), rather\nthan randomly.\n\nDefault: OFF."
+  "wywf.config.search.candidates.sort_distance.desc": "How the winner is chosen from verified candidates.\n\nOFF (soft): best overall match wins - every\ncondition counts (biomes AND structures AND spawn).\n\nON (strict): closest structure wins - other\nconditions only break ties.\n\nEither way, every candidate is fully re-verified\nfirst; failing ones are discarded.\n\nDefault: OFF (soft).",
+
+  "wywf.config.general.native.name": "Native acceleration",
+  "wywf.config.general.native.desc": "Controls how the native cubiomes library is used.\n\nAUTO: use native if DLL loaded, Java fallback otherwise.\nNATIVE: require native DLL — error if not available.\nCLASSIC: Java-only, no native acceleration.\n\nNative is faster for biome/structure checks.\nDefault: AUTO.",
+  "wywf.config.general.native.mode": "Native mode",
+  "wywf.config.general.performance.manual_threads": "Manual thread count",
+  "wywf.config.general.performance.manual_threads.desc": "Set the exact number of search threads yourself.\n0 = follow Thread mode above.\n\nMore threads = faster search, but Minecraft\nmay stutter while searching.\n\nDefault: 0.",
+  "wywf.config.search.center.random_start": "Random start position",
+  "wywf.config.search.center.random_start.desc": "When ON, each new search starts from a random spot\nin the seed space, so repeated searches show\ndifferent worlds.\n\nTurn OFF for repeatable, comparable searches.\n\nDefault: ON."
 }

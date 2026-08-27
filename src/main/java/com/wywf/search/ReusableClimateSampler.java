@@ -21,6 +21,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import net.minecraft.world.level.biome.Climate.Parameter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A {@link Climate.Sampler} whose density-function graph is built <b>once</b> and
@@ -39,6 +42,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 final class ReusableClimateSampler {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger("wywf-search");
     private final NoiseGeneratorSettings settings;
     private final HolderGetter<NormalNoise.NoiseParameters> noises;
     private final List<Slot> slots;
@@ -62,9 +66,30 @@ final class ReusableClimateSampler {
                 r.erosion().mapAll(builder),
                 r.depth().mapAll(builder),
                 r.ridges().mapAll(builder),
-                settings.spawnTarget());
+                effectiveSpawnTarget(settings.spawnTarget()));
         this.currentSeed = 0L;
         this.seeded = true;
+    }
+
+    /**
+     * Returns the spawn target list, or a hardcoded vanilla overworld fallback if the
+     * deserialized settings have an empty list (known codec round-trip issue).
+     * Values match vanilla's {@code OverworldBiomeBuilder.spawnTarget()}.
+     */
+    private static List<Climate.ParameterPoint> effectiveSpawnTarget(List<Climate.ParameterPoint> target) {
+        if (target != null && !target.isEmpty()) {
+            return target;
+        }
+        LOGGER.info("[ReusableClimateSampler] spawnTarget is empty — using hardcoded vanilla overworld fallback (2 ParameterPoints)");
+        Parameter full = Parameter.span(-1.0f, 1.0f);
+        Parameter continentalness = Parameter.span(-0.11f, 1.0f);
+        Parameter depth = Parameter.point(0.0f);
+        return List.of(
+                new Climate.ParameterPoint(full, full, continentalness, full, depth,
+                        Parameter.span(-1.0f, -0.16f), 0L),
+                new Climate.ParameterPoint(full, full, continentalness, full, depth,
+                        Parameter.span(0.16f, 1.0f), 0L)
+        );
     }
 
     Climate.Sampler sampler() {

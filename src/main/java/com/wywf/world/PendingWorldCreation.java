@@ -1,20 +1,22 @@
 package com.wywf.world;
 
+import java.util.concurrent.atomic.AtomicLong;
+
 public final class PendingWorldCreation {
 
-    private static volatile long seed = 0L;
-    private static volatile boolean has = false;
+    private static final long UNSET = Long.MIN_VALUE;
+    private static final AtomicLong state = new AtomicLong(UNSET);
 
     private PendingWorldCreation() {}
 
     public static void set(long s) {
-        seed = s; has = true;
+        state.set(s);
     }
 
     public static void clear() {
-        has = false;
+        state.set(UNSET);
     }
 
-    public static boolean has()    { return has; }
-    public static long   seed()    { return seed; }
+    public static boolean has()    { return state.get() != UNSET; }
+    public static long   seed()    { return state.get(); }
 }

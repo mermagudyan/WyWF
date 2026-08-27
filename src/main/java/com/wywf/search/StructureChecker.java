@@ -14,6 +14,13 @@ public interface StructureChecker {
 
     boolean hasAnyPlacementWithin(WorldContext ctx, int centerX, int centerZ, int radiusChunks, String canonical);
 
+    /**
+     * True when this canonical resolves (directly or via variants) to at least
+     * one concentric-rings placement. Ring layouts depend on the FULL seed, so
+     * 48-bit block-level prefilters must not gate such structures.
+     */
+    default boolean hasConcentricRings(WorldContext ctx, String canonical) { return false; }
+
     final class Result {
         public final boolean found;
         public final int     structureX;

@@ -15,6 +15,12 @@ public final class SearchConfig {
         BOTH
     }
 
+    public enum NativeMode {
+        AUTO,
+        NATIVE,
+        CLASSIC
+    }
+
     public static final long UNBOUNDED = Long.MAX_VALUE;
 
     public static final int MIN_TIME_LIMIT_MINUTES = 5;
@@ -39,6 +45,10 @@ public final class SearchConfig {
     private boolean sortCandidatesByDistance = false;
     private KeywordDictionary.Lang queryLanguage = KeywordDictionary.Lang.EN;
     private SearchCenter searchCenter = SearchCenter.SPAWN;
+    private NativeMode nativeMode = NativeMode.AUTO;
+    /** Optional legacy strategy: biome-only ORIGIN searches walk seeds
+     *  linearly (0, ±1, ±2, …) instead of 48/16 split. Off by default. */
+    private boolean linearBiomeSearch = false;
 
     public SearchConfig() {}
 
@@ -71,21 +81,16 @@ public final class SearchConfig {
     public int biomeSampleStepChunks()               { return Math.max(1, biomeSampleStepChunks); }
     public SearchConfig biomeSampleStepChunks(int v) { this.biomeSampleStepChunks = v; return this; }
 
-    /** Time limit in minutes. Minimum 5, default 30. */
     public int timeLimitMinutes()                     { return timeLimitMinutes; }
     public SearchConfig timeLimitMinutes(int v)       { this.timeLimitMinutes = Math.max(MIN_TIME_LIMIT_MINUTES, v); return this; }
 
-    /** Time limit converted to milliseconds. */
     public long timeLimitMs()                         { return (long) timeLimitMinutes * 60_000L; }
 
-    /** Max seeds to check. Minimum 1M, default 10M. */
     public long maxSeedsToCheck()                     { return infiniteSeeds ? UNBOUNDED : maxSeedsToCheck; }
     public SearchConfig maxSeedsToCheck(long v)       { this.maxSeedsToCheck = Math.max(MIN_MAX_SEEDS, Math.min(ABSOLUTE_MAX_SEEDS, v)); return this; }
 
-    /** Raw max seeds value (ignoring infinite flag). */
     public long rawMaxSeedsToCheck()                  { return maxSeedsToCheck; }
 
-    /** When true, seed limit is ignored — search runs until time limit or candidates found. */
     public boolean infiniteSeeds()                     { return infiniteSeeds; }
     public SearchConfig infiniteSeeds(boolean v)       { this.infiniteSeeds = v; return this; }
 
@@ -116,22 +121,44 @@ public final class SearchConfig {
     public boolean randomizeStart()                 { return randomizeStart; }
     public SearchConfig randomizeStart(boolean v)    { this.randomizeStart = v; return this; }
 
-    /** When true the search stops as soon as the first matching seed is found
-     *  (candidate target = 1), giving the fastest possible result at the cost of
-     *  variety. Defaults to false (the ramp-down to {@link #minCandidates()} applies). */
     public boolean stopAtFirstCandidate()                  { return stopAtFirstCandidate; }
     public SearchConfig stopAtFirstCandidate(boolean v)    { this.stopAtFirstCandidate = v; return this; }
 
-    /** When true the final candidate is chosen by distance to the nearest structure
-     *  (closest first), rather than randomly. Defaults to false. */
     public boolean sortCandidatesByDistance()                  { return sortCandidatesByDistance; }
     public SearchConfig sortCandidatesByDistance(boolean v)    { this.sortCandidatesByDistance = v; return this; }
 
-    /** Which synonym language the query parser uses. AUTO merges EN + RU. */
     public KeywordDictionary.Lang queryLanguage()                 { return queryLanguage; }
     public SearchConfig queryLanguage(KeywordDictionary.Lang v)   { this.queryLanguage = (v == null) ? KeywordDictionary.Lang.AUTO : v; return this; }
 
-    /** Where to center structure/biome checks: origin (0,0), approximate spawn, or both. */
     public SearchCenter searchCenter()                 { return searchCenter; }
     public SearchConfig searchCenter(SearchCenter v)   { this.searchCenter = (v == null) ? SearchCenter.ORIGIN : v; return this; }
+
+    public NativeMode nativeMode()                     { return nativeMode; }
+    public SearchConfig nativeMode(NativeMode v)       { this.nativeMode = (v == null) ? NativeMode.AUTO : v; return this; }
+
+    public boolean linearBiomeSearch()                 { return linearBiomeSearch; }
+    public SearchConfig linearBiomeSearch(boolean v)   { this.linearBiomeSearch = v; return this; }
+
+    public SearchConfig copy() {
+        SearchConfig c = new SearchConfig();
+        c.mode = this.mode;
+        c.manualThreads = this.manualThreads;
+        c.searchRadiusChunks = this.searchRadiusChunks;
+        c.biomeCheckRadiusChunks = this.biomeCheckRadiusChunks;
+        c.biomeSampleStepChunks = this.biomeSampleStepChunks;
+        c.timeLimitMinutes = this.timeLimitMinutes;
+        c.maxSeedsToCheck = this.maxSeedsToCheck;
+        c.infiniteSeeds = this.infiniteSeeds;
+        c.candidatesToCollect = this.candidatesToCollect;
+        c.minCandidates = this.minCandidates;
+        c.candidateRampDownSeconds = this.candidateRampDownSeconds;
+        c.randomizeStart = this.randomizeStart;
+        c.stopAtFirstCandidate = this.stopAtFirstCandidate;
+        c.sortCandidatesByDistance = this.sortCandidatesByDistance;
+        c.queryLanguage = this.queryLanguage;
+        c.searchCenter = this.searchCenter;
+        c.nativeMode = this.nativeMode;
+        c.linearBiomeSearch = this.linearBiomeSearch;
+        return c;
+    }
 }

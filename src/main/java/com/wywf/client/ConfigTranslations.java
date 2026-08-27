@@ -24,8 +24,14 @@ public final class ConfigTranslations {
     private ConfigTranslations() {}
 
     private static String currentLang() {
-        String code = Minecraft.getInstance().getLanguageManager().getSelected();
-        return code != null ? code : "en_us";
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc == null || mc.getLanguageManager() == null) return "en_us";
+            String code = mc.getLanguageManager().getSelected();
+            return code != null ? code : "en_us";
+        } catch (Throwable t) {
+            return "en_us";
+        }
     }
 
     public static synchronized void invalidate() {

@@ -92,7 +92,10 @@ public final class SearchScreen extends Screen {
     private void onSearchFinished(SearchResult result) {
         WYWFClient.LOGGER.info("Search finished: {}", result);
 
-        List<SearchResult> candidates = WYWFClient.searcher().candidates();
+        List<SearchResult> candidates;
+        synchronized (WYWFClient.searcher().candidates()) {
+            candidates = List.copyOf(WYWFClient.searcher().candidates());
+        }
         String reason = (result != null) ? result.stopReason : null;
         boolean limitReached = reason != null && reason.contains("limit reached");
 
@@ -167,9 +170,13 @@ public final class SearchScreen extends Screen {
                 + "        \u00a77Average:\u00a7f " + formatNumber(lastSnapshot.seedsPerSecond()) + "/s", cx, y);
         y += 14;
 
-        int cpuUsage = estimateCpuUsage();
-        idx = setTextLine(idx, "\u00a77CPU:\u00a7f " + cpuUsage + "%"
-                + "        \u00a77Seed limit:\u00a7f " + formatNumber(maxSeeds), cx, y);
+        boolean nativeOn = com.wywf.search.CubiomesBridge.isAvailable();
+        String accel = nativeOn ? "\u00a7anative (fast)" : "\u00a7c\u2717 MISSING \u2014 slow mode!";
+        idx = setTextLine(idx, "\u00a77Accelerator:\u00a7f " + accel
+                + "        \u00a77CPU:\u00a7f " + estimateCpuUsage() + "%", cx, y);
+        y += 14;
+
+        idx = setTextLine(idx, "\u00a77Seed limit:\u00a7f " + formatNumber(maxSeeds), cx, y);
         y += 20;
 
         SearchResult best = lastCandidate();
@@ -213,7 +220,10 @@ public final class SearchScreen extends Screen {
     }
 
     private SearchResult lastCandidate() {
-        List<SearchResult> cs = WYWFClient.searcher().candidates();
+        List<SearchResult> cs;
+        synchronized (WYWFClient.searcher().candidates()) {
+            cs = List.copyOf(WYWFClient.searcher().candidates());
+        }
         return cs.isEmpty() ? null : cs.get(cs.size() - 1);
     }
 
