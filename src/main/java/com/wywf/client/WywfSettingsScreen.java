@@ -147,7 +147,11 @@ public final class WywfSettingsScreen extends Screen {
     @SuppressWarnings("unchecked")
     private <T extends Enum<T>> void addToggleRow(String label, Class<T> cls, T current, Consumer<T> setter) {
         label = stripColon(label);
-        T[] values = cls.getEnumConstants();
+        T[] all = cls.getEnumConstants();
+        // BOTH retired, don't offer it (load() already migrates old saves)
+        java.util.List<T> filtered = new java.util.ArrayList<>(java.util.Arrays.asList(all));
+        filtered.removeIf(v -> cls == SearchConfig.SearchCenter.class && v.name().equals("BOTH"));
+        T[] values = filtered.toArray(java.util.Arrays.copyOf(all, 0));
         Object[] state = {current};
         Function<Object, Component> labelFn = (Object val) -> Component.literal(((Enum<?>) val).name());
 

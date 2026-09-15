@@ -8,20 +8,21 @@ chunks.
 ## Version compatibility
 
 <table>
-<tr><th rowspan="2">Minecraft version</th><th colspan="4" style="text-align:center">Version of mod</th></tr>
-<tr><th>1.3.x</th><th>1.2.x</th><th>1.1.x</th><th>1.0.x</th></tr>
-<tr><td>1.16.5</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
-<tr><td>1.17.1</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
-<tr><td>1.18.2</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
-<tr><td>1.19.2</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
-<tr><td>1.20.1</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
-<tr><td>1.20.4</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
-<tr><td>1.21.1</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
-<tr><td>1.21.5</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
-<tr><td>1.21.11</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
-<tr><td>26.1</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
-<tr><td>26.1.2</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
-<tr><td>26.2</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+<tr><th rowspan="2">Minecraft version</th><th colspan="6" style="text-align:center">Version of mod</th></tr>
+<tr><th>1.4.1</th><th>1.4.0</th><th>1.3.x</th><th>1.2.x</th><th>1.1.x</th><th>1.0.x</th></tr>
+<tr><td>1.16.5</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>1.17.1</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>1.18.2</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>1.19.2</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>1.20.1</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>1.20.4</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>1.21.1</td><td>✅</td><td>✅</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>1.21.5</td><td>✅</td><td>✅</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>1.21.11</td><td>✅</td><td>✅</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>26.1</td><td>❌</td><td>❌</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+<tr><td>26.1.2</td><td>❌</td><td>❌</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+<tr><td>26.2</td><td>❌</td><td>❌</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+<tr><td>26.3</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
 </table>
 
 Each MC version has its own jar — pick the one matching your Minecraft version.
@@ -68,9 +69,9 @@ A query is a list of keywords, each optionally preceded by a modifier:
 Keywords fall into four categories:
 
 - **Biomes** — `warm ocean`, `desert`, `dark forest`, `deep dark`, `lush caves`,
-  `sulfur_caves` (searchable only with `near`, since it sits deep underground)…
+  `sulfur_caves` (near-only)…
 - **Structures** — `village`, `mansion`, `desert temple`, `monument`,
-  `ruined_portal` (incl. `ruined_portal_nether`)…
+  `ruined_portal` (incl. `ruined_portal_nether`), `nether fossil`…
 - **Spawn blocks** — `grass`, `dirt`, `sand`, `stone`, `snow`, `podzol`,
   `mycelium`, `gravel`, or `any solid` block, prefixed by a trigger such as
   `spawn on`, `on the … block`, `на блоке …` (see below).
@@ -152,7 +153,7 @@ Defaults (`SearchConfig`):
   down to `3` after 10 s** (`minCandidates`, `candidateRampDownSeconds`).
 - Start position: randomized across the 48-bit space by default
   (`randomizeStart`), so a re-run explores different seeds.
-- Search center: `SPAWN` (default), `ORIGIN`, or `BOTH` (first match wins).
+- Search center: `SPAWN` (default) or `ORIGIN`.
 - Native acceleration: `AUTO` (use DLL if present, otherwise Java),
   `NATIVE` (require DLL) or `CLASSIC` (Java-only).
 - Query language: `EN` / `RU` / `AUTO` (both).
@@ -244,7 +245,7 @@ dependency, so it works out of the box.
 The built mod jar is written to:
 
 ```
-build/libs/wywf-1.4.0+1.21.x.x.jar
+build/libs/wywf-1.4.1+1.21.x.jar
 ```
 
 (the name is `<archives_base_name>-<mod_version>.jar`, taken from

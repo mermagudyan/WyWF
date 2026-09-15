@@ -24,7 +24,7 @@
   "wywf.config.search.scan.biome_step.desc": "How densely biomes are checked.\n\nSmaller number = fewer missed biomes,\nbut slower searching.\n\n1 - very thorough (slow)\n4 - good balance (recommended)\n8 - fast but may miss small biomes\n\nDefault: 4.",
 
   "wywf.config.search.center.name": "Search center",
-  "wywf.config.search.center.desc": "The point distances are measured from.\n\nSPAWN - near where YOU will appear.\nUse this for 'in mushroom', 'near village':\nyou want things around YOUR spawn point.\n\nORIGIN - near map corner (0, 0).\nFor when you plan to travel there first.\n\nBOTH - accepts either of the two.\nCareful: a match may sit at (0, 0) while\nyour actual spawn is hundreds of blocks away.",
+  "wywf.config.search.center.desc": "The point distances are measured from.\n\nSPAWN - near where YOU will appear.\nUse this for 'in mushroom', 'near village':\nyou want things around YOUR spawn point.\n\nORIGIN - near map corner (0, 0).\nFor when you plan to travel there first.",
   "wywf.config.search.center.option": "Search center",
 
   "wywf.config.search.limits.name": "Limits",

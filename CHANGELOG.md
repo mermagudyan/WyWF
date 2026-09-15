@@ -2,6 +2,70 @@
 
 Written in plain language — every change, explained so anyone can understand.
 
+## 1.4.1
+
+### New
+- **Nether fossils can be found.** `nether fossil` /
+  `незер-ископаемое` is now a searchable structure, including in the
+  speed-up mode.
+- **Sulfur caves use the speed-up mode.** Where the game version has
+  them, `near sulfur caves` now runs through the fast native library
+  instead of the slow fallback path.
+
+### Changed
+- **Correct world generation per game version.** The built-in speed-up
+  library is rebuilt from the current cubiomes fork, and the version
+  slot now follows the running game (1.21.1 → 1.21.3 → 1.21.4 → 1.21.5
+  → 1.21.11), so each version computes its own generation. Content a
+  version does not have simply never matches — no special cases needed.
+- **Spawn-centered search is ~4× faster.** Each seed costs about 5ms
+  instead of 22ms: a cheap spawn estimate goes first, the last-resort
+  land hunt samples one biome grid instead of up to 512 individual
+  lookups, the game's own sampler almost never fires, and bulk mode
+  skips a height lookup whose result it threw away anyway.
+- **Village variants are ~3× faster.** `plains village`,
+  `desert village` and friends now check only their own variant
+  instead of all five — with identical verdicts by construction.
+- **Fewer trips into the speed-up library.** Biome checks cross over
+  once per search area instead of once per sampled point, and
+  structure viability for a whole area resolves in one call instead
+  of one call per candidate.
+- **No wasted fallback hunt.** When the native finder already returned
+  a usable spawn point (even over water, where the game itself would
+  spawn you too), the search takes it instead of running a full
+  spiral search.
+- **The BOTH search center is retired.** It silently preferred ORIGIN
+  matches and hid SPAWN ones, which confused more than it helped.
+  Existing BOTH settings automatically become ORIGIN. Per-term search
+  centers arrive in 2.0.0.
+- **Credits.** Fast native math is cubiomes by
+  [Cubitect](https://github.com/Cubitect/cubiomes), via the active
+  fork by [xpple](https://github.com/xpple/cubiomes). The library
+  ships inside the mod — nothing is ever downloaded at runtime.
+
+### Fixed
+- Searches for flower forests, windswept forests, trail ruins, trial
+  chambers, mineshafts, warm/lukewarm/cold oceans and other previously
+  unmapped biomes used the wrong internal numbers, so they silently
+  never matched (or matched the wrong place) when the speed-up mode
+  was active. All resolve correctly now.
+- A forbidden-structure check in the final verification was stricter
+  than the main search and could reject good candidates.
+- **Placements no longer veto each other.** When one placement of a
+  structure fails its biome check, the remaining placements are still
+  tried — before, a single failing placement could throw away a good
+  seed.
+- **No more phantom structures near sulfur caves (26.2).** The native
+  library reports witch huts and buried treasures that do not exist in
+  the game when sulfur reaches the surface (upstream issue). Such
+  candidates are now vetoed when sulfur is their surface biome;
+  underground structures and deep sulfur are unaffected. On 1.21.x
+  sulfur does not exist, so the veto rests — the same code and
+  regression corpus apply to both versions.
+- The native version slot now follows the running game: one library
+  carries every version, and a newer slot than the game would invent
+  content that does not exist yet.
+
 ## 1.4.0
 
 ### New

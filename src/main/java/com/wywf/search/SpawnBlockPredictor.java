@@ -10,20 +10,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * Predicts the block a player would stand on at world spawn, without altering
- * vanilla spawn selection.
- *
- * <p>Vanilla's {@code PlayerSpawnFinder} requires a live {@code ServerLevel}
- * (async chunk loading) and the concrete chunk generator, neither of which is
- * available offline on the client. This predictor approximates it from the
- * biome at the origin chunk: it scans columns for the first non-water biome and
- * maps that biome to its typical surface block.
- *
- * <p>The surface <i>material</i> is therefore biome-based and may differ from
- * the exact voxel in edge cases (beaches, rivers, lakes, snow layers). Water
- * biomes are skipped, matching vanilla's refusal to spawn on liquid.
- */
+// Spawn surface block from the biome map (no live ServerLevel offline); water skipped like vanilla
 public final class SpawnBlockPredictor {
 
     private final BiomeSource biomeSource;
@@ -97,16 +84,12 @@ public final class SpawnBlockPredictor {
         possibleBlocks.add(block);
     }
 
-    /** True if the requested block can ever be a spawn surface (so the term is a real filter). */
+    // True when the block can ever be a spawn surface (else the term is vacuous)
     public boolean isPossibleSurfaceBlock(String blockId) {
         return "any_solid".equals(blockId) || possibleBlocks.contains(blockId);
     }
 
-    /**
-     * Scan a radius around the given center to find the most likely spawn block.
-     * Vanilla searches up to ~20 blocks from the spawn point, so we scan
-     * ±2 chunks (32 blocks) to cover that range.
-     */
+    // Most likely spawn block in +-2 chunks (vanilla hunts ~20 blocks around spawn)
     public String predict(WorldContext ctx, int centerBlockX, int centerBlockZ) {
         Climate.Sampler sampler = ctx.sampler();
         final int SCAN_CHUNKS = 2;

@@ -32,9 +32,7 @@ public final class WYWFClient implements ClientModInitializer {
         LOGGER.info("[WyWF] What you Want to Find initialized. Dictionary size: {}", dictionary.all().size());
     }
 
-    /** (Re)builds the keyword dictionary, parser and searcher for the given query
-     *  language. Called at startup and whenever the user changes the language
-     *  in the search config. */
+    // Rebuilds dictionary/parser/searcher for the language. Called at startup and on language change
     public static synchronized void applyQueryLanguage(KeywordDictionary.Lang lang) {
         if (searcher != null && searcher.isRunning()) searcher.cancel();
         dictionary   = new KeywordDictionary(lang);

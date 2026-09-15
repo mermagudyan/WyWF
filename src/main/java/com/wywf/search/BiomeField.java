@@ -3,12 +3,7 @@ package com.wywf.search;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.biome.Biome;
 
-/**
- * A sampled grid of biome keys around a center, at a fixed Y (quart height).
- * Built once per seed and reused across all biome terms that share its Y, so a
- * query with several biome conditions only pays the {@code getNoiseBiome} cost
- * once instead of once per term.
- */
+// Grid of biome keys around a center at fixed Y. Built once per seed, shared by terms on that Y
 public final class BiomeField {
 
     private final int quartY;
@@ -28,7 +23,7 @@ public final class BiomeField {
         return quartY;
     }
 
-    /** True if the given biome is present within {@code radiusBlocks} of the center. */
+    // True when the biome sits within radiusBlocks of the center
     public boolean exists(ResourceKey<Biome> biomeKey, int radiusBlocks) {
         long r2 = (long) radiusBlocks * radiusBlocks;
         for (int i = 0; i < dx.length; i++) {
@@ -40,10 +35,7 @@ public final class BiomeField {
         return false;
     }
 
-    /**
-     * Nearest block distance to the biome that falls inside {@code [minBlocks, maxBlocks]},
-     * or {@code -1} if none. Used for {@code far} / {@code near} distance bands.
-     */
+    // Nearest distance inside [minBlocks, maxBlocks], else -1. For far/near bands
     public int nearestDistanceBlocks(ResourceKey<Biome> biomeKey, int minBlocks, int maxBlocks) {
         long min2 = (long) minBlocks * minBlocks;
         long max2 = (long) maxBlocks * maxBlocks;

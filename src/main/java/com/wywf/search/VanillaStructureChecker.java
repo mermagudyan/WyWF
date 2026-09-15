@@ -69,18 +69,67 @@ public final class VanillaStructureChecker implements StructureChecker {
             Map.entry("minecraft:ancient_city", 13),
             Map.entry("minecraft:fortress", 18),
             Map.entry("minecraft:bastion_remnant", 19),
-            Map.entry("minecraft:trail_ruins", 21),
-            Map.entry("minecraft:trial_chambers", 22)
+            Map.entry("minecraft:mineshaft", 15),
+            Map.entry("minecraft:trail_ruins", 24),
+            Map.entry("minecraft:trial_chambers", 25),
+            Map.entry("minecraft:nether_fossil", 20)
     );
 
-    /** Cubiomes structure ids that live in the NETHER dimension — viability
-     *  must be evaluated against a nether-dimension generator. */
-    private static final java.util.Set<Integer> NETHER_STRUCT_IDS = Set.of(18, 19);
+    // Cubiomes ids in the NETHER: viability needs the nether generator
+    private static final java.util.Set<Integer> NETHER_STRUCT_IDS = Set.of(18, 19, 20);
+
+    // Village variant to native flags id, 0 means all
+    private static final Map<String, Integer> VILLAGE_VARIANT_FLAG = Map.of(
+            "minecraft:village_plains", 1,
+            "minecraft:village_desert", 2,
+            "minecraft:village_savanna", 35,
+            "minecraft:village_snowy", 12,
+            "minecraft:village_taiga", 5);
+
+    private static int variantFlags(String identifier) {
+        return VILLAGE_VARIANT_FLAG.getOrDefault(identifier, 0);
+    }
 
     /** Resolved allowed-biome sets: registry tag when readable, else the
      *  hardcoded fallback map; null = no known restriction (ungated). */
     private final Map<String, java.util.Optional<Set<ResourceKey<Biome>>>> biomeGateCache =
             new ConcurrentHashMap<>();
+
+    // Scratch scan buffers, consumed inside one scan on this thread
+    private final ThreadLocal<List<int[]>> scratchCands = ThreadLocal.withInitial(ArrayList::new);
+    private final ThreadLocal<Set<Long>> scratchSeen = ThreadLocal.withInitial(HashSet::new);
+    private final ThreadLocal<int[]> scratchXs = ThreadLocal.withInitial(() -> new int[64]);
+    private final ThreadLocal<int[]> scratchZs = ThreadLocal.withInitial(() -> new int[64]);
+
+    private List<int[]> takeCands() {
+        List<int[]> c = scratchCands.get();
+        c.clear();
+        return c;
+    }
+
+    private Set<Long> takeSeen() {
+        Set<Long> s = scratchSeen.get();
+        s.clear();
+        return s;
+    }
+
+    // Batch viability for placed candidates in order (null = per-point fallback), one roundtrip
+    private boolean[] batchViable(WorldContext ctx, ResourceKey<Structure> key, List<int[]> cands) {
+        if (!CubiomesBridge.isActive() || cands.isEmpty()) return null;
+        Integer structId = CUBIOMES_STRUCT_ID.get(key.identifier().toString());
+        if (structId == null) return null;
+        int dim = NETHER_STRUCT_IDS.contains(structId) ? CubiomesBridge.DIM_NETHER : CubiomesBridge.DIM_OVERWORLD;
+        int n = cands.size();
+        int[] xs = scratchXs.get(), zs = scratchZs.get();
+        if (xs.length < n) {
+            xs = new int[n];
+            zs = new int[n];
+            scratchXs.set(xs);
+            scratchZs.set(zs);
+        }
+        for (int i = 0; i < n; i++) { xs[i] = cands.get(i)[0]; zs[i] = cands.get(i)[1]; }
+        return CubiomesBridge.viableMany(structId, dim, ctx.seed, xs, zs, n, variantFlags(key.identifier().toString()));
+    }
 
     private Set<ResourceKey<Biome>> allowedBiomes(WorldContext ctx, ResourceKey<Structure> key) {
         String id = key.identifier().toString();
@@ -321,14 +370,16 @@ public final class VanillaStructureChecker implements StructureChecker {
             if (CubiomesBridge.isActive()) {
                 Integer structId = CUBIOMES_STRUCT_ID.get(key.identifier().toString());
                 if (structId != null) {
+                    boolean viable;
                     if (NETHER_STRUCT_IDS.contains(structId)) {
-                        if (!CubiomesBridge.isViableStructurePos(structId, CubiomesBridge.DIM_NETHER, ctx.seed, bx, bz)) {
-                            return false;
-                        }
-                    } else if (!CubiomesBridge.isViableStructurePos(structId, bx, bz)) {
-                        return false;
+                        viable = CubiomesBridge.isViableStructurePos(structId, CubiomesBridge.DIM_NETHER, ctx.seed, bx, bz);
+                    } else {
+                        viable = CubiomesBridge.isViableStructurePos(structId, CubiomesBridge.DIM_OVERWORLD, 0, bx, bz,
+                                variantFlags(key.identifier().toString()));
                     }
-                    return true;
+                    // One placement failing must not veto the others still waiting
+                    if (viable) return true;
+                    continue;
                 }
             }
 
@@ -405,11 +456,18 @@ public final class VanillaStructureChecker implements StructureChecker {
                          List<int[]> out, Set<Long> seen) {
         List<StructurePlacement> placements = ctx.placementsFor(key);
         if (!placements.isEmpty() && allRandomSpread(placements)) {
-            List<int[]> cands = new ArrayList<>();
-            collectSpreadCandidates(ctx, placements, ctx.seed, minX, maxX, minZ, maxZ, cands, new HashSet<>());
-            for (int[] p : cands) {
+            List<int[]> cands = takeCands();
+            collectSpreadCandidates(ctx, placements, ctx.seed, minX, maxX, minZ, maxZ, cands, takeSeen());
+            boolean[] viable = batchViable(ctx, key, cands);
+            for (int j = 0; j < cands.size(); j++) {
+                int[] p = cands.get(j);
                 int ccx = (p[0] - 8) >> 4, ccz = (p[1] - 8) >> 4;
-                if (structureChunk(ctx, key, ccx, ccz)) out.add(p);
+                if (viable != null) {
+                    if (!viable[j]) continue;
+                } else if (!structureChunk(ctx, key, ccx, ccz)) continue;
+                long pk = (((long) ccx) << 32) ^ (ccz & 0xffffffffL);
+                if (!seen.add(pk)) continue;
+                out.add(p);
             }
             return;
         }
@@ -428,9 +486,15 @@ public final class VanillaStructureChecker implements StructureChecker {
                            int minX, int maxX, int minZ, int maxZ) {
         List<StructurePlacement> placements = ctx.placementsFor(key);
         if (!placements.isEmpty() && allRandomSpread(placements)) {
-            List<int[]> cands = new ArrayList<>();
-            collectSpreadCandidates(ctx, placements, ctx.seed, minX, maxX, minZ, maxZ, cands, new HashSet<>());
-            for (int[] p : cands) {
+            List<int[]> cands = takeCands();
+            collectSpreadCandidates(ctx, placements, ctx.seed, minX, maxX, minZ, maxZ, cands, takeSeen());
+            boolean[] viable = batchViable(ctx, key, cands);
+            for (int j = 0; j < cands.size(); j++) {
+                int[] p = cands.get(j);
+                if (viable != null) {
+                    if (viable[j]) return p;
+                    continue;
+                }
                 int ccx = (p[0] - 8) >> 4, ccz = (p[1] - 8) >> 4;
                 if (structureChunk(ctx, key, ccx, ccz)) return p;
             }
@@ -449,8 +513,8 @@ public final class VanillaStructureChecker implements StructureChecker {
                                         int minX, int maxX, int minZ, int maxZ) {
         List<StructurePlacement> placements = ctx.placementsFor(key);
         if (!placements.isEmpty() && allRandomSpread(placements)) {
-            List<int[]> one = new ArrayList<>(1);
-            collectSpreadCandidates(ctx, placements, ctx.seed, minX, maxX, minZ, maxZ, one, new HashSet<>());
+            List<int[]> one = takeCands();
+            collectSpreadCandidates(ctx, placements, ctx.seed, minX, maxX, minZ, maxZ, one, takeSeen());
             return one.isEmpty() ? null : one.get(0);
         }
         for (int cx = minX; cx <= maxX; cx++) {

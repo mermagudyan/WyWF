@@ -12,6 +12,7 @@ public final class SearchConfig {
     public enum SearchCenter {
         ORIGIN,
         SPAWN,
+        // Retired in 1.4.1 (biased UNION); kept so old saves parse, normalized to ORIGIN everywhere
         BOTH
     }
 
@@ -46,8 +47,7 @@ public final class SearchConfig {
     private KeywordDictionary.Lang queryLanguage = KeywordDictionary.Lang.EN;
     private SearchCenter searchCenter = SearchCenter.SPAWN;
     private NativeMode nativeMode = NativeMode.AUTO;
-    /** Optional legacy strategy: biome-only ORIGIN searches walk seeds
-     *  linearly (0, ±1, ±2, …) instead of 48/16 split. Off by default. */
+    // Legacy opt-in: biome-only ORIGIN walks seeds linearly (0, +-1, ...) instead of 48/16 split. Off
     private boolean linearBiomeSearch = false;
 
     public SearchConfig() {}
@@ -103,14 +103,7 @@ public final class SearchConfig {
     public int candidateRampDownSeconds()                   { return candidateRampDownSeconds; }
     public SearchConfig candidateRampDownSeconds(int v)     { this.candidateRampDownSeconds = Math.max(0, v); return this; }
 
-    /**
-     * How many candidates are needed to stop the search, given how long it has run.
-     * <ul>
-     *   <li>before {@link #candidateRampDownSeconds()} — the full {@link #candidatesToCollect()};</li>
-     *   <li>after — ramps down to {@link #minCandidates()} (3), so a rare/complex query still
-     *       produces a result soon without waiting to accumulate the full set.</li>
-     * </ul>
-     */
+    // Stop target for elapsed time: full count early, ramps down to minCandidates so rare queries still finish
     public int effectiveCandidateTarget(long elapsedMs) {
         if (stopAtFirstCandidate) return 1;
         long rampMs = (long) candidateRampDownSeconds * 1000L;
@@ -131,7 +124,11 @@ public final class SearchConfig {
     public SearchConfig queryLanguage(KeywordDictionary.Lang v)   { this.queryLanguage = (v == null) ? KeywordDictionary.Lang.AUTO : v; return this; }
 
     public SearchCenter searchCenter()                 { return searchCenter; }
-    public SearchConfig searchCenter(SearchCenter v)   { this.searchCenter = (v == null) ? SearchCenter.ORIGIN : v; return this; }
+    public SearchConfig searchCenter(SearchCenter v) {
+        // BOTH retired: normalize to ORIGIN (see enum note)
+        this.searchCenter = (v == null || v == SearchCenter.BOTH) ? SearchCenter.ORIGIN : v;
+        return this;
+    }
 
     public NativeMode nativeMode()                     { return nativeMode; }
     public SearchConfig nativeMode(NativeMode v)       { this.nativeMode = (v == null) ? NativeMode.AUTO : v; return this; }
@@ -156,7 +153,7 @@ public final class SearchConfig {
         c.stopAtFirstCandidate = this.stopAtFirstCandidate;
         c.sortCandidatesByDistance = this.sortCandidatesByDistance;
         c.queryLanguage = this.queryLanguage;
-        c.searchCenter = this.searchCenter;
+        c.searchCenter(this.searchCenter);
         c.nativeMode = this.nativeMode;
         c.linearBiomeSearch = this.linearBiomeSearch;
         return c;

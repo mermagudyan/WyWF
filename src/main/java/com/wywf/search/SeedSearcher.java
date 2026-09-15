@@ -74,6 +74,8 @@ public final class SeedSearcher {
         globalSeedCursor.set(0);
         running.set(true);
         progress.start(threadCount);
+        SeedValidator.resetSpawnStats();
+        SearchWorker.resetGateStats();
 
         LOGGER.info("===== Starting seed search =====");
         LOGGER.info("Native mode: {}", searchCfg.nativeMode());
@@ -177,10 +179,11 @@ public final class SeedSearcher {
                 long dDiscarded = s.discardedSeeds() - lastDiscarded;
                 double checkedPerSec = dChecked * 1000.0 / Math.max(1, now - lastTime);
                 double discardedPerSec = dDiscarded * 1000.0 / Math.max(1, now - lastTime);
-                LOGGER.info("[progress] checked {} (~{}/sec), discarded {} (~{}/sec), candidates {}, elapsed {} ms",
+                LOGGER.info("[progress] checked {} (~{}/sec), discarded {} (~{}/sec), candidates {}, elapsed {} ms; {} {}",
                         s.checkedSeeds(), Math.round(checkedPerSec),
                         s.discardedSeeds(), Math.round(discardedPerSec),
-                        candidates.size(), s.elapsedMs());
+                        candidates.size(), s.elapsedMs(),
+                        SeedValidator.spawnStats(), SearchWorker.gateStats());
                 lastDiscarded = s.discardedSeeds();
                 int target = searchCfg.effectiveCandidateTarget(s.elapsedMs());
                 if (target < lastTarget) {
@@ -345,7 +348,7 @@ public final class SeedSearcher {
         return new ParsedQuery(q.raw(), kept);
     }
 
-    /** Checks if a structure ID exists in either the Structure registry or the StructureSet registry. */
+    // Usable when present in either the Structure or the StructureSet registry
     private boolean isStructureUsable(String id) {
         return contextFactory.isStructureAvailable(id) || contextFactory.isStructureSetAvailable(id);
     }

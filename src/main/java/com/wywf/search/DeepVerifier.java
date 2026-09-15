@@ -12,7 +12,7 @@ import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/** Re-checks candidates exhaustively before showing. */
+// Re-checks candidates exhaustively before showing
 public final class DeepVerifier {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("wywf-search");
@@ -31,15 +31,7 @@ public final class DeepVerifier {
 
     private DeepVerifier() {}
 
-    /**
-     * Re-verifies up to 8 candidates exhaustively and returns the best-scoring
-     * survivor, or {@code null} if none survive (caller falls back).
-     *
-     * @param distanceFirst {@code true} = STRICT ranking: closest structure wins,
-     *                      aggregate score is only a tie-breaker.
-     *                      {@code false} = SOFT ranking (default): best overall
-     *                      match across ALL conditions wins.
-     */
+    // Re-verify up to 8 candidates, return best survivor (distanceFirst picks closest, else best match)
     public static SearchResult pickBest(WorldContextFactory factory,
                                         StructureChecker structureChecker,
                                         ParsedQuery query,
@@ -99,7 +91,7 @@ public final class DeepVerifier {
         } catch (Throwable t) {
             return fail("context failed: " + t);
         }
-        if (CubiomesBridge.isAvailable()) {
+        if (CubiomesBridge.isActive()) {
             try { CubiomesBridge.applySeed(r.seed); } catch (Throwable ignored) {}
         }
         int cx = r.centerX, cz = r.centerZ;
@@ -133,7 +125,8 @@ public final class DeepVerifier {
         String canon = term.canonical;
 
         if (mod == Modifier.NEVER) {
-            List<int[]> any = sc.positionsPlacementOnly(ctx, cx, cz, searchRadius, canon);
+            // Same verdict as bulk: reject on biome-viable presence, mere placement can't generate
+            List<int[]> any = sc.positions(ctx, cx, cz, searchRadius, canon);
             return any.isEmpty() ? ok(0) : fail("forbidden structure present at ~" + nearest(any, cx, cz));
         }
 
@@ -265,7 +258,7 @@ public final class DeepVerifier {
         return c;
     }
 
-    /** Normalized closeness in [0,1]: 0 = right on top of the target. */
+    // Closeness in [0,1]: 0 = right on top of the target
     private static double rel(int dist, int threshold) {
         return Math.max(0.0, Math.min(1.0, dist / (double) Math.max(1, threshold)));
     }

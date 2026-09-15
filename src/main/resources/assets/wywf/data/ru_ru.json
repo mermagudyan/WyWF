@@ -43,6 +43,7 @@
   "wywf.synonym.biome.minecraft:beach": ["пляж", "берег"],
   "wywf.synonym.biome.minecraft:sunflower_plains": ["подсолнуховые равнины", "подсолнухи"],
   "wywf.synonym.biome.minecraft:old_growth_pine_taiga": ["гигантская тайга", "мегатайга"],
+  "wywf.synonym.biome.minecraft:dappled_forest": ["пятнистый лес", "даппл лес"],
   "wywf.synonym.biome.minecraft:pale_garden": ["бледный сад"],
   "wywf.synonym.biome.minecraft:savanna_plateau": ["плато саванны", "плато"],
   "wywf.synonym.biome.minecraft:windswept_savanna": ["ветреная саванна"],
@@ -77,6 +78,8 @@
   "wywf.synonym.structure.minecraft:ocean_ruins": ["руины океана", "подводные руины"],
   "wywf.synonym.structure.minecraft:buried_treasure": ["закопанное сокровище", "клад", "сокровище"],
   "wywf.synonym.structure.minecraft:trail_ruins": ["тропные руины"],
+  "wywf.synonym.structure.minecraft:nether_fossil": ["незер-ископаемое", "ископаемое незера"],
+  "wywf.synonym.structure.minecraft:abandoned_camp": ["заброшенный лагерь", "лагерь"],
 
   "wywf.synonym.structure.minecraft:village_plains": ["деревня на равнинах", "равнинная деревня", "деревня в равнине"],
   "wywf.synonym.structure.minecraft:village_desert": ["деревня в пустыне", "пустынная деревня"],

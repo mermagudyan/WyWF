@@ -80,7 +80,7 @@ public final class VanillaBiomeChecker implements BiomeChecker {
         Map.entry("minecraft:forest", 4), Map.entry("minecraft:taiga", 5),
         Map.entry("minecraft:swamp", 6), Map.entry("minecraft:river", 7),
         Map.entry("minecraft:snowy_plains", 12), Map.entry("minecraft:mushroom_fields", 14),
-        Map.entry("minecraft:beach", 16), Map.entry("minecraft:windswept_forest", 18),
+        Map.entry("minecraft:beach", 16), Map.entry("minecraft:windswept_forest", 34),
         Map.entry("minecraft:savanna", 35), Map.entry("minecraft:savanna_plateau", 36),
         Map.entry("minecraft:badlands", 37), Map.entry("minecraft:wooded_badlands", 38),
         Map.entry("minecraft:deep_ocean", 24),
@@ -88,7 +88,7 @@ public final class VanillaBiomeChecker implements BiomeChecker {
         Map.entry("minecraft:snowy_taiga", 30), Map.entry("minecraft:old_growth_pine_taiga", 32),
         Map.entry("minecraft:windswept_wooded_hills", 34), Map.entry("minecraft:jungle", 21),
         Map.entry("minecraft:bamboo_jungle", 168), Map.entry("minecraft:sunflower_plains", 129),
-        Map.entry("minecraft:flower_forest", 131), Map.entry("minecraft:meadow", 177),
+        Map.entry("minecraft:flower_forest", 132), Map.entry("minecraft:meadow", 177),
         Map.entry("minecraft:grove", 178), Map.entry("minecraft:snowy_slopes", 179),
         Map.entry("minecraft:jagged_peaks", 180), Map.entry("minecraft:frozen_peaks", 181),
         Map.entry("minecraft:stony_peaks", 182), Map.entry("minecraft:cherry_grove", 185),
@@ -96,7 +96,16 @@ public final class VanillaBiomeChecker implements BiomeChecker {
         Map.entry("minecraft:crimson_forest", 171), Map.entry("minecraft:warped_forest", 172),
         Map.entry("minecraft:basalt_deltas", 173), Map.entry("minecraft:dripstone_caves", 174),
         Map.entry("minecraft:lush_caves", 175), Map.entry("minecraft:deep_dark", 183),
-        Map.entry("minecraft:pale_garden", 186)
+        Map.entry("minecraft:pale_garden", 186),
+        Map.entry("minecraft:sulfur_caves", 187),
+        Map.entry("minecraft:warm_ocean", 44), Map.entry("minecraft:lukewarm_ocean", 45),
+        Map.entry("minecraft:cold_ocean", 46), Map.entry("minecraft:frozen_ocean", 10),
+        Map.entry("minecraft:frozen_river", 11), Map.entry("minecraft:deep_warm_ocean", 47),
+        Map.entry("minecraft:deep_lukewarm_ocean", 48), Map.entry("minecraft:deep_cold_ocean", 49),
+        Map.entry("minecraft:deep_frozen_ocean", 50), Map.entry("minecraft:snowy_beach", 26),
+        Map.entry("minecraft:stony_shore", 25), Map.entry("minecraft:sparse_jungle", 23),
+        Map.entry("minecraft:windswept_savanna", 163), Map.entry("minecraft:eroded_badlands", 165),
+        Map.entry("minecraft:ice_spikes", 140)
     );
 
     private static final Map<ResourceKey<Biome>, Integer> CUBIOMES_KEY_MAP = new HashMap<>();

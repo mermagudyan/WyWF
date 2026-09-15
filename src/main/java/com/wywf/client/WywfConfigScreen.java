@@ -10,6 +10,7 @@ import dev.isxander.yacl3.api.OptionDescription;
 import dev.isxander.yacl3.api.OptionGroup;
 import dev.isxander.yacl3.api.YetAnotherConfigLib;
 import dev.isxander.yacl3.api.controller.BooleanControllerBuilder;
+import dev.isxander.yacl3.api.controller.CyclingListControllerBuilder;
 import dev.isxander.yacl3.api.controller.EnumControllerBuilder;
 import dev.isxander.yacl3.api.controller.IntegerSliderControllerBuilder;
 import net.minecraft.client.gui.screens.Screen;
@@ -162,15 +163,19 @@ public final class WywfConfigScreen {
                         .group(OptionGroup.createBuilder()
                                 .name(tr("wywf.config.search.center.name"))
                                 .description(OptionDescription.of(tr("wywf.config.search.center.desc")))
-                                .option(Option.<SearchConfig.SearchCenter>createBuilder()
+                                .option(Option.<String>createBuilder()
                                         .name(tr("wywf.config.search.center.option"))
                                         .binding(
-                                                SearchConfig.SearchCenter.SPAWN,
-                                                () -> config.searchCenter(),
-                                                v -> config.searchCenter(v)
+                                                SearchConfig.SearchCenter.SPAWN.name(),
+                                                () -> config.searchCenter().name(),
+                                                v -> config.searchCenter(SearchConfig.SearchCenter.valueOf(v))
                                         )
-                                        .controller(opt -> EnumControllerBuilder.create(opt)
-                                                .enumClass(SearchConfig.SearchCenter.class))
+                                        // BOTH retired (see SearchConfig): offer ORIGIN/SPAWN only
+                                        .controller(opt -> CyclingListControllerBuilder.create(opt)
+                                                .values(java.util.List.of(
+                                                        SearchConfig.SearchCenter.ORIGIN.name(),
+                                                        SearchConfig.SearchCenter.SPAWN.name()))
+                                                .formatValue(s -> Component.literal(s)))
                                         .build())
                                 .option(Option.<Boolean>createBuilder()
                                         .name(tr("wywf.config.search.center.random_start"))
