@@ -3,6 +3,7 @@ package com.wywf.client;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonElement;
+import com.wywf.core.WyWFDebug;
 import net.minecraft.client.Minecraft;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,7 +43,7 @@ public final class ConfigTranslations {
     public static synchronized String tr(String key) {
         String lang = currentLang();
         if (cache == null || !lang.equals(loadedLang)) {
-            LOGGER.info("[WyWF] Config translations: {}", lang);
+            if (WyWFDebug.ENABLED) LOGGER.info("[WyWF] Config translations: {}", lang);
             load(lang);
             loadedLang = lang;
         }

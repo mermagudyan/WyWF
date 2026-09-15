@@ -59,7 +59,7 @@ public final class SearchScreen extends Screen {
         WYWFClient.applyQueryLanguage(config.queryLanguage());
         SeedSearcher searcher = WYWFClient.searcher();
         if (searcher.isRunning()) {
-            WYWFClient.LOGGER.info("Search already running, ignoring start");
+            if (WyWFDebug.ENABLED) WYWFClient.LOGGER.info("Search already running, ignoring start");
             return;
         }
 
@@ -70,7 +70,7 @@ public final class SearchScreen extends Screen {
     }
 
     private void onSearchFinished(SearchResult result) {
-        WYWFClient.LOGGER.info("Search finished: {}", result);
+        if (WyWFDebug.ENABLED) WYWFClient.LOGGER.info("Search finished: {}", result);
 
         List<SearchResult> candidates;
         synchronized (WYWFClient.searcher().candidates()) {

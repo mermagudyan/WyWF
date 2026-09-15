@@ -2,6 +2,7 @@ package com.wywf;
 
 import com.wywf.core.KeywordDictionary;
 import com.wywf.core.QueryParser;
+import com.wywf.core.WyWFDebug;
 import com.wywf.search.AuditLogger;
 import com.wywf.search.SeedSearcher;
 import com.wywf.world.WorldCreator;
@@ -29,12 +30,10 @@ public final class WYWFClient implements ClientModInitializer {
             if (searcher.isRunning()) searcher.cancel();
         });
 
-        LOGGER.info("[WyWF] What you Want to Find initialized. Dictionary size: {}", dictionary.all().size());
+        if (WyWFDebug.ENABLED) LOGGER.info("[WyWF] What you Want to Find initialized. Dictionary size: {}", dictionary.all().size());
     }
 
-    /** (Re)builds the keyword dictionary, parser and searcher for the given query
-     *  language. Called at startup and whenever the user changes the language
-     *  in the search config. */
+    // Rebuilds dictionary/parser/searcher for the language. Called at startup and on language change
     public static synchronized void applyQueryLanguage(KeywordDictionary.Lang lang) {
         if (searcher != null && searcher.isRunning()) searcher.cancel();
         dictionary   = new KeywordDictionary(lang);

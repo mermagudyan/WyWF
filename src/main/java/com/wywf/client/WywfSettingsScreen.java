@@ -311,8 +311,11 @@ public final class WywfSettingsScreen extends Screen {
     }
 
     private <T extends Enum<T>> CycleButton<T> buildEnum(Class<T> cls, T current, Consumer<T> setter) {
+        java.util.List<T> vals = new java.util.ArrayList<>(java.util.Arrays.asList(cls.getEnumConstants()));
+        // BOTH retired, don't offer it (load() already migrates old saves)
+        vals.removeIf(v -> cls == SearchConfig.SearchCenter.class && v.name().equals("BOTH"));
         return CycleButton.builder((T val) -> Component.literal(val.name()), current)
-                .withValues(cls.getEnumConstants())
+                .withValues(vals)
                 .displayOnlyValue()
                 .create(0, 0, 150, 20, Component.empty(), (btn, val) -> setter.accept(val));
     }

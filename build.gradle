@@ -6,6 +6,30 @@ plugins {
 version = project.mod_version
 group = project.maven_group
 
+// Multiversion 26.x in one folder: -PmcLine=262 builds the 26.1/26.2
+// line, default (or -PmcLine=263) builds 26.3. Version-specific
+// sources live in src/mc262 and src/mc263, shared code in src/main.
+def mcLine = (project.findProperty("mcLine") ?: "263").toString()
+if (mcLine != "262" && mcLine != "263") throw new GradleException("mcLine must be 262 or 263")
+if (mcLine == "262") {
+    project.ext.minecraft_version = "26.2"
+    project.ext.fabric_api_version = "0.154.2+26.2"
+    project.ext.yacl_mc_version = "26.2"
+    project.ext.mod_version = "1.4.1+26.x"
+    project.ext.mc_range = ">=26.1 <26.3"
+    version = project.mod_version
+}
+
+sourceSets {
+    main {
+        java { srcDir "src/mc${mcLine}/java" }
+        resources { srcDir "src/mc${mcLine}/resources" }
+    }
+    test {
+        java { srcDir "src/mc${mcLine}/test" }
+    }
+}
+
 base {
     archivesName = project.archives_base_name
 }
@@ -32,7 +56,7 @@ if (!modmenuJar.exists()) {
 }
 
 loom {
-    accessWidenerPath = file("src/main/resources/wywf.accesswidener")
+    accessWidenerPath = file("src/mc${mcLine}/resources/wywf.accesswidener")
     mods {
         "wywf" {
             sourceSet sourceSets.main
@@ -44,6 +68,9 @@ loom {
             programArgs "--username", "mermagudyan", "--uuid", "ad96c39f1b2047a58b5802365e1cad34"
             if (project.hasProperty('audit')) {
                 systemProperty 'wywf.audit', 'true'
+            }
+            if (project.hasProperty('debug')) {
+                systemProperty 'wywf.debug', 'true'
             }
         }
     }
@@ -59,7 +86,9 @@ dependencies {
     implementation "net.java.dev.jna:jna-platform:5.14.0"
 
     // Optional: YACL config screen (suggested, not required)
-    compileOnly "dev.isxander:yet-another-config-lib:${project.yacl_version}+${project.minecraft_version}-fabric"
+    // yacl_mc_version tracks minecraft_version, except on prerelease MC
+    // (no YACL builds for rc versions, use the matching release line)
+    compileOnly "dev.isxander:yet-another-config-lib:${project.yacl_version}+${project.yacl_mc_version}-fabric"
     // ModMenu API (compile-only — downloaded from Modrinth if missing)
     if (modmenuJar.exists()) {
         compileOnly files(modmenuJar)
@@ -76,9 +105,10 @@ test {
 
 processResources {
     inputs.property "version", project.version
+    inputs.property "mc_range", project.mc_range
 
     filesMatching("fabric.mod.json") {
-        expand "version": project.version
+        expand "version": project.version, "mc_range": project.mc_range
     }
 }
 
@@ -104,6 +134,7 @@ jar {
 
 // Make the native library a real resource so DEV runs (IDEA/loom) also see it:
 // CubiomesBridge reads it from the mod container roots at runtime.
+// One DLL serves all 26.x slots (same-slot parity old-vs-new is zero-diff).
 sourceSets.main.resources {
     srcDir 'natives'
 }

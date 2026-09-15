@@ -49,7 +49,7 @@ public final class SeedSearcher {
         ParsedQuery query = filterToAvailable(rawQuery);
 
         if (query.isEmpty()) {
-            LOGGER.info("No searchable terms in query \"{}\" — nothing to search, aborting", rawQuery.raw());
+            if (WyWFDebug.ENABLED) LOGGER.info("No searchable terms in query \"{}\" — nothing to search, aborting", rawQuery.raw());
             String reason = rawQuery.ignoredWords().isEmpty()
                     ? "query is empty — no recognized keywords"
                     : "all keywords not available in this game version: " + String.join(", ", rawQuery.ignoredWords());
@@ -74,9 +74,13 @@ public final class SeedSearcher {
         globalSeedCursor.set(0);
         running.set(true);
         progress.start(threadCount);
+        SeedValidator.resetSpawnStats();
+        SearchWorker.resetGateStats();
 
-        LOGGER.info("===== Starting seed search =====");
-        LOGGER.info("Native mode: {}", searchCfg.nativeMode());
+        if (WyWFDebug.ENABLED) {
+            LOGGER.info("===== Starting seed search =====");
+            LOGGER.info("Native mode: {}", searchCfg.nativeMode());
+        }
         CubiomesBridge.setMode(searchCfg.nativeMode());
         // Fail FAST and clearly when NATIVE was demanded but the accelerator
         // is missing, instead of poisoning every seed with deep exceptions.
@@ -93,7 +97,7 @@ public final class SeedSearcher {
             } else {
                 reason = null;
             }
-            if (reason != null) LOGGER.warn("[SeedSearcher] {}", reason);
+            if (reason != null && WyWFDebug.ENABLED) LOGGER.warn("[SeedSearcher] {}", reason);
             if (abort) {
                 // NATIVE demanded but unavailable: fail fast instead of
                 // discarding every seed with deep exceptions.
@@ -105,18 +109,20 @@ public final class SeedSearcher {
                 return;
             }
         }
-        LOGGER.info("Query: \"{}\"", query.raw());
-        LOGGER.info("Terms: {}", query.terms().isEmpty() ? "(none)" : query.terms());
-        LOGGER.info("Looking for structures: {}", query.structures().isEmpty() ? "(none)" : query.structures());
-        LOGGER.info("Looking for biomes: {}",     query.biomes().isEmpty()     ? "(none)" : query.biomes());
-        LOGGER.info("Looking for objects: {}",   query.objects().isEmpty()    ? "(none)" : query.objects());
-        if (!query.ignoredWords().isEmpty()) {
-            LOGGER.info("Ignored words (not recognized as biome/structure/block): {}", query.ignoredWords());
+        if (WyWFDebug.ENABLED) {
+            LOGGER.info("Query: \"{}\"", query.raw());
+            LOGGER.info("Terms: {}", query.terms().isEmpty() ? "(none)" : query.terms());
+            LOGGER.info("Looking for structures: {}", query.structures().isEmpty() ? "(none)" : query.structures());
+            LOGGER.info("Looking for biomes: {}",     query.biomes().isEmpty()     ? "(none)" : query.biomes());
+            LOGGER.info("Looking for objects: {}",   query.objects().isEmpty()    ? "(none)" : query.objects());
+            if (!query.ignoredWords().isEmpty()) {
+                LOGGER.info("Ignored words (not recognized as biome/structure/block): {}", query.ignoredWords());
+            }
+            LOGGER.info("Threads: {}, structure radius: {} chunks, biome radius: {} chunks (step {}), limit: {}",
+                    threadCount, searchCfg.searchRadiusChunks(), searchCfg.biomeCheckRadiusChunks(),
+                    searchCfg.biomeSampleStepChunks(),
+                    searchCfg.infiniteSeeds() ? "unlimited" : searchCfg.maxSeedsToCheck() + " seeds");
         }
-        LOGGER.info("Threads: {}, structure radius: {} chunks, biome radius: {} chunks (step {}), limit: {}",
-                threadCount, searchCfg.searchRadiusChunks(), searchCfg.biomeCheckRadiusChunks(),
-                searchCfg.biomeSampleStepChunks(),
-                searchCfg.infiniteSeeds() ? "unlimited" : searchCfg.maxSeedsToCheck() + " seeds");
 
         if (biomeChecker instanceof VanillaBiomeChecker vbc) {
             vbc.stepChunks(searchCfg.biomeSampleStepChunks());
@@ -177,30 +183,31 @@ public final class SeedSearcher {
                 long dDiscarded = s.discardedSeeds() - lastDiscarded;
                 double checkedPerSec = dChecked * 1000.0 / Math.max(1, now - lastTime);
                 double discardedPerSec = dDiscarded * 1000.0 / Math.max(1, now - lastTime);
-                LOGGER.info("[progress] checked {} (~{}/sec), discarded {} (~{}/sec), candidates {}, elapsed {} ms",
+                if (WyWFDebug.ENABLED) LOGGER.info("[progress] checked {} (~{}/sec), discarded {} (~{}/sec), candidates {}, elapsed {} ms; {} {}",
                         s.checkedSeeds(), Math.round(checkedPerSec),
                         s.discardedSeeds(), Math.round(discardedPerSec),
-                        candidates.size(), s.elapsedMs());
+                        candidates.size(), s.elapsedMs(),
+                        SeedValidator.spawnStats(), SearchWorker.gateStats());
                 lastDiscarded = s.discardedSeeds();
                 int target = searchCfg.effectiveCandidateTarget(s.elapsedMs());
                 if (target < lastTarget) {
-                    LOGGER.info("[progress] query is slow — collected {} of {} candidates, ramping target down to {}",
+                    if (WyWFDebug.ENABLED) LOGGER.info("[progress] query is slow — collected {} of {} candidates, ramping target down to {}",
                             candidates.size(), searchCfg.candidatesToCollect(), target);
                     lastTarget = target;
                 }
                 if (!candidates.isEmpty() && candidates.size() >= target) {
                     stopReason = "collected " + candidates.size() + " candidate(s) (target " + target + ")";
-                    LOGGER.warn("[SeedSearcher] Stopping: {}", stopReason);
+                    if (WyWFDebug.ENABLED) LOGGER.warn("[SeedSearcher] Stopping: {}", stopReason);
                     running.set(false);
                 }
                 if (timeLimitMs > 0 && (now - searchStartTime) >= timeLimitMs) {
                     stopReason = "time limit reached (" + searchCfg.timeLimitMinutes() + " min)";
-                    LOGGER.warn("[SeedSearcher] Stopping: {}", stopReason);
+                    if (WyWFDebug.ENABLED) LOGGER.warn("[SeedSearcher] Stopping: {}", stopReason);
                     running.set(false);
                 }
                 if (s.checkedSeeds() >= maxSeeds) {
                     stopReason = "seed limit reached (" + formatNumber(maxSeeds) + " seeds)";
-                    LOGGER.warn("[SeedSearcher] Stopping: {}", stopReason);
+                    if (WyWFDebug.ENABLED) LOGGER.warn("[SeedSearcher] Stopping: {}", stopReason);
                     running.set(false);
                 }
                 lastChecked = s.checkedSeeds();
@@ -284,14 +291,16 @@ public final class SeedSearcher {
                     if (!distInfo.isEmpty()) distInfo.append(", ");
                     distInfo.append(entry.getKey()).append(" ~").append(entry.getValue()).append(" blocks");
                 }
-                LOGGER.info("===== Search finished: seed {} chosen from {} candidate(s) after {} checked seeds ({} ms, ~{} seeds/sec) native={} =====",
-                        chosen.seed, poolSize, snap.checkedSeeds(), snap.elapsedMs(),
-                        snap.elapsedMs() > 0 ? Math.round(snap.checkedSeeds() * 1000.0 / snap.elapsedMs()) : 0,
-                        activeConfig != null ? activeConfig.nativeMode() : "unknown");
-                LOGGER.info("  origin ({}, {}), distances: {}", chosen.centerX, chosen.centerZ, distInfo);
+                if (WyWFDebug.ENABLED) {
+                    LOGGER.info("===== Search finished: seed {} chosen from {} candidate(s) after {} checked seeds ({} ms, ~{} seeds/sec) native={} =====",
+                            chosen.seed, poolSize, snap.checkedSeeds(), snap.elapsedMs(),
+                            snap.elapsedMs() > 0 ? Math.round(snap.checkedSeeds() * 1000.0 / snap.elapsedMs()) : 0,
+                            activeConfig != null ? activeConfig.nativeMode() : "unknown");
+                    LOGGER.info("  origin ({}, {}), distances: {}", chosen.centerX, chosen.centerZ, distInfo);
+                }
                 if (!cancelledByUser) onFound.accept(finalResult);
             } else {
-                LOGGER.warn("===== Search finished: no matching seed found. Checked {} seeds ({} ms, ~{} seeds/sec) native={} =====",
+                if (WyWFDebug.ENABLED) LOGGER.warn("===== Search finished: no matching seed found. Checked {} seeds ({} ms, ~{} seeds/sec) native={} =====",
                         snap.checkedSeeds(), snap.elapsedMs(),
                         snap.elapsedMs() > 0 ? Math.round(snap.checkedSeeds() * 1000.0 / snap.elapsedMs()) : 0,
                         activeConfig != null ? activeConfig.nativeMode() : "unknown");
@@ -345,7 +354,7 @@ public final class SeedSearcher {
         return new ParsedQuery(q.raw(), kept);
     }
 
-    /** Checks if a structure ID exists in either the Structure registry or the StructureSet registry. */
+    // Usable when present in either the Structure or the StructureSet registry
     private boolean isStructureUsable(String id) {
         return contextFactory.isStructureAvailable(id) || contextFactory.isStructureSetAvailable(id);
     }
@@ -354,7 +363,7 @@ public final class SeedSearcher {
         cancelledByUser = true;
         running.set(false);
         progress.finish();
-        LOGGER.warn("[SeedSearcher] Search cancelled by user");
+        if (WyWFDebug.ENABLED) LOGGER.warn("[SeedSearcher] Search cancelled by user");
         shutdownPool();
     }
 

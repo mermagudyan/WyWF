@@ -6,14 +6,7 @@ import java.util.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/**
- * Structured audit logger that records every seed validation decision.
- * Output: wywf-audit.jsonl (one JSON object per line)
- * Used by the standalone verifier (test_verifier.exe) to cross-check with cubiomes.
- *
- * <p>The log file is created in the Minecraft game directory (where mods/ folder is).
- * Each line contains the MC version so the verifier knows which cubiomes version to use.
- */
+// Audit log (wywf-audit.jsonl) for the standalone cross-checker; off unless -Dwywf.audit=true
 public final class AuditLogger {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("wywf-search");
@@ -22,8 +15,7 @@ public final class AuditLogger {
     private static volatile String mcVersion = "1.21";
     private static final Object FILE_LOCK = new Object();
 
-    /** Enable audit logging. Called from WYWFClient.onInitializeClient().
-     *  Only activates if system property "wywf.audit" is set to "true". */
+    // Enable only with -Dwywf.audit=true. Called from WYWFClient.onInitializeClient()
     public static void enable() {
         if (!"true".equals(System.getProperty("wywf.audit"))) return;
         enabled = true;
@@ -42,7 +34,7 @@ public final class AuditLogger {
         }
     }
 
-    /** Set MC version string (e.g. "1.21", "26.2"). Called from WorldContextFactory. */
+    // MC version tag per line (e.g. "1.21", "26.2")
     public static void setMcVersion(String version) {
         mcVersion = version;
     }

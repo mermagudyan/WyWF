@@ -1,7 +1,5 @@
 package com.wywf.core;
 
-// This is a test file. These files have no effect on the main gameplay.
-
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;

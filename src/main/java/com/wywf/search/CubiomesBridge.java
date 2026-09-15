@@ -1,6 +1,7 @@
 package com.wywf.search;
 
 import com.sun.jna.*;
+import com.wywf.core.WyWFDebug;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -15,9 +16,55 @@ public final class CubiomesBridge {
     private static volatile com.wywf.core.SearchConfig.NativeMode nativeMode = com.wywf.core.SearchConfig.NativeMode.AUTO;
     private static final ThreadLocal<com.wywf.core.SearchConfig.NativeMode> threadMode = new ThreadLocal<>();
 
-    public static final int MC_1_21 = 28;
+    // MC slot follows the running game, unknown versions round down
+    private static final int MC_26_1 = 33;
+    private static final int MC_26_2 = 34;
+    private static final int MC_26_3 = 35;
+    private static volatile int resolvedSlot = -1;
+
+    public static int mcSlot() {
+        int s = resolvedSlot;
+        if (s >= 0) return s;
+        s = resolveSlot(runningGameVersion());
+        resolvedSlot = s;
+        return s;
+    }
+
+    static String runningGameVersion() {
+        try {
+            var c = net.fabricmc.loader.api.FabricLoader.getInstance()
+                    .getModContainer("minecraft").orElse(null);
+            if (c != null) return c.getMetadata().getVersion().getFriendlyString();
+        } catch (Throwable ignored) {
+        }
+        return "";
+    }
+
+    static int resolveSlot(String version) {
+        int minor = -1;
+        try {
+            String[] p = version.split("[.\\-]");
+            if (p.length >= 2 && p[0].equals("26")) minor = Integer.parseInt(p[1]);
+        } catch (Throwable ignored) {
+        }
+        int slot;
+        if (minor < 0) {
+            slot = MC_26_2;
+            LOGGER.warn("[CubiomesBridge] unknown game version '{}', assuming safest slot {}", version, slot);
+        } else if (minor <= 1) {
+            slot = MC_26_1;
+        } else if (minor == 2) {
+            slot = MC_26_2;
+        } else {
+            slot = MC_26_3;
+            if (minor > 3) LOGGER.warn("[CubiomesBridge] game {} newer than known slots, using {}", version, slot);
+        }
+        return slot;
+    }
     public static final int DIM_OVERWORLD = 0;
     public static final int DIM_NETHER = -1;
+
+    // No mapApproxHeight binding by design, nether has no single surface
 
     public interface NativeLib extends Library {
         Pointer wywf_createGenerator(int mc, int flags);
@@ -28,6 +75,11 @@ public final class CubiomesBridge {
         int wywf_isViableStructurePos(int structType, Pointer g, int x, int z, int flags);
         int wywf_getStructureConfig(int structType, int mc, int[] salt, int[] regionSize, int[] chunkRange, int[] structTypeOut, int[] dim, float[] rarity);
         int wywf_getSpawn(Pointer g, int[] outX, int[] outZ);
+        int wywf_estimateSpawn(Pointer g, int[] outX, int[] outZ);
+        int wywf_biomeExists(Pointer g, int biomeId, int y, int ccx, int ccz, int rChunks, int step, int centerX, int centerZ, int rBlocks);
+        int wywf_biomeNearest(Pointer g, int biomeId, int y, int ccx, int ccz, int rChunks, int step, int centerX, int centerZ);
+        int wywf_sampleBiomeGrid(Pointer g, int y, int ccx, int ccz, int rChunks, int step, int[] out, int maxOut);
+        int wywf_isViableMany(Pointer g, int structType, int[] xs, int[] zs, int n, int flags, byte[] out);
     }
 
     static {
@@ -36,7 +88,7 @@ public final class CubiomesBridge {
             System.load(tempLib.toAbsolutePath().toString());
             lib = Native.load(tempLib.toAbsolutePath().toString(), NativeLib.class);
             available = true;
-            LOGGER.info("[CubiomesBridge] Native library loaded from {}", tempLib);
+            if (WyWFDebug.ENABLED) LOGGER.info("[CubiomesBridge] Native library loaded from {}", tempLib);
         } catch (Throwable t) {
             LOGGER.info("[CubiomesBridge] Not available: {}: {}", t.getClass().getSimpleName(), t.getMessage());
             available = false;
@@ -78,7 +130,7 @@ public final class CubiomesBridge {
         return target;
     }
 
-    /** Canonical game directory via Fabric, falling back to process CWD. */
+    // Game dir via Fabric, else process CWD
     private static Path gameDir() {
         try {
             return net.fabricmc.loader.api.FabricLoader.getInstance().getGameDir();
@@ -122,12 +174,7 @@ public final class CubiomesBridge {
         }
     }
 
-    /**
-     * Locates the packaged native library inside the mod jar. Fabric's knot
-     * classloader does not always serve arbitrary root-level resources through
-     * {@link Class#getResourceAsStream}, so fall back through the standard
-     * loaders and finally the Fabric ModContainer roots (canonical way).
-     */
+    // Packaged native lib via classloaders, container roots, natives/ or straight from mods/*.jar
     private static byte[] readNativeResource(String libName) throws IOException {
         // 1) absolute + relative through our own class
         try (InputStream s = CubiomesBridge.class.getResourceAsStream("/" + libName)) {
@@ -172,7 +219,7 @@ public final class CubiomesBridge {
                     for (String name : new String[]{libName, "natives/" + libName}) {
                         java.nio.file.Path p = root.resolve(name);
                         if (java.nio.file.Files.exists(p)) {
-                            LOGGER.info("[CubiomesBridge] native found via container root: {}", p);
+                            if (WyWFDebug.ENABLED) LOGGER.info("[CubiomesBridge] native found via container root: {}", p);
                             return java.nio.file.Files.readAllBytes(p);
                         }
                     }
@@ -199,7 +246,7 @@ public final class CubiomesBridge {
                         java.util.zip.ZipEntry e = zf.getEntry(libName);
                         if (e == null) e = zf.getEntry("natives/" + libName);
                         if (e != null) {
-                            LOGGER.info("[CubiomesBridge] native pulled straight from {}", jar);
+                            if (WyWFDebug.ENABLED) LOGGER.info("[CubiomesBridge] native pulled straight from {}", jar);
                             try (InputStream s = zf.getInputStream(e)) {
                                 return s.readAllBytes();
                             }
@@ -216,7 +263,7 @@ public final class CubiomesBridge {
 
     public static boolean isAvailable() { return available; }
 
-    /** Set the native mode for the current search session. */
+    // Pin the native mode for the search session
     public static void setMode(com.wywf.core.SearchConfig.NativeMode mode) {
         com.wywf.core.SearchConfig.NativeMode m = (mode != null) ? mode : com.wywf.core.SearchConfig.NativeMode.AUTO;
         nativeMode = m;
@@ -230,12 +277,7 @@ public final class CubiomesBridge {
 
     public static void clearThreadMode() { threadMode.remove(); }
 
-    /**
-     * Returns true if native acceleration should be used.
-     * AUTO: use if DLL loaded successfully.
-     * NATIVE: require DLL, throw error if not available.
-     * CLASSIC: never use DLL, Java-only.
-     */
+    // AUTO = use if loaded; NATIVE = require or throw; CLASSIC = never
     public static boolean isActive() {
         com.wywf.core.SearchConfig.NativeMode effective = threadMode.get();
         if (effective == null) effective = nativeMode;
@@ -253,31 +295,56 @@ public final class CubiomesBridge {
 
     private static final ThreadLocal<Pointer> GENERATOR = ThreadLocal.withInitial(() -> {
         if (lib == null) return null;
-        Pointer g = lib.wywf_createGenerator(MC_1_21, 0);
-        LOGGER.info("[CubiomesBridge] Created generator mc={} at {}", MC_1_21, g);
+        Pointer g = lib.wywf_createGenerator(mcSlot(), 0);
+        if (WyWFDebug.ENABLED) LOGGER.info("[CubiomesBridge] Created generator mc={} at {}", mcSlot(), g);
         return g;
     });
 
-    /** Separate overworld-dimension generator for nether structures
-     *  (fortress/bastion) — viability must be evaluated against nether biomes. */
+    // Own nether-dimension generator for fortress/bastion viability
     private static final ThreadLocal<Pointer> GENERATOR_NETHER = ThreadLocal.withInitial(() -> {
         if (lib == null) return null;
-        return lib.wywf_createGenerator(MC_1_21, 0);
+        return lib.wywf_createGenerator(mcSlot(), 0);
     });
 
-    private static final ThreadLocal<Long> NETHER_SEED = ThreadLocal.withInitial(() -> Long.MIN_VALUE);
+    private static final ThreadLocal<long[]> NETHER_SEED = ThreadLocal.withInitial(() -> new long[]{Long.MIN_VALUE});
 
-    /** Threads that actually used a native generator (avoids lazy-create on foreign threads). */
+    // Scratch out-params, JNA fills them synchronously inside one call
+    private static final ThreadLocal<int[]> SCRATCH_X = ThreadLocal.withInitial(() -> new int[1]);
+    private static final ThreadLocal<int[]> SCRATCH_Z = ThreadLocal.withInitial(() -> new int[1]);
+    private static final ThreadLocal<byte[]> SCRATCH_RAW = ThreadLocal.withInitial(() -> new byte[64]);
+
+    // Sulfur-surface veto for xpple/cubiomes#19, underground and nether exempt
+    private static final java.util.Set<Integer> SULFUR_VETO_STRUCTS =
+            java.util.Set.of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 14, 24, 26);
+    private static final int SULFUR_CAVES_ID = 187;
+    private static final int SURFACE_Y = 64;
+
+    private static boolean sulfurVeto(int structType, int dim, Pointer g, int x, int z) {
+        if (dim != DIM_OVERWORLD || !SULFUR_VETO_STRUCTS.contains(structType)) return false;
+        try {
+            return lib.wywf_getBiomeAt(g, 1, x, SURFACE_Y, z) == SULFUR_CAVES_ID;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private static byte[] rawBuffer(int n) {
+        byte[] b = SCRATCH_RAW.get();
+        if (b.length < n) {
+            b = new byte[n];
+            SCRATCH_RAW.set(b);
+        }
+        return b;
+    }
+
+    // Threads that used a generator (skip lazy-create on foreign threads)
     private static final java.util.Set<Long> USED_THREADS = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     private static void markUsed() {
         USED_THREADS.add(Thread.currentThread().getId());
     }
 
-    /**
-     * Destroys the native generators for the current thread and removes them from
-     * the ThreadLocals. No-op for threads that never used the bridge.
-     */
+    // Destroys this thread's generators. No-op if it never used the bridge
     public static void destroyCurrentGenerator() {
         if (lib == null) return;
         if (!USED_THREADS.remove(Thread.currentThread().getId())) return;
@@ -341,33 +408,34 @@ public final class CubiomesBridge {
     }
 
     public static boolean isViableStructurePos(int structType, int x, int z) {
-        return isViableStructurePos(structType, DIM_OVERWORLD, 0, x, z);
+        return isViableStructurePos(structType, DIM_OVERWORLD, 0, x, z, 0);
     }
 
-    /**
-     * Dimension-aware viability check. For nether structures pass
-     * {@link #DIM_NETHER} and the seed — a dedicated nether-dimension generator
-     * is seeded lazily (once per seed per thread). For overworld structures the
-     * caller is expected to have called {@link #applySeed(long)} first; the seed
-     * argument is ignored there.
-     */
+    // Nether passes DIM_NETHER + seed (own lazily-seeded generator), overworld uses applySeed() first
     public static boolean isViableStructurePos(int structType, int dim, long seed, int x, int z) {
+        return isViableStructurePos(structType, dim, seed, x, z, 0);
+    }
+
+    // variantFlags: village-variant id, 0 means all variants
+    public static boolean isViableStructurePos(int structType, int dim, long seed, int x, int z, int variantFlags) {
         if (lib == null) return false;
         try {
             Pointer g;
             if (dim == DIM_NETHER) {
                 g = GENERATOR_NETHER.get();
                 markUsed();
-                Long applied = NETHER_SEED.get();
-                if (applied == null || applied != seed) {
+                long[] cell = NETHER_SEED.get();
+                if (cell[0] != seed) {
                     lib.wywf_applySeed(g, DIM_NETHER, seed);
-                    NETHER_SEED.set(seed);
+                    cell[0] = seed;
                 }
             } else {
                 g = GENERATOR.get();
                 markUsed();
             }
-            return lib.wywf_isViableStructurePos(structType, g, x, z, 0) != 0;
+            boolean ok = lib.wywf_isViableStructurePos(structType, g, x, z, variantFlags) != 0;
+            if (ok && sulfurVeto(structType, dim, g, x, z)) return false;
+            return ok;
         } catch (Throwable t) {
             LOGGER.error("[CubiomesBridge] isViableStructurePos(type={}, pos={},{}) failed: {}",
                     structType, x, z, t.getMessage());
@@ -400,12 +468,106 @@ public final class CubiomesBridge {
         if (lib == null) return null;
         try {
             markUsed();
-            int[] ox = new int[1], oz = new int[1];
+            int[] ox = SCRATCH_X.get(), oz = SCRATCH_Z.get();
             int rc = lib.wywf_getSpawn(GENERATOR.get(), ox, oz);
             if (rc != 0) return null;
             return new int[]{ox[0], oz[0]};
         } catch (Throwable t) {
             LOGGER.error("[CubiomesBridge] getSpawn failed: {}", t.getMessage());
+            return null;
+        }
+    }
+
+    // Cheap spawn estimate for bulk, exact getSpawn stays for finalists
+    public static int[] estimateSpawn() {
+        if (lib == null) return null;
+        try {
+            markUsed();
+            int[] ox = SCRATCH_X.get(), oz = SCRATCH_Z.get();
+            int rc = lib.wywf_estimateSpawn(GENERATOR.get(), ox, oz);
+            if (rc != 0) return null;
+            return new int[]{ox[0], oz[0]};
+        } catch (Throwable t) {
+            LOGGER.error("[CubiomesBridge] estimateSpawn failed: {}", t.getMessage());
+            return null;
+        }
+    }
+
+    // Bulk biome scan: 1 roundtrip instead of one getBiomeAt per grid point, 1/0 or -1 on error
+    public static int biomeExists(int biomeId, int y, int ccx, int ccz,
+                                  int rChunks, int step, int centerX, int centerZ, int rBlocks) {
+        if (lib == null) return -1;
+        try {
+            markUsed();
+            return lib.wywf_biomeExists(GENERATOR.get(), biomeId, y, ccx, ccz, rChunks, step, centerX, centerZ, rBlocks);
+        } catch (Throwable t) {
+            LOGGER.error("[CubiomesBridge] biomeExists failed: {}", t.getMessage());
+            return -1;
+        }
+    }
+
+    // Bulk nearest distance, or -1 when absent (also -1 on error: caller retries per-point)
+    public static int biomeNearest(int biomeId, int y, int ccx, int ccz,
+                                   int rChunks, int step, int centerX, int centerZ) {
+        if (lib == null) return -1;
+        try {
+            markUsed();
+            return lib.wywf_biomeNearest(GENERATOR.get(), biomeId, y, ccx, ccz, rChunks, step, centerX, centerZ);
+        } catch (Throwable t) {
+            LOGGER.error("[CubiomesBridge] biomeNearest failed: {}", t.getMessage());
+            return -1;
+        }
+    }
+
+    // Fills out[] row-major with raw biome ids, returns count or -1 on error
+    public static int sampleBiomeGrid(int y, int ccx, int ccz, int rChunks, int step, int[] out) {
+        if (lib == null) return -1;
+        try {
+            markUsed();
+            return lib.wywf_sampleBiomeGrid(GENERATOR.get(), y, ccx, ccz, rChunks, step, out, out.length);
+        } catch (Throwable t) {
+            LOGGER.error("[CubiomesBridge] sampleBiomeGrid failed: {}", t.getMessage());
+            return -1;
+        }
+    }
+
+    // Batch viability for already-placed candidates, same verdicts in one roundtrip (null = per-point fallback)
+    public static boolean[] viableMany(int structType, int dim, long seed, int[] xs, int[] zs) {
+        return viableMany(structType, dim, seed, xs, zs, 0);
+    }
+
+    // variantFlags: see isViableStructurePos, 0 means all variants
+    public static boolean[] viableMany(int structType, int dim, long seed, int[] xs, int[] zs, int variantFlags) {
+        return viableMany(structType, dim, seed, xs, zs, xs.length, variantFlags);
+    }
+
+    // First-n variant for reused oversized buffers, same verdicts
+    public static boolean[] viableMany(int structType, int dim, long seed, int[] xs, int[] zs, int n, int variantFlags) {
+        if (lib == null || n <= 0) return null;
+        try {
+            Pointer g;
+            if (dim == DIM_NETHER) {
+                g = GENERATOR_NETHER.get();
+                markUsed();
+                long[] cell = NETHER_SEED.get();
+                if (cell[0] != seed) {
+                    lib.wywf_applySeed(g, DIM_NETHER, seed);
+                    cell[0] = seed;
+                }
+            } else {
+                g = GENERATOR.get();
+                markUsed();
+            }
+            byte[] out = rawBuffer(n);
+            lib.wywf_isViableMany(g, structType, xs, zs, n, variantFlags, out);
+            boolean[] res = new boolean[n];
+            for (int i = 0; i < n; i++) {
+                res[i] = out[i] != 0;
+                if (res[i] && sulfurVeto(structType, dim, g, xs[i], zs[i])) res[i] = false;
+            }
+            return res;
+        } catch (Throwable t) {
+            LOGGER.error("[CubiomesBridge] isViableMany(type={}) failed: {}", structType, t.getMessage());
             return null;
         }
     }

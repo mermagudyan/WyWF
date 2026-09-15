@@ -1,7 +1,5 @@
 package com.wywf.search;
 
-// This is a test file. These files have no effect on the main gameplay.
-
 import net.minecraft.core.HolderGetter;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.Registries;
@@ -11,6 +9,7 @@ import net.minecraft.SharedConstants;
 import net.minecraft.world.level.biome.Climate;
 import net.minecraft.world.level.levelgen.NoiseGeneratorSettings;
 import net.minecraft.world.level.levelgen.RandomState;
+import net.minecraft.world.level.levelgen.densityfunction.SamplerContext;
 import net.minecraft.world.level.levelgen.synth.NormalNoise;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -21,13 +20,13 @@ class LightweightSamplerTest {
 
     private static HolderLookup.Provider registries;
     private static NoiseGeneratorSettings settings;
-    private static HolderGetter<NormalNoise.NoiseParameters> noiseParams;
+    private static HolderGetter<NormalNoise> noiseParams;
 
     @BeforeAll
     static void bootstrap() {
         SharedConstants.tryDetectVersion();
         Bootstrap.bootStrap();
-        registries = VanillaRegistries.createLookup();
+        registries = VanillaRegistries.createWorldLookup();
         settings = registries.lookupOrThrow(Registries.NOISE_SETTINGS)
                 .getOrThrow(NoiseGeneratorSettings.OVERWORLD).value();
         noiseParams = registries.lookupOrThrow(Registries.NOISE);
@@ -42,7 +41,8 @@ class LightweightSamplerTest {
         ReusableClimateSampler reusable = new ReusableClimateSampler(settings, noiseParams);
 
         for (long seed : seeds) {
-            Climate.Sampler ref = RandomState.create(registries, NoiseGeneratorSettings.OVERWORLD, seed).sampler();
+            RandomState refState = RandomState.create(noiseParams, seed, settings);
+            Climate.Sampler ref = refState.createClimateSampler(SamplerContext.EMPTY_UNCACHED);
             reusable.reseed(seed);
             Climate.Sampler light = reusable.sampler();
 

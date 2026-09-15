@@ -16,27 +16,21 @@ public final class VanillaBiomeChecker implements BiomeChecker {
 
     private volatile int stepChunks = 4;
 
-    /** Underground (cave) biomes are sampled on a much finer grid than the
-     *  surface, because on the coarse stepChunks=4 (64-block) grid a cave
-     *  biome at Y=-50 can fall between sample nodes and never match. */
+    // Cave biomes sample much finer: on the coarse grid they'd fall between nodes
     private static final int UNDERGROUND_STEP_CHUNKS = 1;
 
     public static final int SURFACE_Y = 64;
 
     private static final BiomeField EMPTY = new BiomeField(SURFACE_Y >> 2, new int[0], new int[0], new ResourceKey[0]);
 
-    /** Underground (cave) biomes only exist below the surface, so they must be sampled at depth. */
+    // Cave biomes exist only below surface: sample at depth
     private static final Map<String, Integer> UNDERGROUND_BIOME_Y = Map.of(
             "minecraft:deep_dark", -50,
             "minecraft:lush_caves", -50,
             "minecraft:dripstone_caves", -50,
             "minecraft:sulfur_caves", -50);
 
-    /**
-     * Underground biomes are only searchable by proximity (`near`/`far`) — they
-     * are never "right here" at the surface. `sulfur_caves` is restricted to
-     * `near` only, the others also allow `far`.
-     */
+    // Cave biomes: near always, far except sulfur_caves (near-only); never "right here"
     private static boolean undergroundNearOnly(String biomeId) {
         return "minecraft:sulfur_caves".equals(biomeId);
     }
@@ -56,10 +50,7 @@ public final class VanillaBiomeChecker implements BiomeChecker {
         return stepChunks;
     }
 
-    /** Step used when sampling a given quart-Y. Underground (cave) biomes use a
-     *  much finer grid than the surface, so they don't fall between nodes.
-     *  For surface biomes, the step is capped so that the grid has at least
-     *  3 sample points per axis within the search radius. */
+    // Step for a quart-Y: fine for caves; capped so small radii keep 3+ points per axis
     public int effectiveStep(int quartY) {
         return effectiveStep(quartY, Integer.MAX_VALUE);
     }
@@ -83,12 +74,12 @@ public final class VanillaBiomeChecker implements BiomeChecker {
         return UNDERGROUND_BIOME_Y.getOrDefault(biomeId, SURFACE_Y) >> 2;
     }
 
-    /** Unified surface quart-Y for structure-biome checks (block Y = {@code SURFACE_Y}). */
+    // Surface quart-Y shared by structure-biome checks
     public static int quartYForSurfaceMatches() {
         return SURFACE_Y >> 2;
     }
 
-    /** Surface-biome predicate used by structure checks; identical Y to surface sampling. */
+    // Surface-biome predicate for structure checks (same Y as surface sampling)
     public static boolean quartYForSurfaceMatches(WorldContext ctx, int blockX, int blockZ,
                                                    Set<ResourceKey<Biome>> allowedBiomes) {
         if (CubiomesBridge.isActive()) {
@@ -120,7 +111,7 @@ public final class VanillaBiomeChecker implements BiomeChecker {
         Map.entry("minecraft:forest", 4), Map.entry("minecraft:taiga", 5),
         Map.entry("minecraft:swamp", 6), Map.entry("minecraft:river", 7),
         Map.entry("minecraft:snowy_plains", 12), Map.entry("minecraft:mushroom_fields", 14),
-        Map.entry("minecraft:beach", 16), Map.entry("minecraft:windswept_forest", 18),
+        Map.entry("minecraft:beach", 16), Map.entry("minecraft:windswept_forest", 34),
         Map.entry("minecraft:savanna", 35), Map.entry("minecraft:savanna_plateau", 36),
         Map.entry("minecraft:badlands", 37), Map.entry("minecraft:wooded_badlands", 38),
         Map.entry("minecraft:deep_ocean", 24),
@@ -128,7 +119,7 @@ public final class VanillaBiomeChecker implements BiomeChecker {
         Map.entry("minecraft:snowy_taiga", 30), Map.entry("minecraft:old_growth_pine_taiga", 32),
         Map.entry("minecraft:windswept_wooded_hills", 34), Map.entry("minecraft:jungle", 21),
         Map.entry("minecraft:bamboo_jungle", 168), Map.entry("minecraft:sunflower_plains", 129),
-        Map.entry("minecraft:flower_forest", 131), Map.entry("minecraft:meadow", 177),
+        Map.entry("minecraft:flower_forest", 132), Map.entry("minecraft:meadow", 177),
         Map.entry("minecraft:grove", 178), Map.entry("minecraft:snowy_slopes", 179),
         Map.entry("minecraft:jagged_peaks", 180), Map.entry("minecraft:frozen_peaks", 181),
         Map.entry("minecraft:stony_peaks", 182), Map.entry("minecraft:cherry_grove", 185),
@@ -136,7 +127,18 @@ public final class VanillaBiomeChecker implements BiomeChecker {
         Map.entry("minecraft:crimson_forest", 171), Map.entry("minecraft:warped_forest", 172),
         Map.entry("minecraft:basalt_deltas", 173), Map.entry("minecraft:dripstone_caves", 174),
         Map.entry("minecraft:lush_caves", 175), Map.entry("minecraft:deep_dark", 183),
-        Map.entry("minecraft:pale_garden", 186)
+        Map.entry("minecraft:pale_garden", 186),
+        Map.entry("minecraft:sulfur_caves", 187),
+        Map.entry("minecraft:dappled_forest", 188),
+        // Ocean family (searchable canonicals; also widens structure viability gates)
+        Map.entry("minecraft:warm_ocean", 44), Map.entry("minecraft:lukewarm_ocean", 45),
+        Map.entry("minecraft:cold_ocean", 46), Map.entry("minecraft:frozen_ocean", 10),
+        Map.entry("minecraft:frozen_river", 11), Map.entry("minecraft:deep_warm_ocean", 47),
+        Map.entry("minecraft:deep_lukewarm_ocean", 48), Map.entry("minecraft:deep_cold_ocean", 49),
+        Map.entry("minecraft:deep_frozen_ocean", 50), Map.entry("minecraft:snowy_beach", 26),
+        Map.entry("minecraft:stony_shore", 25), Map.entry("minecraft:sparse_jungle", 23),
+        Map.entry("minecraft:windswept_savanna", 163), Map.entry("minecraft:eroded_badlands", 165),
+        Map.entry("minecraft:ice_spikes", 140)
     );
 
     private static final Map<ResourceKey<Biome>, Integer> CUBIOMES_KEY_MAP = new HashMap<>();
@@ -177,6 +179,11 @@ public final class VanillaBiomeChecker implements BiomeChecker {
         // Native path only when the target biome is representable in cubiomes;
         // otherwise the Java sampler below is the source of truth.
         final boolean useNative = CubiomesBridge.isActive() && CUBIOMES_KEY_MAP.containsKey(target);
+        if (useNative) {
+            // Whole grid in one roundtrip (-1 means absent, the loop below would agree on error)
+            return CubiomesBridge.biomeNearest(CUBIOMES_KEY_MAP.get(target), blockY,
+                    centerChunkX, centerChunkZ, radiusChunks, step, centerX, centerZ);
+        }
         long best = Long.MAX_VALUE;
 
         for (int cx = centerChunkX - radiusChunks; cx <= centerChunkX + radiusChunks; cx += step) {
@@ -229,6 +236,12 @@ public final class VanillaBiomeChecker implements BiomeChecker {
         final int blockY = quartY << 2;
         // Native path only when the target biome is representable in cubiomes.
         final boolean useNative = CubiomesBridge.isActive() && CUBIOMES_KEY_MAP.containsKey(target);
+        if (useNative) {
+            // Whole grid in one roundtrip (same circle gate + early exit as below)
+            int r = CubiomesBridge.biomeExists(CUBIOMES_KEY_MAP.get(target), blockY,
+                    centerChunkX, centerChunkZ, radiusChunks, step, centerX, centerZ, (int) radiusBlocks);
+            if (r >= 0) return r != 0;
+        }
 
         for (int cx = centerChunkX - radiusChunks; cx <= centerChunkX + radiusChunks; cx += step) {
             for (int cz = centerChunkZ - radiusChunks; cz <= centerChunkZ + radiusChunks; cz += step) {
@@ -265,30 +278,18 @@ public final class VanillaBiomeChecker implements BiomeChecker {
         // UNDER is a surface-relative check and does not apply to cave biomes.
         if (isUnderground(biomeId)) return false;
 
+        ResourceKey<Biome> target = keyOf(biomeId);
+        if (target == null) return false;
         BiomeSource biomeSource = ctx.biomeSource;
         Climate.Sampler sampler = ctx.sampler();
         if (biomeSource == null || sampler == null) return false;
-
-        ResourceKey<Biome> target = keyOf(biomeId);
-        if (target == null) return false;
-
         Holder<Biome> holder = biomeSource.getNoiseBiome(blockX >> 2, SURFACE_Y >> 2, blockZ >> 2, sampler);
         if (holder == null) return false;
 
         return target.equals(holder.unwrapKey().orElse(null));
     }
 
-    /**
-     * Evaluates an underground (cave) biome against an already-sampled {@link BiomeField}.
-     * Cave biomes only exist below the surface, so they are searchable by proximity
-     * only: {@code near} always, and {@code far} for all except {@code sulfur_caves}
-     * (near-only). All other modifiers return false.
-     *
-     * <p>Cross-check: if the same biome also appears at the surface Y level,
-     * the climate sampler is producing a false positive (underground biomes
-     * should never match at surface depth). This filters out inaccuracies in
-     * {@link ReusableClimateSampler} at underground Y levels.</p>
-     */
+    // Cave biome vs sampled field, proximity only, with surface-Y false-positive check
     public boolean evalUnderground(BiomeField field, String biomeId, Modifier mod,
                                     int nearRadiusBlocks, int farMinBlocks, int farMaxBlocks) {
         return evalUnderground(field, biomeId, mod, nearRadiusBlocks, farMinBlocks, farMaxBlocks, null, 0, 0);
@@ -325,11 +326,7 @@ public final class VanillaBiomeChecker implements BiomeChecker {
         return true;
     }
 
-    /**
-     * Checks if an underground biome also appears at surface Y — a clear sign
-     * the climate sampler produced a false positive. Underground biomes like
-     * {@code deep_dark} should never match at the surface depth parameter.
-     */
+    // Cave biome matching at surface Y = sampler false positive
     private boolean isSamplerFalsePositive(WorldContext ctx, ResourceKey<Biome> undergroundKey,
                                             int centerX, int centerZ) {
         int centerChunkX = centerX >> 4;
@@ -382,13 +379,24 @@ public final class VanillaBiomeChecker implements BiomeChecker {
         int[] dx = new int[count];
         int[] dz = new int[count];
         ResourceKey<Biome>[] keys = new ResourceKey[count];
+
+        // Whole grid in one roundtrip when native is on (same order + mapping as below)
+        int[] bulkIds = null;
+        if (CubiomesBridge.isActive()) {
+            bulkIds = new int[count];
+            int got = CubiomesBridge.sampleBiomeGrid(blockY, centerChunkX, centerChunkZ, radiusChunks, step, bulkIds);
+            if (got != count) bulkIds = null; // size drift or error: per-point fallback
+        }
+
         int i = 0;
         for (int cx = centerChunkX - radiusChunks; cx <= centerChunkX + radiusChunks; cx += step) {
             for (int cz = centerChunkZ - radiusChunks; cz <= centerChunkZ + radiusChunks; cz += step) {
                 dx[i] = (cx << 4) - centerX;
                 dz[i] = (cz << 4) - centerZ;
 
-                if (CubiomesBridge.isActive()) {
+                if (bulkIds != null) {
+                    keys[i] = CUBIOMES_ID_MAP.get(bulkIds[i]);
+                } else if (CubiomesBridge.isActive()) {
                     int biomeId = CubiomesBridge.getBiomeAt(cx << 4, blockY, cz << 4);
                     keys[i] = CUBIOMES_ID_MAP.get(biomeId);
                 } else {

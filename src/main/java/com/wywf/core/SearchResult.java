@@ -53,7 +53,7 @@ public final class SearchResult {
         this.biomeDistances = Map.copyOf(biomeDistances);
     }
 
-    /** Distance from the search center (origin) to the nearest structure position. */
+    // Distance from the search center to the nearest structure position
     public double distanceToStructure() {
         double dx = structureX - centerX;
         double dz = structureZ - centerZ;

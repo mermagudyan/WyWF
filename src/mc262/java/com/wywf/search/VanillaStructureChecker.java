@@ -69,18 +69,49 @@ public final class VanillaStructureChecker implements StructureChecker {
             Map.entry("minecraft:ancient_city", 13),
             Map.entry("minecraft:fortress", 18),
             Map.entry("minecraft:bastion_remnant", 19),
-            Map.entry("minecraft:trail_ruins", 21),
-            Map.entry("minecraft:trial_chambers", 22)
+            Map.entry("minecraft:mineshaft", 15),
+            Map.entry("minecraft:trail_ruins", 24),
+            Map.entry("minecraft:trial_chambers", 25),
+            Map.entry("minecraft:abandoned_camp", 26),
+            Map.entry("minecraft:nether_fossil", 20)
     );
 
-    /** Cubiomes structure ids that live in the NETHER dimension — viability
-     *  must be evaluated against a nether-dimension generator. */
-    private static final java.util.Set<Integer> NETHER_STRUCT_IDS = Set.of(18, 19);
+    // Cubiomes ids in the NETHER: viability needs the nether generator
+    private static final java.util.Set<Integer> NETHER_STRUCT_IDS = Set.of(18, 19, 20);
 
-    /** Resolved allowed-biome sets: registry tag when readable, else the
-     *  hardcoded fallback map; null = no known restriction (ungated). */
+    // Village variant to native flags id, 0 means all
+    private static final Map<String, Integer> VILLAGE_VARIANT_FLAG = Map.of(
+            "minecraft:village_plains", 1,
+            "minecraft:village_desert", 2,
+            "minecraft:village_savanna", 35,
+            "minecraft:village_snowy", 12,
+            "minecraft:village_taiga", 5);
+
+    private static int variantFlags(String identifier) {
+        return VILLAGE_VARIANT_FLAG.getOrDefault(identifier, 0);
+    }
+
+    // Allowed biomes: registry tag when readable, else fallback map; null = ungated
     private final Map<String, java.util.Optional<Set<ResourceKey<Biome>>>> biomeGateCache =
             new ConcurrentHashMap<>();
+
+    // Scratch scan buffers, consumed inside one scan on this thread
+    private final ThreadLocal<List<int[]>> scratchCands = ThreadLocal.withInitial(ArrayList::new);
+    private final ThreadLocal<Set<Long>> scratchSeen = ThreadLocal.withInitial(HashSet::new);
+    private final ThreadLocal<int[]> scratchXs = ThreadLocal.withInitial(() -> new int[64]);
+    private final ThreadLocal<int[]> scratchZs = ThreadLocal.withInitial(() -> new int[64]);
+
+    private List<int[]> takeCands() {
+        List<int[]> c = scratchCands.get();
+        c.clear();
+        return c;
+    }
+
+    private Set<Long> takeSeen() {
+        Set<Long> s = scratchSeen.get();
+        s.clear();
+        return s;
+    }
 
     private Set<ResourceKey<Biome>> allowedBiomes(WorldContext ctx, ResourceKey<Structure> key) {
         String id = key.identifier().toString();
@@ -144,9 +175,7 @@ public final class VanillaStructureChecker implements StructureChecker {
         }).orElse(null);
     }
 
-    /** Standalone re-implementation of {@code StructurePlacement.isStructureChunk},
-     *  so we don't need a fully-tagged {@code ChunkGeneratorStructureState}
-     *  (offline / test registries lack the {@code has_structure} biome tags). */
+    // Own isStructureChunk: offline registries lack has_structure biome tags
     private boolean isStructureChunk(WorldContext ctx, StructurePlacement placement,
                                      long seed, int x, int z) {
         if (!isPlacementChunk(ctx, placement, seed, x, z)) return false;
@@ -154,12 +183,7 @@ public final class VanillaStructureChecker implements StructureChecker {
         return !isExclusionZoneBlocked(ctx, placement, seed, x, z);
     }
 
-    /**
-     * Checks whether the candidate chunk is excluded by an exclusion zone.
-     * An exclusion zone on a placement means: if the referenced "other" structure
-     * set has a structure within {@code chunkCount} chunks, this candidate is
-     * rejected. See {@code StructurePlacement.applyInteractionsWithOtherStructures}.
-     */
+    // Exclusion zone: reject when the referenced set has a structure within chunkCount chunks
     private boolean isExclusionZoneBlocked(WorldContext ctx, StructurePlacement placement,
                                            long seed, int cx, int cz) {
         Optional<StructurePlacement.ExclusionZone> ezOpt = placement.exclusionZone();
@@ -257,8 +281,7 @@ public final class VanillaStructureChecker implements StructureChecker {
         return positions;
     }
 
-    /** Resolve the ring's preferred biomes; falls back to "any biome" when the
-     *  vanilla {@code has_structure} tag is unbound (offline registries). */
+    // Ring biomes; "any biome" when the has_structure tag is unbound offline
     private java.util.function.Predicate<Holder<Biome>> safePreferredBiomes(
             ConcentricRingsStructurePlacement placement) {
         try {
@@ -321,19 +344,23 @@ public final class VanillaStructureChecker implements StructureChecker {
             if (CubiomesBridge.isActive()) {
                 Integer structId = CUBIOMES_STRUCT_ID.get(key.identifier().toString());
                 if (structId != null) {
+                    boolean viable;
                     if (NETHER_STRUCT_IDS.contains(structId)) {
-                        if (!CubiomesBridge.isViableStructurePos(structId, CubiomesBridge.DIM_NETHER, ctx.seed, bx, bz)) {
-                            return false;
-                        }
-                    } else if (!CubiomesBridge.isViableStructurePos(structId, bx, bz)) {
-                        return false;
+                        viable = CubiomesBridge.isViableStructurePos(structId, CubiomesBridge.DIM_NETHER, ctx.seed, bx, bz);
+                    } else {
+                        viable = CubiomesBridge.isViableStructurePos(structId, CubiomesBridge.DIM_OVERWORLD, 0, bx, bz,
+                                variantFlags(key.identifier().toString()));
                     }
-                    return true;
+                    // One placement's biome failing must not veto the others still waiting
+                    if (viable) return true;
+                    continue;
                 }
             }
 
             Set<ResourceKey<Biome>> allowed = allowedBiomes(ctx, key);
-            return allowed == null || VanillaBiomeChecker.quartYForSurfaceMatches(ctx, bx, bz, allowed);
+            if (allowed == null || VanillaBiomeChecker.quartYForSurfaceMatches(ctx, bx, bz, allowed)) {
+                return true;
+            }
         }
         return false;
     }
@@ -361,13 +388,7 @@ public final class VanillaStructureChecker implements StructureChecker {
         return out;
     }
 
-    /**
-     * Collects candidate chunks for random-spread placements by walking the
-     * REGION grid — one RNG candidate per spacing×spacing region — instead of
-     * testing every chunk. Exact: produces the same verdicts as per-chunk
-     * scanning, just ~spacing² times cheaper. Non-spread placements (e.g.
-     * concentric rings) must be handled by the caller's chunk loop.
-     */
+    // Region-grid scan for random-spread, ~spacing² cheaper than per-chunk (rings need chunk loop)
     private void collectSpreadCandidates(WorldContext ctx,
                                          List<StructurePlacement> placements, long seed,
                                          int minX, int maxX, int minZ, int maxZ,
@@ -394,7 +415,7 @@ public final class VanillaStructureChecker implements StructureChecker {
         }
     }
 
-    /** True when every placement for this key is random-spread (region-scannable). */
+    // True when every placement is random-spread (region-scannable)
     private boolean allRandomSpread(List<StructurePlacement> placements) {
         if (placements.isEmpty()) return false;
         for (StructurePlacement p : placements) {
@@ -403,7 +424,7 @@ public final class VanillaStructureChecker implements StructureChecker {
         return true;
     }
 
-    /** Placement-only scan of one structure key over a chunk window. */
+    // Placement-only scan of one key over a chunk window
     private void scanKeyPlacementOnly(WorldContext ctx, ResourceKey<Structure> key,
                                       int minX, int maxX, int minZ, int maxZ,
                                       List<int[]> out, Set<Long> seen) {
@@ -422,17 +443,43 @@ public final class VanillaStructureChecker implements StructureChecker {
         }
     }
 
-    /** Region-scan candidates of one key, keeping only biome-viable ones. */
+    // Batch viability for placed candidates in order (null = per-point fallback), one roundtrip
+    private boolean[] batchViable(WorldContext ctx, ResourceKey<Structure> key, List<int[]> cands) {
+        if (!CubiomesBridge.isActive() || cands.isEmpty()) return null;
+        Integer structId = CUBIOMES_STRUCT_ID.get(key.identifier().toString());
+        if (structId == null) return null;
+        int dim = NETHER_STRUCT_IDS.contains(structId) ? CubiomesBridge.DIM_NETHER : CubiomesBridge.DIM_OVERWORLD;
+        int n = cands.size();
+        int[] xs = scratchXs.get(), zs = scratchZs.get();
+        if (xs.length < n) {
+            xs = new int[n];
+            zs = new int[n];
+            scratchXs.set(xs);
+            scratchZs.set(zs);
+        }
+        for (int i = 0; i < n; i++) { xs[i] = cands.get(i)[0]; zs[i] = cands.get(i)[1]; }
+        return CubiomesBridge.viableMany(structId, dim, ctx.seed, xs, zs, n, variantFlags(key.identifier().toString()));
+    }
+
+    // Region-scan of one key, keeping biome-viable hits
     private void scanKey(WorldContext ctx, ResourceKey<Structure> key,
                          int minX, int maxX, int minZ, int maxZ,
                          List<int[]> out, Set<Long> seen) {
         List<StructurePlacement> placements = ctx.placementsFor(key);
         if (!placements.isEmpty() && allRandomSpread(placements)) {
-            List<int[]> cands = new ArrayList<>();
-            collectSpreadCandidates(ctx, placements, ctx.seed, minX, maxX, minZ, maxZ, cands, new HashSet<>());
-            for (int[] p : cands) {
+            List<int[]> cands = takeCands();
+            collectSpreadCandidates(ctx, placements, ctx.seed, minX, maxX, minZ, maxZ, cands, takeSeen());
+            boolean[] viable = batchViable(ctx, key, cands);
+            for (int j = 0; j < cands.size(); j++) {
+                int[] p = cands.get(j);
                 int ccx = (p[0] - 8) >> 4, ccz = (p[1] - 8) >> 4;
-                if (structureChunk(ctx, key, ccx, ccz)) out.add(p);
+                if (viable != null) {
+                    if (!viable[j]) continue;
+                } else if (!structureChunk(ctx, key, ccx, ccz)) continue;
+                // Dedup through the shared set: variants resolving to one chunk would inflate SOME/ONLY
+                long pk = (((long) ccx) << 32) ^ (ccz & 0xffffffffL);
+                if (!seen.add(pk)) continue;
+                out.add(p);
             }
             return;
         }
@@ -446,14 +493,20 @@ public final class VanillaStructureChecker implements StructureChecker {
         }
     }
 
-    /** First biome-viable hit of one key over a chunk window. */
+    // First biome-viable hit of one key
     private int[] firstKey(WorldContext ctx, ResourceKey<Structure> key,
                            int minX, int maxX, int minZ, int maxZ) {
         List<StructurePlacement> placements = ctx.placementsFor(key);
         if (!placements.isEmpty() && allRandomSpread(placements)) {
-            List<int[]> cands = new ArrayList<>();
-            collectSpreadCandidates(ctx, placements, ctx.seed, minX, maxX, minZ, maxZ, cands, new HashSet<>());
-            for (int[] p : cands) {
+            List<int[]> cands = takeCands();
+            collectSpreadCandidates(ctx, placements, ctx.seed, minX, maxX, minZ, maxZ, cands, takeSeen());
+            boolean[] viable = batchViable(ctx, key, cands);
+            for (int j = 0; j < cands.size(); j++) {
+                int[] p = cands.get(j);
+                if (viable != null) {
+                    if (viable[j]) return p;
+                    continue;
+                }
                 int ccx = (p[0] - 8) >> 4, ccz = (p[1] - 8) >> 4;
                 if (structureChunk(ctx, key, ccx, ccz)) return p;
             }
@@ -467,13 +520,13 @@ public final class VanillaStructureChecker implements StructureChecker {
         return null;
     }
 
-    /** Placement-only first-hit scan of one structure key over a chunk window. */
+    // Placement-only first hit of one key
     private int[] firstKeyPlacementOnly(WorldContext ctx, ResourceKey<Structure> key,
                                         int minX, int maxX, int minZ, int maxZ) {
         List<StructurePlacement> placements = ctx.placementsFor(key);
         if (!placements.isEmpty() && allRandomSpread(placements)) {
-            List<int[]> one = new ArrayList<>(1);
-            collectSpreadCandidates(ctx, placements, ctx.seed, minX, maxX, minZ, maxZ, one, new HashSet<>());
+            List<int[]> one = takeCands();
+            collectSpreadCandidates(ctx, placements, ctx.seed, minX, maxX, minZ, maxZ, one, takeSeen());
             return one.isEmpty() ? null : one.get(0);
         }
         for (int cx = minX; cx <= maxX; cx++) {
@@ -555,7 +608,7 @@ public final class VanillaStructureChecker implements StructureChecker {
         return null;
     }
 
-    /** Returns true if at least one structure in the set has a valid biome at (cx,cz). */
+    // True when some structure in the set fits the biome at (cx,cz)
     private boolean structureSetBiomeOk(WorldContext ctx, StructureSet set, int cx, int cz) {
         int bx = cx * 16 + 8, bz = cz * 16 + 8;
         for (StructureSet.StructureSelectionEntry entry : set.structures()) {

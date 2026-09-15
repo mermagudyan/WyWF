@@ -44,6 +44,7 @@
   "wywf.synonym.biome.minecraft:sunflower_plains": ["sunflower plains", "sunflowers", "sunflower field"],
   "wywf.synonym.biome.minecraft:old_growth_pine_taiga": ["old growth pine taiga", "mega taiga", "giant taiga", "old growth taiga", "pine taiga"],
   "wywf.synonym.biome.minecraft:pale_garden": ["pale garden", "pale forest"],
+  "wywf.synonym.biome.minecraft:dappled_forest": ["dappled forest", "dappled woods"],
   "wywf.synonym.biome.minecraft:savanna_plateau": ["savanna plateau", "plateau"],
   "wywf.synonym.biome.minecraft:windswept_savanna": ["windswept savanna", "savanna hills"],
   "wywf.synonym.biome.minecraft:snowy_beach": ["snowy beach", "frozen beach"],
@@ -77,6 +78,8 @@
   "wywf.synonym.structure.minecraft:ocean_ruins": ["ocean ruins", "underwater ruins", "ocean ruin", "sunken ruins"],
   "wywf.synonym.structure.minecraft:buried_treasure": ["buried treasure", "treasure", "treasure chest"],
   "wywf.synonym.structure.minecraft:trail_ruins": ["trail ruins", "trail ruin"],
+  "wywf.synonym.structure.minecraft:nether_fossil": ["nether fossil", "nether fossils"],
+  "wywf.synonym.structure.minecraft:abandoned_camp": ["abandoned camp", "camp", "campsite"],
 
   "wywf.synonym.structure.minecraft:village_plains": ["village plains", "plains village", "village meadow"],
   "wywf.synonym.structure.minecraft:village_desert": ["desert village", "village desert"],

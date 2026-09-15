@@ -1,0 +1,4 @@
+accessWidener v2 official
+
+# No entries: the 26.3 port uses only public vanilla APIs plus guarded
+# reflection (exclusion zones), so nothing needs widening.

@@ -1,0 +1,16 @@
+[
+  {"seed": 48097697060, "slots": [34, 35], "struct": 3, "x": -320, "z": -256, "viable": false,
+   "source": "xpple/cubiomes#19, witch hut absent in game, sulfur at surface"},
+  {"seed": 25783843040, "slots": [34, 35], "struct": 14, "x": -39, "z": -55, "viable": false,
+   "source": "xpple/cubiomes#19, buried treasure absent in game, sulfur at surface"},
+  {"seed": 25783843040, "slots": [34, 35], "struct": 14, "x": 73, "z": -39, "viable": false,
+   "source": "xpple/cubiomes#19, buried treasure absent in game, sulfur at surface"},
+  {"seed": 48097697060, "slots": [34, 32, 35], "struct": 3, "x": -736, "z": 192, "viable": true,
+   "source": "genuine swamp hut control, swamp at surface"},
+  {"seed": 1, "slots": [34, 32, 35], "struct": 5, "x": 640, "z": 816, "viable": true,
+   "source": "genuine village control, plains at surface"},
+  {"seed": 100, "slots": [34, 32], "struct": 13, "x": -192, "z": -224, "viable": true,
+   "source": "underground control, veto must not apply"},
+  {"seed": 1, "slots": [35], "struct": 26, "x": 304, "z": 192, "viable": true,
+   "source": "abandoned camp control, 26.3 content"}
+]

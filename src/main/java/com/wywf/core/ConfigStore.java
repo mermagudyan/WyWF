@@ -38,7 +38,10 @@ public final class ConfigStore {
         if (!Files.exists(p)) return SearchConfig.defaults();
         try (Reader r = Files.newBufferedReader(p, StandardCharsets.UTF_8)) {
             SearchConfig cfg = GSON.fromJson(r, SearchConfig.class);
-            return cfg != null ? cfg : SearchConfig.defaults();
+            if (cfg == null) return SearchConfig.defaults();
+            // Migrate retired values past Gson (fields bypass setters): BOTH becomes ORIGIN
+            cfg.searchCenter(cfg.searchCenter());
+            return cfg;
         } catch (IOException | RuntimeException e) {
             WYWFClient.LOGGER.info("[WyWF] Failed to load config, using defaults: {}", e.getMessage());
             return SearchConfig.defaults();

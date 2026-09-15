@@ -172,8 +172,6 @@ final class ReusableClimateSampler {
         }
     }
 
-    // ---- mutable-noise leaves (replicate vanilla ShiftA / ShiftB / ShiftedNoise) ----
-
     private static final class MutShiftA implements DensityFunction, Slot {
         private final ResourceKey<NormalNoise.NoiseParameters> key;
         private NormalNoise noise;

@@ -64,7 +64,7 @@ public final class SearchLimitReachedScreen extends Screen {
                 .min(Comparator.comparingDouble(SearchResult::distanceToStructure))
                 .orElse(null);
         if (best == null) return;
-        WYWFClient.LOGGER.info("User chose best candidate from {} limits: seed {}", candidates.size(), best.seed);
+        if (WyWFDebug.ENABLED) WYWFClient.LOGGER.info("User chose best candidate from {} limits: seed {}", candidates.size(), best.seed);
         WYWFClient.worldCreator().create(best, queryText, parentScreen);
     }
 

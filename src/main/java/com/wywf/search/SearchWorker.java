@@ -1,7 +1,9 @@
 package com.wywf.search;
 
 import com.wywf.core.*;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.*;
 import org.slf4j.Logger;
@@ -56,6 +58,24 @@ public final class SearchWorker implements Runnable {
     private static final java.util.concurrent.atomic.AtomicInteger SPAWN_DEBUG_COUNTER = new java.util.concurrent.atomic.AtomicInteger();
     private static final java.util.concurrent.atomic.AtomicInteger REJECTION_LOG_COUNTER = new java.util.concurrent.atomic.AtomicInteger();
 
+    // Diagnostics: per-seed rejects by the placement gate
+    private static final AtomicLong GATE_PLACEMENT_REJECT = new AtomicLong();
+
+    // Shared null-spawn fallback, validateCtx only reads it
+    private static final int[] ORIGIN_FALLBACK = {0, 0};
+
+    public static String gateStats() {
+        return "gate[placementReject=" + GATE_PLACEMENT_REJECT.get() + "]";
+    }
+
+    public static void resetGateStats() {
+        GATE_PLACEMENT_REJECT.set(0);
+    }
+
+    // Per-base placement cache: one scan serves all 65536 variants, per-seed gating is pure math
+    private Map<String, List<int[]>> placementGateCache = null;
+    private Map<String, Integer> placementGateLimit = null;
+
     private final long startOffset;
 
     @Override
@@ -67,13 +87,13 @@ public final class SearchWorker implements Runnable {
         SearchConfig.SearchCenter center = config.searchCenter();
 
         if (config.linearBiomeSearch() && center == SearchConfig.SearchCenter.ORIGIN && isBiomeOnlyQuery()) {
-            LOGGER.info("[thread {}] start: threads={}, center={}, linear (biome-only, opt-in)",
+            if (WyWFDebug.ENABLED) LOGGER.info("[thread {}] start: threads={}, center={}, linear (biome-only, opt-in)",
                     threadIndex, threadCount, center);
             runLinear(accurateRings, center);
             return;
         }
 
-        LOGGER.info("[thread {}] start: threads={}, center={}, 48/16 split",
+        if (WyWFDebug.ENABLED) LOGGER.info("[thread {}] start: threads={}, center={}, 48/16 split",
                 threadIndex, threadCount, center);
         runSplit(startOffset, accurateRings, center);
         } finally {
@@ -82,7 +102,7 @@ public final class SearchWorker implements Runnable {
         }
     }
 
-    /** True when no structure term needs block-level placement gating. */
+    // True when no structure term needs placement gating
     private boolean isBiomeOnlyQuery() {
         for (ParsedQuery.Term term : query.terms()) {
             if (term.category != KeywordDictionary.Category.STRUCTURE) continue;
@@ -100,16 +120,13 @@ public final class SearchWorker implements Runnable {
         for (long i = threadIndex; i < SIZE48; i += step) {
             long a = (i + offset) % SIZE48;
             if (!running.get()) {
-                LOGGER.info("[thread {}] stopped (checked {} seeds locally)", threadIndex, localChecked);
+                if (WyWFDebug.ENABLED) LOGGER.info("[thread {}] stopped (checked {} seeds locally)", threadIndex, localChecked);
                 return;
             }
 
             WorldContext pfCtx = contextFactory.create(a, accurateRings);
 
-            if (CubiomesBridge.isActive()) {
-                CubiomesBridge.applySeed(a);
-            }
-
+            // No applySeed(a): prefilters are placement-only Java, seeding would waste one JNA call per block
             if (center == SearchConfig.SearchCenter.ORIGIN) {
                 if (!prefilterStructures(pfCtx, center, null)) {
                     globalSeedCursor.addAndGet(SIZE16);
@@ -122,9 +139,18 @@ public final class SearchWorker implements Runnable {
                 continue;
             }
 
+            // Per-base placement gate for SPAWN/BOTH (ORIGIN needs none, its prefilter already gated)
+            if (center == SearchConfig.SearchCenter.SPAWN
+                    || center == SearchConfig.SearchCenter.BOTH) {
+                buildPlacementGateCache(pfCtx);
+            } else {
+                placementGateCache = null;
+                placementGateLimit = null;
+            }
+
             for (int h = 0; h < SIZE16; h++) {
                 if (!running.get()) {
-                    LOGGER.info("[thread {}] stopped (checked {} seeds locally)", threadIndex, localChecked);
+                    if (WyWFDebug.ENABLED) LOGGER.info("[thread {}] stopped (checked {} seeds locally)", threadIndex, localChecked);
                     return;
                 }
 
@@ -135,9 +161,46 @@ public final class SearchWorker implements Runnable {
                 }
 
                 try {
-                    int[] spawn = null;
                     WorldContext seedCtx = contextFactory.create(seed, accurateRings);
-                    if (center == SearchConfig.SearchCenter.SPAWN || center == SearchConfig.SearchCenter.BOTH) {
+                    if (center == SearchConfig.SearchCenter.BOTH) {
+                        // ORIGIN first so matching seeds skip the spawn lookup; one seed = one progress tick
+                        SeedValidator.Outcome origin = validator.validate(seedCtx, query, 0, 0);
+                        if (origin.accepted) {
+                            globalSeedCursor.incrementAndGet();
+                            localChecked++;
+                            progress.onSeedChecked();
+                            logOutcome(seed, origin);
+                            reportFound(origin.result);
+                            if (enoughCandidates()) return;
+                            continue;
+                        }
+                        int[] spawnBoth = SeedValidator.findApproxSpawnPos(seedCtx, false);
+                        globalSeedCursor.incrementAndGet();
+                        localChecked++;
+                        if (spawnBoth == null) {
+                            progress.onSeedDiscarded();
+                            continue;
+                        }
+                        if (SPAWN_DEBUG_COUNTER.getAndIncrement() < 5) {
+                            LOGGER.debug("[runSplit] seed={} -> spawn=({},{})", seed, spawnBoth[0], spawnBoth[1]);
+                        }
+                        if (!placementGatePass(spawnBoth)) {
+                            // Gate reject ≈ prefilter reject: never validated
+                            GATE_PLACEMENT_REJECT.incrementAndGet();
+                            progress.onSeedDiscarded();
+                            continue;
+                        }
+                        SeedValidator.Outcome outcome = validator.validate(seedCtx, query, spawnBoth[0], spawnBoth[1]);
+                        progress.onSeedChecked();
+                        logOutcome(seed, outcome);
+                        if (outcome.accepted) {
+                            reportFound(outcome.result);
+                            if (enoughCandidates()) return;
+                        }
+                        continue;
+                    }
+                    int[] spawn = null;
+                    if (center == SearchConfig.SearchCenter.SPAWN) {
                         spawn = SeedValidator.findApproxSpawnPos(seedCtx, false);
                         if (spawn == null) {
                             globalSeedCursor.incrementAndGet();
@@ -147,6 +210,13 @@ public final class SearchWorker implements Runnable {
                         }
                         if (SPAWN_DEBUG_COUNTER.getAndIncrement() < 5) {
                             LOGGER.debug("[runSplit] seed={} -> spawn=({},{})", seed, spawn[0], spawn[1]);
+                        }
+                        if (!placementGatePass(spawn)) {
+                            GATE_PLACEMENT_REJECT.incrementAndGet();
+                            globalSeedCursor.incrementAndGet();
+                            localChecked++;
+                            progress.onSeedDiscarded();
+                            continue;
                         }
                     }
 
@@ -172,7 +242,7 @@ public final class SearchWorker implements Runnable {
             }
         }
 
-        LOGGER.info("[thread {}] 48-bit range exhausted (checked {} locally), exiting", threadIndex, localChecked);
+        if (WyWFDebug.ENABLED) LOGGER.info("[thread {}] 48-bit range exhausted (checked {} locally), exiting", threadIndex, localChecked);
     }
 
     private void runLinear(boolean accurateRings, SearchConfig.SearchCenter center) {
@@ -184,14 +254,14 @@ public final class SearchWorker implements Runnable {
         long localChecked = 0;
 
         if (step <= 0) {
-            LOGGER.info("[thread {}] no {} direction available, exiting", threadIndex, positive ? "positive" : "negative");
+            if (WyWFDebug.ENABLED) LOGGER.info("[thread {}] no {} direction available, exiting", threadIndex, positive ? "positive" : "negative");
             return;
         }
 
         long inner = rank;
         for (;;) {
             if (!running.get()) {
-                LOGGER.info("[thread {}] stopped (checked {} seeds locally)", threadIndex, localChecked);
+                if (WyWFDebug.ENABLED) LOGGER.info("[thread {}] stopped (checked {} seeds locally)", threadIndex, localChecked);
                 return;
             }
 
@@ -204,30 +274,68 @@ public final class SearchWorker implements Runnable {
 
                 int[] spawn = null;
                 WorldContext seedCtx = contextFactory.create(seed, accurateRings);
-                if (center == SearchConfig.SearchCenter.SPAWN || center == SearchConfig.SearchCenter.BOTH) {
-                    spawn = SeedValidator.findApproxSpawnPos(seedCtx, false);
-                    if (spawn == null) {
+                if (center == SearchConfig.SearchCenter.BOTH) {
+                    // ORIGIN first: no spawn lookup needed
+                    SeedValidator.Outcome origin = validator.validate(seedCtx, query, 0, 0);
+                    if (origin.accepted) {
                         globalSeedCursor.incrementAndGet();
                         localChecked++;
-                        progress.onSeedDiscarded();
-                        continue;
+                        progress.onSeedChecked();
+                        logOutcome(seed, origin);
+                        reportFound(origin.result);
+                        if (enoughCandidates()) return;
+                    } else {
+                        spawn = SeedValidator.findApproxSpawnPos(seedCtx, false);
+                        globalSeedCursor.incrementAndGet();
+                        localChecked++;
+                        if (spawn == null) {
+                            progress.onSeedDiscarded();
+                        } else {
+                            if (SPAWN_DEBUG_COUNTER.getAndIncrement() < 5) {
+                                LOGGER.debug("[runLinear] seed={} -> spawn=({},{})", seed, spawn[0], spawn[1]);
+                            }
+                            SeedValidator.Outcome outcome = validator.validate(seedCtx, query, spawn[0], spawn[1]);
+                            progress.onSeedChecked();
+                            logOutcome(seed, outcome);
+                            if (outcome.accepted) {
+                                reportFound(outcome.result);
+                                if (enoughCandidates()) return;
+                            }
+                        }
                     }
-                    if (SPAWN_DEBUG_COUNTER.getAndIncrement() < 5) {
-                        LOGGER.debug("[runLinear] seed={} -> spawn=({},{})", seed, spawn[0], spawn[1]);
+                } else {
+                    if (center == SearchConfig.SearchCenter.SPAWN) {
+                        spawn = SeedValidator.findApproxSpawnPos(seedCtx, false);
+                        if (spawn == null) {
+                            globalSeedCursor.incrementAndGet();
+                            localChecked++;
+                            progress.onSeedDiscarded();
+                            long next0 = inner + step;
+                            if (next0 < inner) {
+                                if (WyWFDebug.ENABLED) LOGGER.info("[thread {}] {} seed range exhausted (checked {} locally), exiting",
+                                        threadIndex, positive ? "positive" : "negative", localChecked);
+                                return;
+                            }
+                            inner = next0;
+                            continue;
+                        }
+                        if (SPAWN_DEBUG_COUNTER.getAndIncrement() < 5) {
+                            LOGGER.debug("[runLinear] seed={} -> spawn=({},{})", seed, spawn[0], spawn[1]);
+                        }
                     }
-                }
 
-                SeedValidator.Outcome outcome = validateCtx(seedCtx, center,
-                        spawn != null ? spawn : new int[]{0, 0});
+                    SeedValidator.Outcome outcome = validateCtx(seedCtx, center,
+                            spawn != null ? spawn : ORIGIN_FALLBACK);
 
-                globalSeedCursor.incrementAndGet();
-                localChecked++;
-                progress.onSeedChecked();
-                logOutcome(seed, outcome);
+                    globalSeedCursor.incrementAndGet();
+                    localChecked++;
+                    progress.onSeedChecked();
+                    logOutcome(seed, outcome);
 
-                if (outcome.accepted) {
-                    reportFound(outcome.result);
-                    if (enoughCandidates()) return;
+                    if (outcome.accepted) {
+                        reportFound(outcome.result);
+                        if (enoughCandidates()) return;
+                    }
                 }
             } catch (Throwable t) {
                 globalSeedCursor.incrementAndGet();
@@ -240,7 +348,7 @@ public final class SearchWorker implements Runnable {
 
             long next = inner + step;
             if (next < inner) {
-                LOGGER.info("[thread {}] {} seed range exhausted (checked {} locally), exiting",
+                if (WyWFDebug.ENABLED) LOGGER.info("[thread {}] {} seed range exhausted (checked {} locally), exiting",
                         threadIndex, positive ? "positive" : "negative", localChecked);
                 return;
             }
@@ -248,27 +356,26 @@ public final class SearchWorker implements Runnable {
         }
     }
 
-    /** Single-context validation: reuses the per-seed context for spawn lookup
-     *  and every term evaluation. */
+    // One context reused for spawn lookup and every term evaluation
     private SeedValidator.Outcome validateCtx(WorldContext ctx,
                                               SearchConfig.SearchCenter center, int[] spawn) {
         return switch (center) {
             case ORIGIN -> validator.validate(ctx, query, 0, 0);
             case SPAWN  -> validator.validate(ctx, query, spawn[0], spawn[1]);
             case BOTH   -> {
-                SeedValidator.Outcome s = validator.validate(ctx, query, spawn[0], spawn[1]);
-                if (s.accepted) yield s;
-                yield validator.validate(ctx, query, 0, 0);
+                // ORIGIN first so matching queries skip the spawn lookup entirely
+                SeedValidator.Outcome o = validator.validate(ctx, query, 0, 0);
+                if (o.accepted) yield o;
+                yield validator.validate(ctx, query, spawn[0], spawn[1]);
             }
         };
     }
 
     private static final int FAR_MAX_CHUNKS = (1000 + 15) / 16;
     private static final int FAR_MIN_BLOCKS = 500;
-    private static final int SPAWN_DRIFT_BLOCKS = 2048;
 
     private boolean prefilterStructuresExpanded(WorldContext ctx, SearchConfig.SearchCenter center) {
-        int expandBlocks = SPAWN_DRIFT_BLOCKS;
+        int expandBlocks = SeedValidator.SPAWN_DRIFT_BLOCKS;
         for (ParsedQuery.Term term : query.terms()) {
             if (term.category != KeywordDictionary.Category.STRUCTURE) continue;
             Modifier mod = term.modifier;
@@ -289,6 +396,41 @@ public final class SearchWorker implements Runnable {
             if (structureChecker.firstPositionPlacementOnly(ctx, 0, 0, expandedChunks, term.canonical) == null) {
                 return false;
             }
+        }
+        return true;
+    }
+
+    // Per-base gate for DEFAULT/NEAR/IN terms (no rings); a miss means validate() can't hit either
+    private void buildPlacementGateCache(WorldContext pfCtx) {
+        placementGateCache = new HashMap<>();
+        placementGateLimit = new HashMap<>();
+        int driftChunks = (SeedValidator.SPAWN_DRIFT_BLOCKS + 15) / 16;
+        for (ParsedQuery.Term term : query.terms()) {
+            if (term.category != KeywordDictionary.Category.STRUCTURE) continue;
+            Modifier mod = term.modifier;
+            if (mod != Modifier.DEFAULT && mod != Modifier.NEAR && mod != Modifier.IN) continue;
+            if (structureChecker.hasConcentricRings(pfCtx, term.canonical)) continue;
+            int scanR = validator.structureScanRadiusChunks(term);
+            List<int[]> pts = structureChecker.positionsPlacementOnly(
+                    pfCtx, 0, 0, scanR + driftChunks, term.canonical);
+            placementGateCache.put(term.canonical, pts);
+            placementGateLimit.put(term.canonical, validator.structureGateLimitBlocks(term));
+        }
+    }
+
+    // True when every gateable term has a cached placement within eval limit of spawn. Pure integer math
+    private boolean placementGatePass(int[] spawn) {
+        if (placementGateCache == null || placementGateCache.isEmpty()) return true;
+        for (Map.Entry<String, List<int[]>> e : placementGateCache.entrySet()) {
+            int limit = placementGateLimit.get(e.getKey());
+            long lim2 = (long) limit * limit;
+            boolean ok = false;
+            for (int[] p : e.getValue()) {
+                long dx = p[0] - spawn[0];
+                long dz = p[1] - spawn[1];
+                if (dx * dx + dz * dz <= lim2) { ok = true; break; }
+            }
+            if (!ok) return false;
         }
         return true;
     }
@@ -402,7 +544,7 @@ public final class SearchWorker implements Runnable {
         for (var entry : r.biomeDistances.entrySet()) {
             sb.append(", ").append(entry.getKey()).append(" ~").append(entry.getValue()).append(" blocks");
         }
-        LOGGER.info("{}", sb);
+        if (WyWFDebug.ENABLED) LOGGER.info("{}", sb);
         synchronized (candidates) {
             if (candidates.size() < config.candidatesToCollect()) {
                 candidates.add(r);

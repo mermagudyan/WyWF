@@ -1,7 +1,5 @@
 package com.wywf.search;
 
-// This is a test file. These files have no effect on the main gameplay.
-
 import net.minecraft.SharedConstants;
 import net.minecraft.server.Bootstrap;
 import org.junit.jupiter.api.BeforeAll;

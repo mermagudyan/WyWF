@@ -1,11 +1,15 @@
 package com.wywf.search;
 
+import net.minecraft.core.Holder;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.BiomeResolver;
 import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.biome.Climate;
 import net.minecraft.world.level.levelgen.NoiseGeneratorSettings;
 import net.minecraft.world.level.levelgen.NoiseSettings;
+import net.minecraft.world.level.levelgen.RandomState;
 import net.minecraft.world.level.levelgen.structure.Structure;
 import net.minecraft.world.level.levelgen.structure.StructureSet;
 import net.minecraft.world.level.levelgen.structure.placement.StructurePlacement;
@@ -29,6 +33,10 @@ public final class WorldContext {
 
     private final Supplier<Climate.Sampler> samplerSupplier;
     private final Supplier<ReusableTerrainSampler> terrainSamplerSupplier;
+    private final Supplier<RandomState> randomStateSupplier;
+
+    private Climate.Sampler resolverSampler;
+    private BiomeResolver resolver;
 
     private final int terrainMinY;
     private final int terrainMaxY;
@@ -42,7 +50,8 @@ public final class WorldContext {
                         ResourceKey<NoiseGeneratorSettings> noiseSettingsKey,
                         HolderLookup.RegistryLookup<StructureSet> structureSets,
                         NoiseGeneratorSettings noiseSettings,
-                        Supplier<ReusableTerrainSampler> terrainSamplerSupplier) {
+                        Supplier<ReusableTerrainSampler> terrainSamplerSupplier,
+                        Supplier<RandomState> randomStateSupplier) {
         this.seed = seed;
         this.biomeSource = biomeSource;
         this.samplerSupplier = samplerSupplier;
@@ -53,6 +62,7 @@ public final class WorldContext {
         this.structureSets = structureSets;
         this.noiseSettings = noiseSettings;
         this.terrainSamplerSupplier = terrainSamplerSupplier;
+        this.randomStateSupplier = randomStateSupplier;
         NoiseSettings ns = noiseSettings != null ? noiseSettings.noiseSettings() : null;
         this.terrainMinY = ns != null ? ns.minY() : -64;
         this.terrainMaxY = ns != null ? ns.minY() + ns.height() : 320;
@@ -60,6 +70,21 @@ public final class WorldContext {
 
     public Climate.Sampler sampler() {
         return samplerSupplier != null ? samplerSupplier.get() : null;
+    }
+
+    public RandomState randomState() {
+        return randomStateSupplier != null ? randomStateSupplier.get() : null;
+    }
+
+    // Biome lookup on the 26.3 resolver API, resolver cached per sampler
+    public Holder<Biome> noiseBiomeAt(int quartX, int quartY, int quartZ) {
+        Climate.Sampler s = sampler();
+        if (biomeSource == null || s == null) return null;
+        if (resolver == null || resolverSampler != s) {
+            resolver = biomeSource.createResolver(s);
+            resolverSampler = s;
+        }
+        return resolver.getNoiseBiome(quartX, quartY, quartZ);
     }
 
     public List<StructurePlacement> placementsFor(ResourceKey<Structure> key) {
@@ -74,11 +99,7 @@ public final class WorldContext {
 
     public NoiseGeneratorSettings noiseSettings() { return noiseSettings; }
 
-    /**
-     * Compute terrain height at (blockX, blockZ) by scanning downward
-     * through the finalDensity function. Returns the Y of the highest
-     * solid block (where density > 0).
-     */
+    // Height of the top solid block at (blockX, blockZ), via finalDensity
     public int computeHeight(int blockX, int blockZ) {
         ReusableTerrainSampler sampler = terrainSamplerSupplier != null
                 ? terrainSamplerSupplier.get() : null;
@@ -89,10 +110,7 @@ public final class WorldContext {
         return sampler.computeHeight(blockX, blockZ);
     }
 
-    /**
-     * Check if terrain is flat enough around (blockX, blockZ) for structure generation.
-     * Samples a few points in a small radius and checks height delta.
-     */
+    // Flat enough for structures: 5-point height spread within maxDelta
     public boolean isTerrainFlatEnough(int blockX, int blockZ, int maxDelta) {
         int h0 = computeHeight(blockX, blockZ);
         int h1 = computeHeight(blockX + 4, blockZ);
@@ -104,9 +122,7 @@ public final class WorldContext {
         return (max - min) <= maxDelta;
     }
 
-    /**
-     * Check if terrain at (blockX, blockZ) is above sea level.
-     */
+    // Above sea level at (blockX, blockZ)
     public boolean isAboveSeaLevel(int blockX, int blockZ) {
         return computeHeight(blockX, blockZ) > noiseSettings.seaLevel();
     }

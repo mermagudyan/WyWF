@@ -26,7 +26,7 @@ public final class KeywordDictionary {
         MODIFIER
     }
 
-    /** Which synonym file(s) to load. AUTO merges EN + RU with a collision check. */
+    // Which synonym file(s) to load. AUTO merges EN + RU with a collision check
     public enum Lang {
         EN,
         RU,
@@ -74,10 +74,7 @@ public final class KeywordDictionary {
         rebuildIndex();
     }
 
-    /** Loads the synonym file(s) for the given language. EN is always the base /
-     *  fallback: if the chosen language's file is missing or fails to parse, EN is
-     *  used instead (never an error to the player). AUTO merges EN + the chosen
-     *  secondary language, throwing on a duplicate synonym across files. */
+    // Loads synonym file(s). EN is always the base/fallback, never an error to the player
     private void load(Lang lang) {
         boolean loadedAny = false;
 
@@ -86,7 +83,7 @@ public final class KeywordDictionary {
         } else if (lang == Lang.RU) {
             loadedAny = loadFile("assets/wywf/data/ru_ru.json");
             if (!loadedAny) loadedAny = loadFile("assets/wywf/data/en_us.json");
-        } else { // AUTO
+        } else {
             loadedAny |= loadFile("assets/wywf/data/en_us.json");
             loadedAny |= loadFile("assets/wywf/data/ru_ru.json");
         }
@@ -97,7 +94,7 @@ public final class KeywordDictionary {
         }
     }
 
-    /** @return true if the file was found and parsed. */
+    // True when the file was found and parsed
     private boolean loadFile(String resource) {
         InputStream in = KeywordDictionary.class.getClassLoader().getResourceAsStream(resource);
         if (in == null) return false;
@@ -148,7 +145,7 @@ public final class KeywordDictionary {
         }
     }
 
-    /** Splits "wywf.synonym.<cat>.<canonical>" into [cat, canonical]. */
+    // Splits "wywf.synonym.<cat>.<canonical>" into [cat, canonical]
     private static List<String> splitKey(String key) {
         // key = wywf.synonym.modifier.near  -> [modifier, near]
         // key = wywf.synonym.biome.minecraft:plains -> [biome, minecraft:plains]
@@ -254,7 +251,7 @@ public final class KeywordDictionary {
         return 0;
     }
 
-    /** Matches only {@link Category#SPAWN} (block) keywords. Used when a spawn trigger precedes the word. */
+    // Block keywords only (used after a spawn trigger)
     public int matchBlockAt(String text, int start, String[] outCanonical) {
         List<String> keys = blockSortedKeys;
         for (String key : keys) {
@@ -324,16 +321,7 @@ public final class KeywordDictionary {
         blockSortedKeys = List.copyOf(blocks);
     }
 
-    /**
-     * Returns the best fuzzy suggestion for a misspelled word, or null if none
-     * is close enough. Uses consonant-skeleton matching: consonants from the input
-     * must be a subsequence of the target's consonants, and the input length must
-     * be within 2 of the target length.
-     *
-     * <p>Examples that match: "vllg"→"village", "dsrt"→"desert", "vilge"→"village".
-     * Examples that don't: "drts"→"desert" (consonants out of order),
-     * "dskdfoskdrt"→any (gibberish), "villllage"→"village" (too many l's).
-     */
+    // Best fuzzy typo suggestion via consonant-skeleton match, else null
     public String findSuggestion(String word) {
         if (word == null || word.isBlank()) return null;
         String lower = word.toLowerCase(Locale.ROOT).trim();
@@ -372,7 +360,7 @@ public final class KeywordDictionary {
         return sb.toString();
     }
 
-    /** Returns true if {@code input} is a subsequence of {@code target}. */
+    // True when input is a subsequence of target
     private static boolean isSubsequence(String input, String target) {
         int i = 0, j = 0;
         while (i < input.length() && j < target.length()) {
@@ -382,9 +370,8 @@ public final class KeywordDictionary {
         return i == input.length();
     }
 
-    /** Hardcoded fallback used only if no lang file could be loaded. */
+    // Last resort when no lang file loads
     private void registerDefaults() {
-        // ---- biomes (surface) ----
         registerBiome("minecraft:forest", "лес", "forest", "woods", "woodland", "oak forest");
         registerBiome("minecraft:taiga", "тайга", "taiga", "spruce forest", "pine forest", "boreal forest");
         registerBiome("minecraft:swamp", "болото", "swamp", "marsh", "wetland", "bog", "swampland");
@@ -448,7 +435,7 @@ public final class KeywordDictionary {
         registerBiome("minecraft:eroded_badlands", "эродированная пустошь", "эродированные бэдлендс",
                 "eroded badlands", "eroded mesa", "weathered badlands");
 
-        // ---- biomes (underground / cave) ----
+
         registerBiome("minecraft:deep_dark", "глубокая тьма", "тьма", "дип дарк",
                 "deep dark", "deep_dark", "darkness");
         registerBiome("minecraft:lush_caves", "пышные пещеры", "пышная пещера", "цветущие пещеры",
@@ -458,7 +445,7 @@ public final class KeywordDictionary {
         registerBiome("minecraft:sulfur_caves", "серные пещеры", "серная пещера",
                 "sulfur caves", "sulfur cave", "sulfur", "sulphur caves");
 
-        // ---- structures ----
+
         registerStructure("minecraft:village", "деревня", "деревушка", "деревни", "деревню", "деревней",
                 "village", "settlement", "town", "hamlet", "villagers");
         registerStructure("minecraft:smithy", "кузница", "кузнец",
@@ -511,12 +498,12 @@ public final class KeywordDictionary {
         registerStructure("minecraft:trail_ruins", "тропные руины",
                 "trail ruins", "trail ruin");
 
-        // ---- objects ----
+
         registerObject("minecraft:tree", "дерево", "tree", "trees", "oak", "birch", "spruce");
         registerObject("minecraft:water", "вода", "water", "lake", "pond");
         registerObject("minecraft:lava", "лава", "lava", "magma", "lava pool", "lava lake");
 
-        // ---- spawn surface blocks ----
+
         registerBlock("minecraft:grass_block", "трава", "grass", "grass block", "травяной блок");
         registerBlock("minecraft:dirt", "земля", "dirt", "soil", "soil block");
         registerBlock("minecraft:coarse_dirt", "крупная земля", "coarse dirt", "coarse soil");
@@ -530,7 +517,7 @@ public final class KeywordDictionary {
                 "any solid", "any solid block", "solid block", "твёрдый блок", "твердый блок",
                 "твёрдых", "твердых", "твёрдое", "твердое");
 
-        // ---- modifiers ----
+
         registerModifier("NEAR", "near", "nearby", "close", "beside", "next",
                 "рядом", "около", "вблизи", "недалеко", "возле", "близко");
         registerModifier("IN", "in", "inside", "within", "в", "во", "внутри");
@@ -545,7 +532,7 @@ public final class KeywordDictionary {
         registerModifier("BETWEEN", "between", "mid", "middle", "in range", "from",
                 "между", "середина", "диапазон", "промежуток", "от");
 
-        // ---- spawn triggers ----
+
         for (String w : new String[]{"spawn", "on", "на", "блок", "block", "onto", "встань", "стоять"}) {
             spawnTriggers.add(w.toLowerCase(Locale.ROOT).trim());
         }

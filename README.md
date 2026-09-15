@@ -1,6 +1,6 @@
 # What you Want to Find (WyWF)
 
-A client-side Fabric mod for Minecraft 26.x that turns the **Seed** field in the world-creation screen into a
+A client-side Fabric mod for Minecraft 1.21.x and 26.x that turns the **Seed** field in the world-creation screen into a
 natural-language search bar. Instead of a number, you describe the world you want
 and the mod searches for a seed that matches — fully offline, without generating
 chunks.
@@ -8,23 +8,27 @@ chunks.
 ## Version compatibility
 
 <table>
-<tr><th rowspan="2">Minecraft version</th><th colspan="4" style="text-align:center">Version of mod</th></tr>
-<tr><th>1.3.x</th><th>1.2.x</th><th>1.1.x</th><th>1.0.x</th></tr>
-<tr><td>1.16.5</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
-<tr><td>1.17.1</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
-<tr><td>1.18.2</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
-<tr><td>1.19.2</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
-<tr><td>1.20.1</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
-<tr><td>1.20.4</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
-<tr><td>1.21.1</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
-<tr><td>1.21.5</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
-<tr><td>1.21.11</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
-<tr><td>26.1</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
-<tr><td>26.1.2</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
-<tr><td>26.2</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+<tr><th rowspan="2">Minecraft version</th><th colspan="5" style="text-align:center">Version of mod</th></tr>
+<tr><th>1.4.1</th><th>1.4.0</th><th>1.3.x</th><th>1.2.x</th><th>1.1.x</th></tr>
+<tr><td>1.16.5</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>1.17.1</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>1.18.2</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>1.19.2</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>1.20.1</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>1.20.4</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>1.21.1</td><td>✅</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>1.21.5</td><td>✅</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>1.21.11</td><td>✅</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td>26.1</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+<tr><td>26.1.2</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+<tr><td>26.2</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+<tr><td>26.3</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
 </table>
 
 Each MC version has its own jar — pick the one matching your Minecraft version.
+There are two 26.x jars: `1.4.1+26.x` for 26.1–26.2 and `1.4.1+26.3`
+for 26.3+ (the loader refuses to start a jar on the wrong game).
+The 1.21.x line ships separately at version 1.4.1.
 
 ## What it does
 
@@ -68,9 +72,9 @@ A query is a list of keywords, each optionally preceded by a modifier:
 Keywords fall into four categories:
 
 - **Biomes** — `warm ocean`, `desert`, `dark forest`, `deep dark`, `lush caves`,
-  `sulfur_caves` (searchable only with `near`, since it sits deep underground)…
+  `sulfur_caves` (near-only)…
 - **Structures** — `village`, `mansion`, `desert temple`, `monument`,
-  `ruined_portal` (incl. `ruined_portal_nether`)…
+  `ruined_portal` (incl. `ruined_portal_nether`), `nether fossil`…
 - **Spawn blocks** — `grass`, `dirt`, `sand`, `stone`, `snow`, `podzol`,
   `mycelium`, `gravel`, or `any solid` block, prefixed by a trigger such as
   `spawn on`, `on the … block`, `на блоке …` (see below).
@@ -152,10 +156,18 @@ Defaults (`SearchConfig`):
   down to `3` after 10 s** (`minCandidates`, `candidateRampDownSeconds`).
 - Start position: randomized across the 48-bit space by default
   (`randomizeStart`), so a re-run explores different seeds.
-- Search center: `SPAWN` (default), `ORIGIN`, or `BOTH` (first match wins).
+- Search center: `SPAWN` (default) or `ORIGIN`.
 - Native acceleration: `AUTO` (use DLL if present, otherwise Java),
   `NATIVE` (require DLL) or `CLASSIC` (Java-only).
 - Query language: `EN` / `RU` / `AUTO` (both).
+
+### Logging
+
+Normal play logs almost nothing. The full per-search log (query echo,
+worker lifecycle, progress, deep-verify verdicts) prints only with
+the Java argument `-Dwywf.debug=true` — add it when reporting a bug
+and attach the block from `===== Starting seed search =====` to
+`Search finished`.
 
 ## Example: a seed found by WyWF
 
@@ -210,8 +222,10 @@ Copy-paste the seed:
   (`gradlew` / `gradlew.bat`), which downloads the correct Gradle version
   automatically.
 - **Internet access on the first build.** Fabric Loom downloads Minecraft
-  26.2, the Yarn mappings, Fabric Loader and Fabric API and caches them under
-  `~/.gradle` / `.gradle`. Later builds are offline-friendly.
+  26.3 (26.2 with `-PmcLine=262`), the Yarn mappings, Fabric Loader and
+  Fabric API and caches them under `~/.gradle` / `.gradle`. Later builds
+  are offline-friendly. The 26.1–26.2 line builds with `-PmcLine=262`;
+  the default is the 26.3 line.
 
 ### Commands
 
@@ -222,11 +236,17 @@ Run the wrapper from the project root. On Windows use `gradlew.bat` instead of
 # Build the mod jar (compiles main + tests, runs the test suite)
 ./gradlew build
 
+# Same for the 26.1–26.2 line
+./gradlew build -PmcLine=262
+
 # Run the unit tests only (JUnit 5)
 ./gradlew test
 
 # Launch a Minecraft client with the mod loaded (dev run)
 ./gradlew runClient
+
+# Same with the full debug log enabled
+./gradlew runClient -Pdebug
 
 # List all available tasks
 ./gradlew tasks
@@ -241,10 +261,11 @@ dependency, so it works out of the box.
 
 ### Output
 
-The built mod jar is written to:
+The built mod jars are written to:
 
 ```
-build/libs/wywf-1.3.0+26.x.jar
+build/libs/wywf-1.4.1+26.3.jar      (default: Minecraft 26.3+)
+build/libs/wywf-1.4.1+26.x.jar      (-PmcLine=262: Minecraft 26.1–26.2)
 ```
 
 (the name is `<archives_base_name>-<mod_version>.jar`, taken from
@@ -260,7 +281,8 @@ build/libs/wywf-1.3.0+26.x.jar
 
 ## Installation
 
-1. Install Fabric Loader 0.19+ for Minecraft 26.x (tested on 26.2) and Fabric API.
+1. Install Fabric Loader 0.19+ for Minecraft 26.x (tested on 26.2; 26.3
+   uses the same setup) and Fabric API.
 2. Drop the jar into your `mods/` folder.
 
 ## Extending the dictionary
@@ -274,6 +296,15 @@ WYWFClient.dictionary().register(
     "synonym one", "synonym two");
 WYWFClient.dictionary().rebuildIndex();
 ```
+
+## Credits
+
+Fast native biome/structure math is based on
+[cubiomes by Cubitect](https://github.com/Cubitect/cubiomes),
+via the active fork by [xpple](https://github.com/xpple/cubiomes).
+The DLL ships **inside the mod** — nothing is ever downloaded at
+runtime. Build sources, the build script and SHA-256 hashes are
+published with each release for verification.
 
 ## License
 

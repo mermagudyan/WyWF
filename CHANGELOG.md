@@ -2,7 +2,99 @@
 
 Written in plain language — every change, explained so anyone can understand.
 
+## 1.4.1
+
+Two jars, one native library. `1.4.1+26.x` is for Minecraft 26.1–26.2
+(`>=26.1 <26.3`) and `1.4.1+26.3` is for Minecraft 26.3 and later
+(`>=26.3`) — the loader enforces the split, so a jar simply refuses
+to start on the wrong game. The cubiomes DLL inside both jars is
+byte-identical: one library carries the generation for every 26.x
+slot, and the slot follows the running game (26.1 vs 26.2 vs 26.3),
+so a newer slot never invents content the game does not have yet.
+(The 1.21.x line ships separately at version 1.4.1.)
+
+### New
+- **26.3 content is searchable.** `dappled forest` /
+  `пятнистый лес` and `abandoned camp` / `заброшенный лагерь`
+  work on 26.3, including in the speed-up mode. On older versions
+  these words are skipped with a log note instead of breaking
+  the search.
+- **Nether fossils can be found.** `nether fossil` /
+  `незер-ископаемое` is now a searchable structure, including in the
+  speed-up mode.
+- **Sulfur caves use the speed-up mode.** `near sulfur caves` now runs
+  through the fast native library instead of the slow fallback path —
+  before, these searches never touched it.
+
+### Changed
+- **Correct world generation for 26.x.** The built-in speed-up library
+  is rebuilt from the current cubiomes fork, so it computes actual
+  26.x generation instead of 1.21-era math. In practice this means
+  sulfur caves and pale-garden placement now match the game. A
+  300-seed audit against the old library showed zero unexplained
+  differences — every change is new 26.x content.
+- **26.3 port of the Java samplers.** Mojang refactored the density
+  API in 26.3, so the reusable climate and terrain samplers are
+  rewritten on the vanilla per-seed calls; the hand-mirrored
+  internals are deleted and the access widener is empty. Parity
+  tests prove bit-identical climate sampling and exact heights.
+- **Quiet logs, opt-in debug.** Normal play logs almost nothing now:
+  the per-search chatter (query echo, worker lifecycle, progress,
+  deep-verify verdicts) prints only with `-Dwywf.debug=true`.
+  Genuine failures still log loudly, with details.
+- **Spawn-centered search is ~4× faster.** Each seed costs about 5ms
+  instead of 22ms: a cheap spawn estimate goes first, the last-resort
+  land hunt samples one biome grid instead of up to 512 individual
+  lookups, the game's own sampler almost never fires, and bulk mode
+  skips a height lookup whose result it threw away anyway.
+- **Village variants are ~3× faster.** `plains village`,
+  `desert village` and friends now check only their own variant
+  instead of all five — with identical verdicts by construction.
+- **Fewer trips into the speed-up library.** Biome checks cross over
+  once per search area instead of once per sampled point, and
+  structure viability for a whole area resolves in one call instead
+  of one call per candidate.
+- **No wasted fallback hunt.** When the native finder already returned
+  a usable spawn point (even over water, where the game itself would
+  spawn you too), the search takes it instead of running a full
+  spiral search.
+- **The BOTH search center is retired.** It silently preferred ORIGIN
+  matches and hid SPAWN ones, which confused more than it helped.
+  Existing BOTH settings automatically become ORIGIN. Per-term search
+  centers arrive in 2.0.0.
+
+### Fixed
+- Searches for flower forests, windswept forests, trail ruins, trial
+  chambers, mineshafts, warm/lukewarm/cold/frozen oceans, snowy
+  beaches and stony shores used the wrong internal numbers, so they
+  silently never matched (or matched the wrong place) when the
+  speed-up mode was active. All resolve correctly now.
+- A forbidden-structure check in the final verification was stricter
+  than the main search and could reject good candidates.
+- **Placements no longer veto each other.** When one placement of a
+  structure fails its biome check, the remaining placements are still
+  tried — before, a single failing placement could throw away a good
+  seed.
+- **No more phantom structures near sulfur caves.** On 26.2 the native
+  library reports witch huts and buried treasures that do not exist in
+  the game when sulfur reaches the surface (upstream issue). Such
+  candidates are now vetoed when sulfur is their surface biome;
+  underground structures and deep sulfur are unaffected. Regression
+  seeds included.
+- The native version slot now follows the running game (26.1 vs 26.2
+  vs 26.3): one library carries every version, and a newer slot than
+  the game would invent content that does not exist yet.
+
+### Credits
+- Fast native math is cubiomes by
+  [Cubitect](https://github.com/Cubitect/cubiomes), via the active
+  fork by [xpple](https://github.com/xpple/cubiomes). The library
+  ships inside the mod — nothing is ever downloaded at runtime.
+  Build sources, the build script and SHA-256 hashes are published
+  with each release for verification.
+
 ## 1.4.0
+
 
 ### New
 - **Much faster searches.** The mod now uses a built-in speed-up library
@@ -59,7 +151,6 @@ Written in plain language — every change, explained so anyone can understand.
   them at once.
 - The speed-up library's helper objects are properly released after
   each search instead of leaking memory.
-
 ## 1.3.0
 
 ### New
