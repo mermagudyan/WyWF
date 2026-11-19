@@ -1,6 +1,8 @@
 package com.wywf.search;
 
 import net.minecraft.core.HolderLookup;
+import net.minecraft.core.Holder;
+import net.minecraft.world.level.biome.Biome;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.biome.Climate;
@@ -62,6 +64,18 @@ public final class WorldContext {
         return samplerSupplier != null ? samplerSupplier.get() : null;
     }
 
+    private net.minecraft.world.level.biome.BiomeManager blockBiomes;
+    public Holder<Biome> blockBiomeAt(int x, int y, int z) {
+        if (blockBiomes == null) blockBiomes = new net.minecraft.world.level.biome.BiomeManager(this::noiseBiomeAt,
+                net.minecraft.world.level.biome.BiomeManager.obfuscateSeed(seed));
+        return blockBiomes.getBiome(new net.minecraft.core.BlockPos(x, y, z));
+    }
+
+    public Holder<Biome> noiseBiomeAt(int quartX, int quartY, int quartZ) {
+        Climate.Sampler current = sampler();
+        return biomeSource == null || current == null ? null : biomeSource.getNoiseBiome(quartX, quartY, quartZ, current);
+    }
+
     public List<StructurePlacement> placementsFor(ResourceKey<Structure> key) {
         return placementsByStructure.getOrDefault(key, List.of());
     }
@@ -74,7 +88,28 @@ public final class WorldContext {
 
     public NoiseGeneratorSettings noiseSettings() { return noiseSettings; }
 
-    // Height of the top solid block at (blockX, blockZ), via finalDensity
+    // Map nodes use vanilla base terrain before surface features
+    private net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator mapGenerator;
+    private net.minecraft.world.level.levelgen.RandomState mapState;
+    public int mapHeight(int x, int z) {
+        if (mapGenerator == null) mapGenerator = new net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator(biomeSource,
+                registries.lookupOrThrow(net.minecraft.core.registries.Registries.NOISE_SETTINGS).getOrThrow(noiseSettingsKey));
+        if (mapState == null) mapState = net.minecraft.world.level.levelgen.RandomState.create(noiseSettings,
+                registries.lookupOrThrow(net.minecraft.core.registries.Registries.NOISE), seed);
+        var bounds = net.minecraft.world.level.LevelHeightAccessor.create(terrainMinY, terrainMaxY - terrainMinY);
+        if (noiseSettingsKey.equals(NoiseGeneratorSettings.END)) {
+            int firstFree = mapGenerator.getBaseHeight(x, z,
+                    net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE_WG, bounds, mapState);
+            return firstFree == terrainMinY ? Integer.MIN_VALUE : firstFree - 1;
+        }
+        var column = mapGenerator.getBaseColumn(x, z, bounds, mapState);
+        for (int y = terrainMaxY - 1; y >= terrainMinY; y--) {
+            var state = column.getBlock(y);
+            if (!state.isAir() && state.getFluidState().isEmpty()) return y;
+        }
+        return terrainMinY;
+    }
+    // Height of the top solid block via final density
     public int computeHeight(int blockX, int blockZ) {
         ReusableTerrainSampler sampler = terrainSamplerSupplier != null
                 ? terrainSamplerSupplier.get() : null;

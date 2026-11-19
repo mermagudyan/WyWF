@@ -48,3 +48,7 @@ Thumbs.db
 
 # Fabric runs
 run/
+/wywf_cache/
+
+# Local tests
+/src/**/test/

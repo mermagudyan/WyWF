@@ -1,5 +1,6 @@
 package com.wywf.search;
 
+import com.wywf.core.QueryLogic;
 import com.wywf.core.KeywordDictionary;
 import com.wywf.core.Modifier;
 import com.wywf.core.ParsedQuery;
@@ -74,6 +75,22 @@ public final class DeepVerifier {
         return best;
     }
 
+    public static List<SearchResult> survivors(WorldContextFactory factory, StructureChecker checker, ParsedQuery query,
+                                               SearchConfig config, List<SearchResult> input, int radius,
+                                               java.util.function.BooleanSupplier cancelled) {
+        VanillaBiomeChecker dense = new VanillaBiomeChecker(); dense.stepChunks(1);
+        List<SearchResult> result = new java.util.ArrayList<>();
+        try(var scope=com.wywf.core.SearchCancellation.bind(cancelled)){
+            for(var candidate:input){
+                com.wywf.core.SearchCancellation.checkpoint();
+                var verdict=verify(factory,checker,dense,query,config,candidate,radius);
+                com.wywf.core.SearchCancellation.checkpoint();
+                if(WyWFDebug.ENABLED)LOGGER.info("[deep-verify] seed {} -> {} ({})",candidate.seed,verdict.pass()?"PASS":"FAIL",verdict.note());
+                if(verdict.pass())result.add(candidate);
+            }
+        }catch(java.util.concurrent.CancellationException cancelledCheck){}
+        return List.copyOf(result);
+    }
     private record Verdict(boolean pass, String note, double score) {}
     private static Verdict ok(double score)  { return new Verdict(true, "ok", score); }
     private static Verdict fail(String why)  { return new Verdict(false, why, Double.MAX_VALUE); }
@@ -85,23 +102,44 @@ public final class DeepVerifier {
                                    SearchConfig config,
                                    SearchResult r,
                                    int biomeRadiusChunks) {
+        if (query.error() != null) return fail(query.error());
+
         boolean accurateRings = query.structures().contains("minecraft:stronghold");
         WorldContext ctx;
         try {
             ctx = factory.create(r.seed, accurateRings);
-        } catch (Throwable t) {
+        } catch(java.util.concurrent.CancellationException cancelled){throw cancelled;}
+        catch (Throwable t) {
             return fail("context failed: " + t);
         }
         if (CubiomesBridge.isActive()) {
             try { CubiomesBridge.applySeed(r.seed); } catch (Throwable ignored) {}
         }
+        return verifyContext(ctx, sc, dense, query, config, r, biomeRadiusChunks);
+    }
+    private static Verdict verifyContext(WorldContext ctx, StructureChecker sc, VanillaBiomeChecker dense,
+                                         ParsedQuery query, SearchConfig config, SearchResult r, int biomeRadiusChunks) {
+        if (query.hasLogic()) {
+            var truth = QueryLogic.evaluate(query.logic(), term -> {
+                if (com.wywf.core.DimensionSpace.external(term)||query.estimated()&&com.wywf.core.TargetDistance.deferred(term)) return QueryLogic.Truth.UNKNOWN;
+                try {
+                    var leaf = new ParsedQuery(term.toString(), List.of(term));if(query.estimated())leaf=leaf.estimate();
+                                        boolean pass = verifyContext(ctx, sc, dense, leaf, config, r, biomeRadiusChunks).pass();
+                    return pass && (term.biomeRegionCount() || term.loot != null || !term.tags.empty()) ? QueryLogic.Truth.UNKNOWN : QueryLogic.Truth.of(pass);
+                }catch(java.util.concurrent.CancellationException cancelled){throw cancelled;}
+                catch (RuntimeException unavailable) { return QueryLogic.Truth.UNKNOWN; }
+            });
+            return truth == QueryLogic.Truth.YES || truth == QueryLogic.Truth.UNKNOWN && query.terms().stream().anyMatch(t -> t.biomeRegionCount() || t.loot != null || !t.tags.empty() || com.wywf.core.DimensionSpace.external(t)||query.estimated()&&com.wywf.core.TargetDistance.deferred(t)) ? ok(0) : fail("logical conditions rejected or unavailable");
+        }
         int cx = r.centerX, cz = r.centerZ;
         double score = 0;
 
         for (ParsedQuery.Term term : query.terms()) {
+            com.wywf.core.SearchCancellation.checkpoint();
+            if (com.wywf.core.DimensionSpace.external(term) || term.biomeLoot()) continue;
             switch (term.category) {
                 case STRUCTURE -> {
-                    Verdict v = checkStructure(sc, ctx, term, cx, cz, config.searchRadiusChunks());
+                    Verdict v = query.estimated() ? estimateStructure(sc,ctx,term,cx,cz,config.searchRadiusChunks()) : checkStructure(sc,ctx,term,cx,cz,config.searchRadiusChunks());
                     if (!v.pass()) return v;
                     score += v.score();
                 }
@@ -119,12 +157,25 @@ public final class DeepVerifier {
         return ok(score);
     }
 
+    private static Verdict estimateStructure(StructureChecker sc,WorldContext ctx,ParsedQuery.Term term,int cx,int cz,int radius){
+        if(com.wywf.core.TargetDistance.deferred(term))return ok(0);
+        int limit=com.wywf.core.TargetDistance.radius(term,radius*16)+com.wywf.core.TargetDistance.PLACEMENT_MARGIN;
+        var positions=sc.positions(ctx,cx,cz,(limit+15)/16,term.canonical);
+        int needed=term.modifier==Modifier.SOME||term.modifier.counted() ? term.someCount : 1;
+        return positions.size()>=needed ? ok(0) : fail("No placement within conservative footprint search");
+    }
     private static Verdict checkStructure(StructureChecker sc, WorldContext ctx,
                                           ParsedQuery.Term term, int cx, int cz,
                                           int searchRadius) {
         Modifier mod = term.modifier;
         String canon = term.canonical;
 
+        if (mod.counted()) {
+            int radius = term.betweenMax > 0 ? term.betweenMax : 500;
+            int count = (int) sc.positions(ctx, cx, cz, (radius + 15) / 16, canon).stream()
+                    .filter(p -> Math.hypot((double) p[0] - cx, (double) p[1] - cz) <= radius).count();
+            return mod.accepts(count, term.someCount) ? ok(0) : fail("count=" + count);
+        }
         if (mod == Modifier.NEVER) {
             // Same verdict as bulk: reject on biome-viable presence, mere placement can't generate
             List<int[]> any = sc.positions(ctx, cx, cz, searchRadius, canon);
@@ -134,6 +185,7 @@ public final class DeepVerifier {
         int scan = switch (mod) {
             case FAR     -> (FAR_MAX + 15) / 16;
             case BETWEEN -> (Math.max(1, term.betweenMax) + 15) / 16;
+            case AT -> 8;
             case NEAR    -> (NEAR_BLOCKS + 15) / 16;
             case IN      -> UNDERGROUND_STRUCTURES.contains(canon) ? searchRadius : (IN_BLOCKS + 15) / 16;
             default      -> searchRadius;
@@ -145,6 +197,7 @@ public final class DeepVerifier {
         int min = nearest(pos, cx, cz);
 
         return switch (mod) {
+            case AT -> min <= 128 ? ok(rel(min, 128)) : fail("nearest > 128");
             case NEAR    -> min <= NEAR_BLOCKS ? ok(rel(min, NEAR_BLOCKS))
                                                : fail("nearest " + min + " > 200");
             case IN      -> min <= IN_BLOCKS   ? ok(rel(min, IN_BLOCKS))
@@ -170,15 +223,31 @@ public final class DeepVerifier {
         String b = term.canonical;
         Modifier mod = term.modifier;
 
+        if (term.biomeRegionCount()) {
+            return bc.exists(ctx, cx, cz, (term.betweenMax + 15) / 16, b)
+                    ? ok(0) : fail("required biome absent in region count radius");
+        }
+        if (mod == Modifier.AT) {
+            int distance = bc.nearestDistanceBlocks(ctx, cx, cz, 8, b);
+            return distance >= 0 && distance <= 128 ? ok(rel(distance, 128)) : fail("biome distance > 128");
+        }
+        if (bc.isUnderground(b) && mod == Modifier.BETWEEN) {
+            int qy = bc.quartYFor(b);
+            int radius = (Math.max(1, term.betweenMax) + 15) / 16;
+            var field = bc.sampleField(ctx, cx, cz, qy, radius, bc.effectiveStep(qy, radius));
+            var key = bc.keyOf(b);
+            int distance = key != null ? field.nearestDistanceBlocks(key, term.betweenMin, term.betweenMax) : -1;
+            return distance >= 0 ? ok(rel(distance, Math.max(1, term.betweenMax))) : fail("cave distance range failed");
+        }
         if (bc.isUnderground(b)) {
             int qy = bc.quartYFor(b);
             Modifier effective = (mod == Modifier.UNDER || mod == Modifier.DEFAULT) ? Modifier.NEAR : mod;
-            if (effective != Modifier.NEAR && effective != Modifier.FAR && effective != Modifier.NEVER) {
+            if (effective != Modifier.IN && effective != Modifier.NEAR && effective != Modifier.FAR && effective != Modifier.NEVER) {
                 effective = Modifier.NEAR;
             }
             int rad = effective == Modifier.FAR ? (FAR_MAX + 15) / 16
                     : effective == Modifier.NEVER ? biomeRadiusChunks
-                    : (NEAR_BLOCKS + 15) / 16;
+                    : effective == Modifier.IN ? (IN_BLOCKS + 15) / 16 : (NEAR_BLOCKS + 15) / 16;
             int step = bc.effectiveStep(qy, rad);
             var f = bc.sampleField(ctx, cx, cz, qy, rad, step);
             boolean pass = bc.evalUnderground(f, b, effective, NEAR_BLOCKS, FAR_MIN, FAR_MAX, ctx, cx, cz);

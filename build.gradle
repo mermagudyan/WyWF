@@ -65,6 +65,16 @@ loom {
     runs {
         client {
             client()
+            if (System.getenv('WYWF_ONLINE_BENCH')) {
+                runDir 'build/online-benchmark-run'
+                vmArg '-Xmx4G'
+            }
+            if (mcLine == '263' && System.getProperty('os.name').startsWith('Windows')) {
+                // Vulkan shader compilation can exhaust the default native thread stack
+                vmArg '-Xss4M'
+                // Match Minecraft 26.3 shadow space for native shader calls
+                vmArg '-XX:StackShadowPages=32'
+            }
             programArgs "--username", "mermagudyan", "--uuid", "ad96c39f1b2047a58b5802365e1cad34"
             if (project.hasProperty('audit')) {
                 systemProperty 'wywf.audit', 'true'

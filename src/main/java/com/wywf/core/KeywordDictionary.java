@@ -71,6 +71,10 @@ public final class KeywordDictionary {
 
     public KeywordDictionary(Lang lang) {
         load(lang);
+        registerModifier("AT", "at", "by", "у");
+        registerModifier("EXACTLY", "exactly", "ровно");
+        registerModifier("AT_LEAST", "at_least", "минимум");
+        registerModifier("AT_MOST", "at_most", "максимум");
         rebuildIndex();
     }
 
@@ -132,6 +136,9 @@ public final class KeywordDictionary {
                 if (cat.equals("modifier")) canonical = canonical.toUpperCase(Locale.ROOT);
                 Category category = categoryOf(cat);
                 if (category == null) continue;
+                if (category == Category.BIOME || category == Category.STRUCTURE || category == Category.SPAWN || category == Category.OBJECT) {
+                    registerSynonym(canonical, canonical, category);
+                }
                 if (!e.getValue().isJsonArray()) continue;
                 for (JsonElement syn : e.getValue().getAsJsonArray()) {
                     if (!syn.isJsonPrimitive()) continue;
@@ -518,6 +525,10 @@ public final class KeywordDictionary {
                 "твёрдых", "твердых", "твёрдое", "твердое");
 
 
+        registerModifier("AT", "at", "by", "у");
+        registerModifier("EXACTLY", "exactly", "ровно");
+        registerModifier("AT_LEAST", "at_least", "минимум");
+        registerModifier("AT_MOST", "at_most", "максимум");
         registerModifier("NEAR", "near", "nearby", "close", "beside", "next",
                 "рядом", "около", "вблизи", "недалеко", "возле", "близко");
         registerModifier("IN", "in", "inside", "within", "в", "во", "внутри");

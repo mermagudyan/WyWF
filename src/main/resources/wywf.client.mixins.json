@@ -8,7 +8,14 @@
     "CreateWorldScreenMixin",
     "CreateWorldScreenMoreTabMixin",
     "CreateWorldScreenInvoker",
-    "WorldTabSeedMixin"
+    "WorldTabSeedMixin",
+    "VerificationSettingsAccessor",
+    "MinecraftVerificationMixin",
+    "GuiVerificationScreenMixin",
+    "PreviewWorldListMixin",
+    "SelectWorldMapMixin",
+    "PreviewGenerationMixin",
+    "PreviewLevelTickMixin"
   ],
   "injectors": {
     "defaultRequire": 1

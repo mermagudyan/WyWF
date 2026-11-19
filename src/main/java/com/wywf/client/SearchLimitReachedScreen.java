@@ -69,28 +69,9 @@ public final class SearchLimitReachedScreen extends Screen {
     }
 
     private void searchMore() {
-        SearchConfig extended = SearchConfig.defaults();
-        extended.timeLimitMinutes(config.timeLimitMinutes() * 2);
-        extended.maxSeedsToCheck(config.rawMaxSeedsToCheck() * 2);
-        extended.infiniteSeeds(config.infiniteSeeds());
-        extended.mode(config.mode());
-        extended.manualThreads(config.manualThreads());
-        extended.searchRadiusChunks(config.searchRadiusChunks());
-        extended.biomeCheckRadiusChunks(config.biomeCheckRadiusChunks());
-        extended.biomeSampleStepChunks(config.biomeSampleStepChunks());
-        extended.candidatesToCollect(config.candidatesToCollect());
-        extended.minCandidates(config.minCandidates());
-        extended.candidateRampDownSeconds(config.candidateRampDownSeconds());
-        extended.randomizeStart(config.randomizeStart());
-        extended.stopAtFirstCandidate(config.stopAtFirstCandidate());
-        extended.sortCandidatesByDistance(config.sortCandidatesByDistance());
-        extended.searchCenter(config.searchCenter());
-        extended.queryLanguage(config.queryLanguage());
-        extended.nativeMode(config.nativeMode());
-        extended.linearBiomeSearch(config.linearBiomeSearch());
-
+        SearchConfig extended = config.extendedLimits();
         SearchScreen screen = new SearchScreen(parentScreen, queryText, parsedQuery, extended);
-        Minecraft.getInstance().setScreenAndShow(screen);
+        screen.open();
     }
 
     @Override

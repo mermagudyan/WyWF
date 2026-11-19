@@ -77,6 +77,13 @@ public final class WorldContext {
     }
 
     // Biome lookup on the 26.3 resolver API, resolver cached per sampler
+    private net.minecraft.world.level.biome.BiomeManager blockBiomes;
+    public Holder<Biome> blockBiomeAt(int x, int y, int z) {
+        if (blockBiomes == null) blockBiomes = new net.minecraft.world.level.biome.BiomeManager(this::noiseBiomeAt,
+                net.minecraft.world.level.biome.BiomeManager.obfuscateSeed(seed));
+        return blockBiomes.getBiome(new net.minecraft.core.BlockPos(x, y, z));
+    }
+
     public Holder<Biome> noiseBiomeAt(int quartX, int quartY, int quartZ) {
         Climate.Sampler s = sampler();
         if (biomeSource == null || s == null) return null;
@@ -99,7 +106,25 @@ public final class WorldContext {
 
     public NoiseGeneratorSettings noiseSettings() { return noiseSettings; }
 
-    // Height of the top solid block at (blockX, blockZ), via finalDensity
+    // Map nodes use vanilla base terrain before surface features
+    private net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator mapGenerator;
+    public int mapHeight(int x, int z) {
+        if (mapGenerator == null) mapGenerator = new net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator(biomeSource,
+                registries.lookupOrThrow(net.minecraft.core.registries.Registries.NOISE_SETTINGS).getOrThrow(noiseSettingsKey));
+        var bounds = net.minecraft.world.level.LevelHeightAccessor.create(terrainMinY, terrainMaxY - terrainMinY);
+        if (noiseSettingsKey.equals(NoiseGeneratorSettings.END)) {
+            int firstFree = mapGenerator.getBaseHeight(x, z,
+                    net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE_WG, bounds, randomState());
+            return firstFree == terrainMinY ? Integer.MIN_VALUE : firstFree - 1;
+        }
+        var column = mapGenerator.getBaseColumn(x, z, bounds, randomState());
+        for (int y = terrainMaxY - 1; y >= terrainMinY; y--) {
+            var state = column.getBlock(y);
+            if (!state.isAir() && state.getFluidState().isEmpty()) return y;
+        }
+        return terrainMinY;
+    }
+    // Height of the top solid block via final density
     public int computeHeight(int blockX, int blockZ) {
         ReusableTerrainSampler sampler = terrainSamplerSupplier != null
                 ? terrainSamplerSupplier.get() : null;

@@ -115,20 +115,15 @@ public final class VanillaStructureChecker implements StructureChecker {
 
     private Set<ResourceKey<Biome>> allowedBiomes(WorldContext ctx, ResourceKey<Structure> key) {
         String id = key.identifier().toString();
+        var actual=ctx.noiseSettingsKey().equals(net.minecraft.world.level.levelgen.NoiseGeneratorSettings.NETHER)?com.wywf.core.DimensionSpace.NETHER
+                :ctx.noiseSettingsKey().equals(net.minecraft.world.level.levelgen.NoiseGeneratorSettings.END)?com.wywf.core.DimensionSpace.END:com.wywf.core.DimensionSpace.OVERWORLD;
+        if(com.wywf.core.DimensionSpace.of(id)!=actual)return null;
         return biomeGateCache.computeIfAbsent(id, k -> {
             try {
                 var holder = ctx.registries().lookupOrThrow(Registries.STRUCTURE).get(key);
                 if (holder.isPresent()) {
-                    net.minecraft.core.HolderSet<Biome> biomes = holder.get().value().biomes();
-                    Set<ResourceKey<Biome>> keys = new HashSet<>();
-                    for (Holder<Biome> h : biomes) {
-                        var opt = h.unwrapKey();
-                        if (opt.isEmpty()) return java.util.Optional.<Set<ResourceKey<Biome>>>empty();
-                        keys.add(opt.get());
-                    }
-                    if (!keys.isEmpty()) {
-                        return java.util.Optional.of(Set.copyOf(keys));
-                    }
+                    var resolved=StructureBiomeRules.resolve(holder.get().value().biomes());
+                    if(resolved!=null)return java.util.Optional.of(resolved);
                 }
             } catch (Throwable ignored) {
                 // offline registry without bound tags — fall through to static map
@@ -254,6 +249,7 @@ public final class VanillaStructureChecker implements StructureChecker {
         var preferred = safePreferredBiomes(placement);
         Climate.Sampler sampler = ctx.sampler();
         for (int i = 0; i < count; i++) {
+            com.wywf.core.SearchCancellation.checkpoint();
             double dist = (double) (4 * distance + distance * circle * 6)
                     + (random.nextDouble() - 0.5) * ((double) distance * 2.5);
             int initialX = (int) Math.round(Math.cos(angle) * dist);
@@ -280,22 +276,89 @@ public final class VanillaStructureChecker implements StructureChecker {
         }
         return positions;
     }
+    private record RingWindow(long seed,ConcentricRingsStructurePlacement placement,int minX,int maxX,int minZ,int maxZ){}
+    private final Map<RingWindow,List<ChunkPos>> ringWindows=new ConcurrentHashMap<>();
+    private boolean allRings(List<StructurePlacement> placements){
+        return !placements.isEmpty()&&placements.stream().allMatch(p->p instanceof ConcentricRingsStructurePlacement);
+    }
+    private List<ChunkPos> ringCandidates(WorldContext ctx,ConcentricRingsStructurePlacement placement,int minX,int maxX,int minZ,int maxZ){
+        var key=new RingWindow(ctx.seed,placement,minX,maxX,minZ,maxZ);
+        var positions=ringWindows.computeIfAbsent(key,k->generateWindowRingPositions(ctx,placement,ctx.seed,minX,maxX,minZ,maxZ));
+        if(ringWindows.size()>MAX_RING_CACHE)ringWindows.clear();
+        return positions.stream().filter(p->p.x()>=minX&&p.x()<=maxX&&p.z()>=minZ&&p.z()<=maxZ)
+                .filter(p->placement.applyAdditionalChunkRestrictions(p.x(),p.z(),ctx.seed)&&!isExclusionZoneBlocked(ctx,placement,ctx.seed,p.x(),p.z()))
+                .sorted(java.util.Comparator.comparingInt(ChunkPos::x).thenComparingInt(ChunkPos::z)).toList();
+    }
+    private boolean ringBiomeViable(WorldContext ctx,ResourceKey<Structure> key,int cx,int cz){
+        int bx=cx*16+8,bz=cz*16+8;
+        if(CubiomesBridge.isActive()){
+            Integer id=CUBIOMES_STRUCT_ID.get(key.identifier().toString());
+            if(id!=null)return NETHER_STRUCT_IDS.contains(id)
+                    ?CubiomesBridge.isViableStructurePos(id,CubiomesBridge.DIM_NETHER,ctx.seed,bx,bz)
+                    :CubiomesBridge.isViableStructurePos(id,CubiomesBridge.DIM_OVERWORLD,0,bx,bz,variantFlags(key.identifier().toString()));
+        }
+        var allowed=allowedBiomes(ctx,key);
+        return allowed==null||VanillaBiomeChecker.quartYForSurfaceMatches(ctx,bx,bz,allowed);
+    }
+    private List<int[]> collectRingKey(WorldContext ctx,ResourceKey<Structure> key,List<StructurePlacement> placements,int minX,int maxX,int minZ,int maxZ,boolean biome){
+        Map<Long,int[]> unique=new java.util.TreeMap<>();
+        for(var placement:placements)for(var p:ringCandidates(ctx,(ConcentricRingsStructurePlacement)placement,minX,maxX,minZ,maxZ)){
+            if(biome&&!ringBiomeViable(ctx,key,p.x(),p.z()))continue;
+            unique.put((((long)p.x())<<32)^(p.z()&0xffffffffL),new int[]{p.x()*16+8,p.z()*16+8});
+        }
+        return unique.values().stream().sorted(java.util.Comparator.<int[]>comparingInt(p->p[0]).thenComparingInt(p->p[1])).toList();
+    }
+    private List<ChunkPos> generateWindowRingPositions(WorldContext ctx,
+                                                 ConcentricRingsStructurePlacement placement,
+                                                 long seed,int minX,int maxX,int minZ,int maxZ) {
+        if (placement.count() == 0) return List.of();
+        int distance = placement.distance();
+        int count = placement.count();
+        int spread = placement.spread();
+        RandomSource random = RandomSource.create();
+        random.setSeed(seed);
+        double angle = random.nextDouble() * Math.PI * 2.0;
+        int positionInCircle = 0;
+        int circle = 0;
+        List<ChunkPos> positions = new ArrayList<>();
+        var preferred = safePreferredBiomes(placement);
+        Climate.Sampler sampler = ctx.sampler();
+        for (int i = 0; i < count; i++) {
+            com.wywf.core.SearchCancellation.checkpoint();
+            double dist = (double) (4 * distance + distance * circle * 6)
+                    + (random.nextDouble() - 0.5) * ((double) distance * 2.5);
+            int initialX = (int) Math.round(Math.cos(angle) * dist);
+            int initialZ = (int) Math.round(Math.sin(angle) * dist);
+            RandomSource searchRandom = random.fork();
+            boolean relevant=initialX+7>=minX&&initialX-7<=maxX&&initialZ+7>=minZ&&initialZ-7<=maxZ;
+            var found = relevant ? ctx.biomeSource.findBiomeHorizontal(
+                    SectionPos.sectionToBlockCoord(initialX, 8), 0,
+                    SectionPos.sectionToBlockCoord(initialZ, 8), 112,
+                    preferred, searchRandom, sampler) : null;
+            ChunkPos pos;
+            if (found != null) {
+                pos = new ChunkPos(SectionPos.blockToSectionCoord(found.getFirst().getX()),
+                        SectionPos.blockToSectionCoord(found.getFirst().getZ()));
+            } else {
+                pos = new ChunkPos(initialX, initialZ);
+            }
+            if(relevant)positions.add(pos);
+            angle += Math.PI * 2 / (double) spread;
+            if (++positionInCircle != spread) continue;
+            positionInCircle = 0;
+            spread += 2 * spread / (++circle + 1);
+            spread = Math.min(spread, count - i);
+            angle += random.nextDouble() * Math.PI * 2.0;
+        }
+        return positions;
+    }
 
-    // Ring biomes; "any biome" when the has_structure tag is unbound offline
+
+    // Resolve the ring preference tag before biome searches so offline positions match vanilla
     private java.util.function.Predicate<Holder<Biome>> safePreferredBiomes(
             ConcentricRingsStructurePlacement placement) {
-        try {
-            HolderSet<Biome> set = placement.preferredBiomes();
-            Set<ResourceKey<Biome>> keys = new HashSet<>();
-            for (Holder<Biome> h : set) {
-                h.unwrapKey().ifPresent(keys::add);
-            }
-            if (!keys.isEmpty()) {
-                return h -> h.unwrapKey().map(keys::contains).orElse(false);
-            }
-        } catch (UnsupportedOperationException ignored) {
-            // tags not bound in offline registry
-        }
+        var keys=StructureBiomeRules.resolve(placement.preferredBiomes());
+        if(keys!=null)return h->h.unwrapKey().map(keys::contains).orElse(false);
         return h -> true;
     }
 
@@ -388,7 +451,7 @@ public final class VanillaStructureChecker implements StructureChecker {
         return out;
     }
 
-    // Region-grid scan for random-spread, ~spacing² cheaper than per-chunk (rings need chunk loop)
+    // Region-grid scan visits only random-spread candidates within the requested window
     private void collectSpreadCandidates(WorldContext ctx,
                                          List<StructurePlacement> placements, long seed,
                                          int minX, int maxX, int minZ, int maxZ,
@@ -399,6 +462,7 @@ public final class VanillaStructureChecker implements StructureChecker {
             int rMinX = Math.floorDiv(minX, spacing), rMaxX = Math.floorDiv(maxX, spacing);
             int rMinZ = Math.floorDiv(minZ, spacing), rMaxZ = Math.floorDiv(maxZ, spacing);
             for (int rx = rMinX; rx <= rMaxX; rx++) {
+            com.wywf.core.SearchCancellation.checkpoint();
                 for (int rz = rMinZ; rz <= rMaxZ; rz++) {
                     // getPotentialStructureChunk takes CHUNK coords and floorDivs by
                     // spacing internally; rx*spacing floor-divides back to exactly rx.
@@ -424,16 +488,29 @@ public final class VanillaStructureChecker implements StructureChecker {
         return true;
     }
 
+    private boolean hasFallbackSet(WorldContext ctx,ResourceKey<Structure> key){
+        var set=resolveSetKey(key.identifier().toString());return set!=null&&ctx.structureSets().get(set).isPresent();
+    }
+
     // Placement-only scan of one key over a chunk window
     private void scanKeyPlacementOnly(WorldContext ctx, ResourceKey<Structure> key,
                                       int minX, int maxX, int minZ, int maxZ,
                                       List<int[]> out, Set<Long> seen) {
         List<StructurePlacement> placements = ctx.placementsFor(key);
+        if(placements.isEmpty()&&!hasFallbackSet(ctx,key))return;
+        if(allRings(placements)){
+            for(var point:collectRingKey(ctx,key,placements,minX,maxX,minZ,maxZ,false)){
+                long code=((long)((point[0]-8)>>4)<<32)^(((point[1]-8)>>4)&0xffffffffL);
+                if(seen.add(code))out.add(point);
+            }
+            return;
+        }
         if (!placements.isEmpty() && allRandomSpread(placements)) {
             collectSpreadCandidates(ctx, placements, ctx.seed, minX, maxX, minZ, maxZ, out, seen);
             return;
         }
         for (int cx = minX; cx <= maxX; cx++) {
+            com.wywf.core.SearchCancellation.checkpoint();
             for (int cz = minZ; cz <= maxZ; cz++) {
                 if (!structureChunk(ctx, key, cx, cz, false)) continue;
                 long pk = (((long) cx) << 32) ^ (cz & 0xffffffffL);
@@ -466,6 +543,14 @@ public final class VanillaStructureChecker implements StructureChecker {
                          int minX, int maxX, int minZ, int maxZ,
                          List<int[]> out, Set<Long> seen) {
         List<StructurePlacement> placements = ctx.placementsFor(key);
+        if(placements.isEmpty()&&!hasFallbackSet(ctx,key))return;
+        if(allRings(placements)){
+            for(var point:collectRingKey(ctx,key,placements,minX,maxX,minZ,maxZ,true)){
+                long code=((long)((point[0]-8)>>4)<<32)^(((point[1]-8)>>4)&0xffffffffL);
+                if(seen.add(code))out.add(point);
+            }
+            return;
+        }
         if (!placements.isEmpty() && allRandomSpread(placements)) {
             List<int[]> cands = takeCands();
             collectSpreadCandidates(ctx, placements, ctx.seed, minX, maxX, minZ, maxZ, cands, takeSeen());
@@ -484,6 +569,7 @@ public final class VanillaStructureChecker implements StructureChecker {
             return;
         }
         for (int cx = minX; cx <= maxX; cx++) {
+            com.wywf.core.SearchCancellation.checkpoint();
             for (int cz = minZ; cz <= maxZ; cz++) {
                 if (!structureChunk(ctx, key, cx, cz)) continue;
                 long pk = (((long) cx) << 32) ^ (cz & 0xffffffffL);
@@ -497,6 +583,11 @@ public final class VanillaStructureChecker implements StructureChecker {
     private int[] firstKey(WorldContext ctx, ResourceKey<Structure> key,
                            int minX, int maxX, int minZ, int maxZ) {
         List<StructurePlacement> placements = ctx.placementsFor(key);
+        if(placements.isEmpty()&&!hasFallbackSet(ctx,key))return null;
+        if(allRings(placements)){
+            var points=collectRingKey(ctx,key,placements,minX,maxX,minZ,maxZ,true);
+            return points.isEmpty()?null:points.getFirst();
+        }
         if (!placements.isEmpty() && allRandomSpread(placements)) {
             List<int[]> cands = takeCands();
             collectSpreadCandidates(ctx, placements, ctx.seed, minX, maxX, minZ, maxZ, cands, takeSeen());
@@ -513,6 +604,7 @@ public final class VanillaStructureChecker implements StructureChecker {
             return null;
         }
         for (int cx = minX; cx <= maxX; cx++) {
+            com.wywf.core.SearchCancellation.checkpoint();
             for (int cz = minZ; cz <= maxZ; cz++) {
                 if (structureChunk(ctx, key, cx, cz)) return new int[]{cx * 16 + 8, cz * 16 + 8};
             }
@@ -524,12 +616,18 @@ public final class VanillaStructureChecker implements StructureChecker {
     private int[] firstKeyPlacementOnly(WorldContext ctx, ResourceKey<Structure> key,
                                         int minX, int maxX, int minZ, int maxZ) {
         List<StructurePlacement> placements = ctx.placementsFor(key);
+        if(placements.isEmpty()&&!hasFallbackSet(ctx,key))return null;
+        if(allRings(placements)){
+            var points=collectRingKey(ctx,key,placements,minX,maxX,minZ,maxZ,false);
+            return points.isEmpty()?null:points.getFirst();
+        }
         if (!placements.isEmpty() && allRandomSpread(placements)) {
             List<int[]> one = takeCands();
             collectSpreadCandidates(ctx, placements, ctx.seed, minX, maxX, minZ, maxZ, one, takeSeen());
             return one.isEmpty() ? null : one.get(0);
         }
         for (int cx = minX; cx <= maxX; cx++) {
+            com.wywf.core.SearchCancellation.checkpoint();
             for (int cz = minZ; cz <= maxZ; cz++) {
                 if (structureChunk(ctx, key, cx, cz, false)) {
                     return new int[]{cx * 16 + 8, cz * 16 + 8};
@@ -632,7 +730,15 @@ public final class VanillaStructureChecker implements StructureChecker {
         StructureSet s = holder.get().value();
         StructurePlacement placement = s.placement();
         long seed = ctx.seed;
+        if(placement instanceof ConcentricRingsStructurePlacement rings){
+            for(var p:ringCandidates(ctx,rings,minX,maxX,minZ,maxZ)){
+                if(checkBiome&&!structureSetBiomeOk(ctx,s,p.x(),p.z()))continue;
+                return new int[]{p.x()*16+8,p.z()*16+8};
+            }
+            return null;
+        }
         for (int cx = minX; cx <= maxX; cx++) {
+            com.wywf.core.SearchCancellation.checkpoint();
             for (int cz = minZ; cz <= maxZ; cz++) {
                 if (isStructureChunk(ctx, placement, seed, cx, cz)) {
                     if (checkBiome && !structureSetBiomeOk(ctx, s, cx, cz)) continue;
@@ -654,7 +760,15 @@ public final class VanillaStructureChecker implements StructureChecker {
         StructureSet s = holder.get().value();
         StructurePlacement placement = s.placement();
         long seed = ctx.seed;
+        if(placement instanceof ConcentricRingsStructurePlacement rings){
+            for(var p:ringCandidates(ctx,rings,minX,maxX,minZ,maxZ)){
+                if(checkBiome&&!structureSetBiomeOk(ctx,s,p.x(),p.z()))continue;
+                long code=((long)p.x()<<32)^(p.z()&0xffffffffL);if(seen.add(code))out.add(new int[]{p.x()*16+8,p.z()*16+8});
+            }
+            return;
+        }
         for (int cx = minX; cx <= maxX; cx++) {
+            com.wywf.core.SearchCancellation.checkpoint();
             for (int cz = minZ; cz <= maxZ; cz++) {
                 if (!isStructureChunk(ctx, placement, seed, cx, cz)) continue;
                 if (checkBiome && !structureSetBiomeOk(ctx, s, cx, cz)) continue;
@@ -690,6 +804,7 @@ public final class VanillaStructureChecker implements StructureChecker {
         ResourceKey<Structure> canonicalKey = resolveKey(canonical);
         if (canonicalKey != null) {
             for (int cx = minX; cx <= maxX; cx++) {
+            com.wywf.core.SearchCancellation.checkpoint();
                 for (int cz = minZ; cz <= maxZ; cz++) {
                     if (structureChunk(ctx, canonicalKey, cx, cz)) return true;
                 }
@@ -702,6 +817,7 @@ public final class VanillaStructureChecker implements StructureChecker {
             ResourceKey<Structure> key = resolveKey(realId);
             if (key == null) continue;
             for (int cx = minX; cx <= maxX; cx++) {
+            com.wywf.core.SearchCancellation.checkpoint();
                 for (int cz = minZ; cz <= maxZ; cz++) {
                     if (structureChunk(ctx, key, cx, cz)) return true;
                 }
@@ -721,6 +837,7 @@ public final class VanillaStructureChecker implements StructureChecker {
         StructurePlacement placement = s.placement();
         long seed = ctx.seed;
         for (int cx = minX; cx <= maxX; cx++) {
+            com.wywf.core.SearchCancellation.checkpoint();
             for (int cz = minZ; cz <= maxZ; cz++) {
                 if (!isStructureChunk(ctx, placement, seed, cx, cz)) continue;
                 if (!structureSetBiomeOk(ctx, s, cx, cz)) continue;

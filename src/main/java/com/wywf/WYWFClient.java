@@ -25,8 +25,24 @@ public final class WYWFClient implements ClientModInitializer {
         worldCreator = new WorldCreator();
         applyQueryLanguage(KeywordDictionary.Lang.AUTO);
         AuditLogger.enable();
+        com.wywf.client.OnlineSearchBenchmark.install();
+        com.wywf.client.ReliefGpu.register();
+        com.wywf.client.SearchHistoryPrompt.install();
+        var mapCategory = net.minecraft.client.KeyMapping.Category.register(
+                net.minecraft.resources.Identifier.fromNamespaceAndPath("wywf", "controls"));
+        var openMap = net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper.registerKeyMapping(
+                new net.minecraft.client.KeyMapping("key.wywf.find_place",
+                        com.mojang.blaze3d.platform.InputConstants.KEY_M, mapCategory));
+        net.fabricmc.fabric.api.client.screen.v1.ScreenEvents.AFTER_INIT.register(
+                (client, screen, width, height) -> com.wywf.client.PauseMapButton.add(client, screen));
+        net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            com.wywf.client.PlayerAtlas.tick(client);
+            while (openMap.consumeClick()) if (client.gui.screen() == null)
+                com.wywf.client.PauseMapButton.openMap(null);
+        });
 
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
+            com.wywf.client.PlayerAtlas.flush();
             if (searcher.isRunning()) searcher.cancel();
         });
 

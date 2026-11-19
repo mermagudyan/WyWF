@@ -14,6 +14,7 @@ import net.minecraft.world.level.biome.MultiNoiseBiomeSourceParameterList;
 import net.minecraft.world.level.biome.MultiNoiseBiomeSourceParameterLists;
 import net.minecraft.core.HolderGetter;
 import net.minecraft.world.level.levelgen.NoiseGeneratorSettings;
+import net.minecraft.world.level.levelgen.RandomState;
 import net.minecraft.world.level.levelgen.synth.NormalNoise;
 import net.minecraft.world.level.levelgen.structure.Structure;
 import net.minecraft.world.level.levelgen.structure.StructureSet;
@@ -42,7 +43,10 @@ public final class MinecraftWorldContextFactory implements WorldContextFactory {
     private final ThreadLocal<ReusableTerrainSampler> reusableTerrainSampler =
             ThreadLocal.withInitial(() -> new ReusableTerrainSampler(noiseSettings, noiseParameters));
 
-    private synchronized void ensureInit() {
+    private void ensureInit() {
+        if (registries == null) initialize();
+    }
+    private synchronized void initialize() {
         if (registries != null) return;
 
         HolderLookup.Provider r = VanillaRegistries.createLookup();
@@ -93,6 +97,22 @@ public final class MinecraftWorldContextFactory implements WorldContextFactory {
                 placementsByStructure, spawnPredictor,
                 registries, NoiseGeneratorSettings.OVERWORLD, structureSets,
                 noiseSettings, () -> terrainSamplerFor(seed));
+    }
+
+    public WorldContext createDimension(long seed, com.wywf.core.DimensionSpace dimension) {
+        if (dimension == com.wywf.core.DimensionSpace.OVERWORLD) return create(seed, false);
+        ensureInit();
+        var key = dimension == com.wywf.core.DimensionSpace.NETHER ? NoiseGeneratorSettings.NETHER : NoiseGeneratorSettings.END;
+        var holder = registries.lookupOrThrow(Registries.NOISE_SETTINGS).getOrThrow(key);
+        BiomeSource source = dimension == com.wywf.core.DimensionSpace.NETHER
+                ? MultiNoiseBiomeSource.createFromPreset(registries.lookupOrThrow(Registries.MULTI_NOISE_BIOME_SOURCE_PARAMETER_LIST)
+                        .getOrThrow(MultiNoiseBiomeSourceParameterLists.NETHER))
+                : net.minecraft.world.level.biome.TheEndBiomeSource.create(registries.lookupOrThrow(Registries.BIOME));
+        var state = RandomState.create(holder.value(), noiseParameters, seed);
+        var sampler = state.sampler();
+        var terrain = new ReusableTerrainSampler(holder.value(), noiseParameters); terrain.reseed(seed);
+        return new WorldContext(seed, source, () -> sampler, placementsByStructure, spawnPredictor, registries,
+                key, structureSets, holder.value(), () -> terrain);
     }
 
     private ReusableTerrainSampler terrainSamplerFor(long seed) {

@@ -1,138 +1,695 @@
 {
-  "wywf.synonym.modifier.near":   ["рядом", "около", "вблизи", "недалеко", "возле", "близко"],
-  "wywf.synonym.modifier.in":     ["в", "во", "внутри"],
-  "wywf.synonym.modifier.some":   ["несколько", "много", "куча", "группа", "скопление"],
-  "wywf.synonym.modifier.far":    ["далеко", "вдали", "далеки", "поодаль"],
-  "wywf.synonym.modifier.under": ["под", "снизу"],
-  "wywf.synonym.modifier.never":  ["нет", "не", "без", "никакого", "никаких", "никакой"],
-  "wywf.synonym.modifier.only":   ["только", "лишь", "одна", "один", "единственная", "единственный"],
-  "wywf.synonym.modifier.between": ["между", "диапазон", "промежуток", "от"],
-  "wywf.synonym.spawn_trigger": ["на", "блок", "встань", "стоять", "блоке"],
-
-  "wywf.synonym.biome.minecraft:forest": ["лес", "лесок", "лесу", "леса"],
-  "wywf.synonym.biome.minecraft:taiga": ["тайга"],
-  "wywf.synonym.biome.minecraft:swamp": ["болото", "болота", "болотом"],
-  "wywf.synonym.biome.minecraft:jungle": ["джунгли", "джунглей"],
-  "wywf.synonym.biome.minecraft:desert": ["пустыня", "пустыни", "пустыней"],
-  "wywf.synonym.biome.minecraft:savanna": ["саванна", "саванн", "саванной"],
-  "wywf.synonym.biome.minecraft:plains": ["равнины", "равнин", "равниной"],
-  "wywf.synonym.biome.minecraft:cherry_grove": ["вишневый лес", "вишнёвый лес", "вишня"],
-  "wywf.synonym.biome.minecraft:dark_forest": ["темный лес", "тёмном лесу", "темном лесу", "тёмный лес", "темным лесом", "тёмным лесом"],
-  "wywf.synonym.biome.minecraft:ocean": ["океан", "море", "океана", "океане"],
-  "wywf.synonym.biome.minecraft:warm_ocean": ["теплый океан", "тёплый океан", "теплого океана", "тёплого океана", "теплом океане", "тёплом океане"],
-  "wywf.synonym.biome.minecraft:cold_ocean": ["холодный океан", "холодного океана", "холодном океане"],
-  "wywf.synonym.biome.minecraft:deep_ocean": ["глубокий океан", "глубокого океана", "глубоком океане"],
-  "wywf.synonym.biome.minecraft:river": ["река", "реки", "реке"],
-  "wywf.synonym.biome.minecraft:badlands": ["пустошь", "меса"],
-  "wywf.synonym.biome.minecraft:wooded_badlands": ["лесистая пустошь"],
-  "wywf.synonym.biome.minecraft:birch_forest": ["березовый лес", "берёзовый лес"],
-  "wywf.synonym.biome.minecraft:flower_forest": ["цветочный лес"],
-  "wywf.synonym.biome.minecraft:mushroom_fields": ["грибные поля", "грибной остров"],
-  "wywf.synonym.biome.minecraft:mangrove_swamp": ["мангровое болото", "мангры"],
-  "wywf.synonym.biome.minecraft:bamboo_jungle": ["бамбуковые джунгли"],
-  "wywf.synonym.biome.minecraft:sparse_jungle": ["редкие джунгли"],
-  "wywf.synonym.biome.minecraft:snowy_plains": ["снежная равнина", "тундра"],
-  "wywf.synonym.biome.minecraft:snowy_taiga": ["снежная тайга"],
-  "wywf.synonym.biome.minecraft:ice_spikes": ["ледяные шипы"],
-  "wywf.synonym.biome.minecraft:meadow": ["луг"],
-  "wywf.synonym.biome.minecraft:grove": ["роща"],
-  "wywf.synonym.biome.minecraft:windswept_hills": ["холмы", "горы"],
-  "wywf.synonym.biome.minecraft:jagged_peaks": ["горные пики", "пики"],
-  "wywf.synonym.biome.minecraft:frozen_ocean": ["замерзший океан", "замёрзший океан", "ледяной океан"],
-  "wywf.synonym.biome.minecraft:lukewarm_ocean": ["тепловатый океан"],
-  "wywf.synonym.biome.minecraft:beach": ["пляж", "берег"],
-  "wywf.synonym.biome.minecraft:sunflower_plains": ["подсолнуховые равнины", "подсолнухи"],
-  "wywf.synonym.biome.minecraft:old_growth_pine_taiga": ["гигантская тайга", "мегатайга"],
-  "wywf.synonym.biome.minecraft:dappled_forest": ["пятнистый лес", "даппл лес"],
-  "wywf.synonym.biome.minecraft:pale_garden": ["бледный сад"],
-  "wywf.synonym.biome.minecraft:savanna_plateau": ["плато саванны", "плато"],
-  "wywf.synonym.biome.minecraft:windswept_savanna": ["ветреная саванна"],
-  "wywf.synonym.biome.minecraft:snowy_beach": ["снежный пляж"],
-  "wywf.synonym.biome.minecraft:stony_shore": ["каменистый берег"],
-  "wywf.synonym.biome.minecraft:frozen_river": ["замерзшая река", "ледяная река"],
-  "wywf.synonym.biome.minecraft:windswept_forest": ["ветреный лес"],
-  "wywf.synonym.biome.minecraft:frozen_peaks": ["замерзшие пики", "ледяные пики"],
-  "wywf.synonym.biome.minecraft:stony_peaks": ["каменистые пики"],
-  "wywf.synonym.biome.minecraft:eroded_badlands": ["эродированная пустошь"],
-
-  "wywf.synonym.biome.minecraft:deep_dark": ["глубокая тьма", "тьма", "дип дарк"],
-  "wywf.synonym.biome.minecraft:lush_caves": ["пышные пещеры", "пышная пещера", "цветущие пещеры"],
-  "wywf.synonym.biome.minecraft:dripstone_caves": ["капельные пещеры", "сталактитовые пещеры", "капельная пещера"],
-  "wywf.synonym.biome.minecraft:sulfur_caves": ["серные пещеры", "серная пещера"],
-
-  "wywf.synonym.structure.minecraft:village": ["деревня", "деревушка", "деревни", "деревню", "деревней"],
-  "wywf.synonym.structure.minecraft:smithy": ["кузница", "кузнец"],
-  "wywf.synonym.structure.minecraft:ruined_portal": ["портал", "разрушенный портал"],
-  "wywf.synonym.structure.minecraft:pillager_outpost": ["аванпост", "форпост"],
-  "wywf.synonym.structure.minecraft:mansion": ["особняк", "особняка", "особняком"],
-  "wywf.synonym.structure.minecraft:desert_pyramid": ["храм", "пирамида", "храм в пустыне", "пустынный храм", "пирамида в пустыне"],
-  "wywf.synonym.structure.minecraft:jungle_temple": ["храм джунглей", "храм в джунглях", "пирамида в джунглях", "джунглевый храм"],
-  "wywf.synonym.structure.minecraft:shipwreck": ["корабль", "кораблекрушение"],
-  "wywf.synonym.structure.minecraft:igloo": ["иглу"],
-  "wywf.synonym.structure.minecraft:stronghold": ["крепость"],
-  "wywf.synonym.structure.minecraft:trial_chambers": ["триал чамберс"],
-  "wywf.synonym.structure.minecraft:ancient_city": ["древний город"],
-  "wywf.synonym.structure.minecraft:mineshaft": ["шахта", "рудник"],
-  "wywf.synonym.structure.minecraft:swamp_hut": ["хижина ведьмы", "болотная хижина", "хижина ведьмы в болоте", "болотная избушка"],
-  "wywf.synonym.structure.minecraft:ocean_monument": ["монумент", "подводный храм", "подводный храм в океане", "океанский монумент"],
-  "wywf.synonym.structure.minecraft:ocean_ruins": ["руины океана", "подводные руины"],
-  "wywf.synonym.structure.minecraft:buried_treasure": ["закопанное сокровище", "клад", "сокровище"],
-  "wywf.synonym.structure.minecraft:trail_ruins": ["тропные руины"],
-  "wywf.synonym.structure.minecraft:nether_fossil": ["незер-ископаемое", "ископаемое незера"],
-  "wywf.synonym.structure.minecraft:abandoned_camp": ["заброшенный лагерь", "лагерь"],
-
-  "wywf.synonym.structure.minecraft:village_plains": ["деревня на равнинах", "равнинная деревня", "деревня в равнине"],
-  "wywf.synonym.structure.minecraft:village_desert": ["деревня в пустыне", "пустынная деревня"],
-  "wywf.synonym.structure.minecraft:village_savanna": ["деревня в саванне", "саванная деревня"],
-  "wywf.synonym.structure.minecraft:village_snowy": ["деревня в снежной тундре", "снежная деревня"],
-  "wywf.synonym.structure.minecraft:village_taiga": ["деревня в тайге", "таёжная деревня"],
-
-  "wywf.synonym.structure.minecraft:ocean_ruin_cold": ["холодные подводные руины"],
-  "wywf.synonym.structure.minecraft:ocean_ruin_warm": ["тёплые подводные руины"],
-  "wywf.synonym.structure.minecraft:mineshaft_mesa": ["шахта в месе", "месовая шахта"],
-  "wywf.synonym.structure.minecraft:shipwreck_beached": ["вылетевший на берег корабль", "прибитый корабль"],
-  "wywf.synonym.structure.minecraft:ruined_portal_desert": ["разрушенный портал в пустыне"],
-  "wywf.synonym.structure.minecraft:ruined_portal_jungle": ["разрушенный портал в джунглях"],
-  "wywf.synonym.structure.minecraft:ruined_portal_swamp": ["разрушенный портал в болоте"],
-  "wywf.synonym.structure.minecraft:ruined_portal_mountain": ["разрушенный портал в горах"],
-  "wywf.synonym.structure.minecraft:ruined_portal_ocean": ["разрушенный портал в океане"],
-  "wywf.synonym.structure.minecraft:ruined_portal_nether": ["разрушенный портал в незере"],
-
-  "wywf.synonym.object.minecraft:tree": ["дерево"],
-  "wywf.synonym.object.minecraft:water": ["вода"],
-  "wywf.synonym.object.minecraft:lava": ["лава"],
-
-  "wywf.synonym.block.minecraft:grass_block": ["трава", "травяной блок"],
-  "wywf.synonym.block.minecraft:dirt": ["земля"],
-  "wywf.synonym.block.minecraft:coarse_dirt": ["крупная земля"],
-  "wywf.synonym.block.minecraft:sand": ["песок", "песчаный блок"],
-  "wywf.synonym.block.minecraft:stone": ["камень", "камень"],
-  "wywf.synonym.block.minecraft:snow_block": ["снег", "снежный блок"],
-  "wywf.synonym.block.minecraft:podzol": ["подзол"],
-  "wywf.synonym.block.minecraft:mycelium": ["мицелий"],
-  "wywf.synonym.block.minecraft:gravel": ["гравий"],
-  "wywf.synonym.block.any_solid": ["любой твёрдый блок", "любой твёрдый", "любые твёрдые", "любых твёрдых", "твёрдый блок", "твердый блок", "твёрдых", "твердых", "твёрдое", "твердое"],
-  "wywf.synonym.block.minecraft:clay": ["глина"],
-  "wywf.synonym.block.minecraft:terracotta": ["терракота"],
-  "wywf.synonym.block.minecraft:red_sand": ["красный песок"],
-  "wywf.synonym.block.minecraft:netherrack": ["незерит", "адский камень", "неазерит"],
-  "wywf.synonym.block.minecraft:soul_sand": ["песок душ", "песок душ"],
-  "wywf.synonym.block.minecraft:basalt": ["базальт"],
-  "wywf.synonym.block.minecraft:blackstone": ["чёрный камень", "блэкстоун"],
-  "wywf.synonym.block.minecraft:end_stone": ["эндовый камень", "камень энда"],
-  "wywf.synonym.block.minecraft:obsidian": ["обсидиан"],
-  "wywf.synonym.block.minecraft:ice": ["лёд", "лед"],
-  "wywf.synonym.block.minecraft:packed_ice": ["спрессованный лёд", "спресованный лед"],
-  "wywf.synonym.block.minecraft:cobblestone": ["булыжник", "гравийный камень"],
-  "wywf.synonym.block.minecraft:moss_block": ["мох", "моховой блок"],
-  "wywf.synonym.block.minecraft:rooted_dirt": ["корневая земля", "корневая почва"],
-
-  "wywf.variant.minecraft:village": ["minecraft:village_plains", "minecraft:village_desert", "minecraft:village_savanna", "minecraft:village_snowy", "minecraft:village_taiga"],
-  "wywf.variant.minecraft:smithy": ["minecraft:village_plains", "minecraft:village_desert", "minecraft:village_savanna", "minecraft:village_snowy", "minecraft:village_taiga"],
-  "wywf.variant.minecraft:jungle_temple": ["minecraft:jungle_pyramid"],
-  "wywf.variant.minecraft:shipwreck": ["minecraft:shipwreck", "minecraft:shipwreck_beached"],
-  "wywf.variant.minecraft:ruined_portal": ["minecraft:ruined_portal", "minecraft:ruined_portal_desert", "minecraft:ruined_portal_jungle", "minecraft:ruined_portal_swamp", "minecraft:ruined_portal_mountain", "minecraft:ruined_portal_ocean", "minecraft:ruined_portal_nether"],
-  "wywf.variant.minecraft:mineshaft": ["minecraft:mineshaft", "minecraft:mineshaft_mesa"],
-  "wywf.variant.minecraft:ocean_monument": ["minecraft:monument"],
-  "wywf.variant.minecraft:ocean_ruins": ["minecraft:ocean_ruin_cold", "minecraft:ocean_ruin_warm"]
+  "wywf.synonym.modifier.near": [
+    "рядом",
+    "около",
+    "вблизи",
+    "недалеко",
+    "возле",
+    "близко"
+  ],
+  "wywf.synonym.modifier.in": [
+    "в",
+    "во",
+    "внутри"
+  ],
+  "wywf.synonym.modifier.some": [
+    "несколько",
+    "много",
+    "куча",
+    "группа",
+    "скопление"
+  ],
+  "wywf.synonym.modifier.far": [
+    "далеко",
+    "вдали",
+    "далеки",
+    "поодаль"
+  ],
+  "wywf.synonym.modifier.under": [
+    "под",
+    "снизу"
+  ],
+  "wywf.synonym.modifier.never": [
+    "нет",
+    "не",
+    "без",
+    "никакого",
+    "никаких",
+    "никакой"
+  ],
+  "wywf.synonym.modifier.only": [
+    "только",
+    "лишь",
+    "одна",
+    "один",
+    "единственная",
+    "единственный"
+  ],
+  "wywf.synonym.modifier.between": [
+    "между",
+    "диапазон",
+    "промежуток",
+    "от"
+  ],
+  "wywf.synonym.spawn_trigger": [
+    "на",
+    "блок",
+    "встань",
+    "стоять",
+    "блоке"
+  ],
+  "wywf.synonym.biome.minecraft:forest": [
+    "лес",
+    "лесок",
+    "лесу",
+    "леса"
+  ],
+  "wywf.synonym.biome.minecraft:taiga": [
+    "тайга"
+  ],
+  "wywf.synonym.biome.minecraft:swamp": [
+    "болото",
+    "болота",
+    "болотом"
+  ],
+  "wywf.synonym.biome.minecraft:jungle": [
+    "джунгли",
+    "джунглей"
+  ],
+  "wywf.synonym.biome.minecraft:desert": [
+    "пустыня",
+    "пустыни",
+    "пустыней",
+    "пустыню",
+    "пустыне"
+  ],
+  "wywf.synonym.biome.minecraft:savanna": [
+    "саванна",
+    "саванн",
+    "саванной"
+  ],
+  "wywf.synonym.biome.minecraft:plains": [
+    "равнины",
+    "равнин",
+    "равниной"
+  ],
+  "wywf.synonym.biome.minecraft:cherry_grove": [
+    "вишневый лес",
+    "вишнёвый лес",
+    "вишня",
+    "вишневый сад",
+    "вишнёвый сад"
+  ],
+  "wywf.synonym.biome.minecraft:dark_forest": [
+    "темный лес",
+    "тёмном лесу",
+    "темном лесу",
+    "тёмный лес",
+    "темным лесом",
+    "тёмным лесом"
+  ],
+  "wywf.synonym.biome.minecraft:ocean": [
+    "океан",
+    "море",
+    "океана",
+    "океане"
+  ],
+  "wywf.synonym.biome.minecraft:warm_ocean": [
+    "теплый океан",
+    "тёплый океан",
+    "теплого океана",
+    "тёплого океана",
+    "теплом океане",
+    "тёплом океане"
+  ],
+  "wywf.synonym.biome.minecraft:cold_ocean": [
+    "холодный океан",
+    "холодного океана",
+    "холодном океане"
+  ],
+  "wywf.synonym.biome.minecraft:deep_ocean": [
+    "глубокий океан",
+    "глубокого океана",
+    "глубоком океане"
+  ],
+  "wywf.synonym.biome.minecraft:river": [
+    "река",
+    "реки",
+    "реке"
+  ],
+  "wywf.synonym.biome.minecraft:badlands": [
+    "пустошь",
+    "меса"
+  ],
+  "wywf.synonym.biome.minecraft:wooded_badlands": [
+    "лесистая пустошь"
+  ],
+  "wywf.synonym.biome.minecraft:birch_forest": [
+    "березовый лес",
+    "берёзовый лес"
+  ],
+  "wywf.synonym.biome.minecraft:flower_forest": [
+    "цветочный лес"
+  ],
+  "wywf.synonym.biome.minecraft:mushroom_fields": [
+    "грибные поля",
+    "грибной остров"
+  ],
+  "wywf.synonym.biome.minecraft:mangrove_swamp": [
+    "мангровое болото",
+    "мангры"
+  ],
+  "wywf.synonym.biome.minecraft:bamboo_jungle": [
+    "бамбуковые джунгли"
+  ],
+  "wywf.synonym.biome.minecraft:sparse_jungle": [
+    "редкие джунгли"
+  ],
+  "wywf.synonym.biome.minecraft:snowy_plains": [
+    "снежная равнина",
+    "тундра"
+  ],
+  "wywf.synonym.biome.minecraft:snowy_taiga": [
+    "снежная тайга"
+  ],
+  "wywf.synonym.biome.minecraft:ice_spikes": [
+    "ледяные шипы"
+  ],
+  "wywf.synonym.biome.minecraft:meadow": [
+    "луг"
+  ],
+  "wywf.synonym.biome.minecraft:grove": [
+    "роща"
+  ],
+  "wywf.synonym.biome.minecraft:windswept_hills": [
+    "холмы",
+    "горы"
+  ],
+  "wywf.synonym.biome.minecraft:jagged_peaks": [
+    "горные пики",
+    "пики"
+  ],
+  "wywf.synonym.biome.minecraft:frozen_ocean": [
+    "замерзший океан",
+    "замёрзший океан",
+    "ледяной океан"
+  ],
+  "wywf.synonym.biome.minecraft:lukewarm_ocean": [
+    "тепловатый океан"
+  ],
+  "wywf.synonym.biome.minecraft:beach": [
+    "пляж",
+    "берег"
+  ],
+  "wywf.synonym.biome.minecraft:sunflower_plains": [
+    "подсолнуховые равнины",
+    "подсолнухи"
+  ],
+  "wywf.synonym.biome.minecraft:old_growth_pine_taiga": [
+    "гигантская тайга",
+    "мегатайга"
+  ],
+  "wywf.synonym.biome.minecraft:dappled_forest": [
+    "пятнистый лес",
+    "даппл лес"
+  ],
+  "wywf.synonym.biome.minecraft:pale_garden": [
+    "бледный сад"
+  ],
+  "wywf.synonym.biome.minecraft:savanna_plateau": [
+    "плато саванны",
+    "плато"
+  ],
+  "wywf.synonym.biome.minecraft:windswept_savanna": [
+    "ветреная саванна"
+  ],
+  "wywf.synonym.biome.minecraft:snowy_beach": [
+    "снежный пляж"
+  ],
+  "wywf.synonym.biome.minecraft:stony_shore": [
+    "каменистый берег"
+  ],
+  "wywf.synonym.biome.minecraft:frozen_river": [
+    "замерзшая река",
+    "ледяная река"
+  ],
+  "wywf.synonym.biome.minecraft:windswept_forest": [
+    "ветреный лес"
+  ],
+  "wywf.synonym.biome.minecraft:frozen_peaks": [
+    "замерзшие пики",
+    "ледяные пики"
+  ],
+  "wywf.synonym.biome.minecraft:stony_peaks": [
+    "каменистые пики"
+  ],
+  "wywf.synonym.biome.minecraft:eroded_badlands": [
+    "эродированная пустошь"
+  ],
+  "wywf.synonym.biome.minecraft:deep_dark": [
+    "глубокая тьма",
+    "тьма",
+    "дип дарк"
+  ],
+  "wywf.synonym.biome.minecraft:lush_caves": [
+    "пышные пещеры",
+    "пышная пещера",
+    "цветущие пещеры"
+  ],
+  "wywf.synonym.biome.minecraft:dripstone_caves": [
+    "капельные пещеры",
+    "сталактитовые пещеры",
+    "капельная пещера"
+  ],
+  "wywf.synonym.biome.minecraft:sulfur_caves": [
+    "серные пещеры",
+    "серная пещера"
+  ],
+  "wywf.synonym.structure.minecraft:village": [
+    "деревня",
+    "деревушка",
+    "деревни",
+    "деревню",
+    "деревней"
+  ],
+  "wywf.synonym.structure.minecraft:smithy": [
+    "кузница",
+    "кузнец"
+  ],
+  "wywf.synonym.structure.minecraft:ruined_portal": [
+    "портал",
+    "разрушенный портал"
+  ],
+  "wywf.synonym.structure.minecraft:pillager_outpost": [
+    "аванпост",
+    "форпост"
+  ],
+  "wywf.synonym.structure.minecraft:mansion": [
+    "особняк",
+    "особняка",
+    "особняком"
+  ],
+  "wywf.synonym.structure.minecraft:desert_pyramid": [
+    "храм",
+    "пирамида",
+    "храм в пустыне",
+    "пустынный храм",
+    "пирамида в пустыне"
+  ],
+  "wywf.synonym.structure.minecraft:jungle_temple": [
+    "храм джунглей",
+    "храм в джунглях",
+    "пирамида в джунглях",
+    "джунглевый храм"
+  ],
+  "wywf.synonym.structure.minecraft:shipwreck": [
+    "корабль",
+    "кораблекрушение"
+  ],
+  "wywf.synonym.structure.minecraft:igloo": [
+    "иглу"
+  ],
+  "wywf.synonym.structure.minecraft:stronghold": [
+    "крепость"
+  ],
+  "wywf.synonym.structure.minecraft:trial_chambers": [
+    "триал чамберс"
+  ],
+  "wywf.synonym.structure.minecraft:ancient_city": [
+    "древний город"
+  ],
+  "wywf.synonym.structure.minecraft:mineshaft": [
+    "шахта",
+    "рудник"
+  ],
+  "wywf.synonym.structure.minecraft:swamp_hut": [
+    "хижина ведьмы",
+    "болотная хижина",
+    "хижина ведьмы в болоте",
+    "болотная избушка"
+  ],
+  "wywf.synonym.structure.minecraft:ocean_monument": [
+    "монумент",
+    "подводный храм",
+    "подводный храм в океане",
+    "океанский монумент"
+  ],
+  "wywf.synonym.structure.minecraft:ocean_ruins": [
+    "руины океана",
+    "подводные руины"
+  ],
+  "wywf.synonym.structure.minecraft:buried_treasure": [
+    "закопанное сокровище",
+    "клад",
+    "сокровище"
+  ],
+  "wywf.synonym.structure.minecraft:trail_ruins": [
+    "тропные руины"
+  ],
+  "wywf.synonym.structure.minecraft:nether_fossil": [
+    "незер-ископаемое",
+    "ископаемое незера"
+  ],
+  "wywf.synonym.structure.minecraft:abandoned_camp": [
+    "заброшенный лагерь",
+    "лагерь"
+  ],
+  "wywf.synonym.structure.minecraft:village_plains": [
+    "деревня на равнинах",
+    "равнинная деревня",
+    "деревня в равнине"
+  ],
+  "wywf.synonym.structure.minecraft:village_desert": [
+    "деревня в пустыне",
+    "пустынная деревня"
+  ],
+  "wywf.synonym.structure.minecraft:village_savanna": [
+    "деревня в саванне",
+    "саванная деревня"
+  ],
+  "wywf.synonym.structure.minecraft:village_snowy": [
+    "деревня в снежной тундре",
+    "снежная деревня"
+  ],
+  "wywf.synonym.structure.minecraft:village_taiga": [
+    "деревня в тайге",
+    "таёжная деревня"
+  ],
+  "wywf.synonym.structure.minecraft:ocean_ruin_cold": [
+    "холодные подводные руины"
+  ],
+  "wywf.synonym.structure.minecraft:ocean_ruin_warm": [
+    "тёплые подводные руины"
+  ],
+  "wywf.synonym.structure.minecraft:mineshaft_mesa": [
+    "шахта в месе",
+    "месовая шахта"
+  ],
+  "wywf.synonym.structure.minecraft:shipwreck_beached": [
+    "вылетевший на берег корабль",
+    "прибитый корабль"
+  ],
+  "wywf.synonym.structure.minecraft:ruined_portal_desert": [
+    "разрушенный портал в пустыне"
+  ],
+  "wywf.synonym.structure.minecraft:ruined_portal_jungle": [
+    "разрушенный портал в джунглях"
+  ],
+  "wywf.synonym.structure.minecraft:ruined_portal_swamp": [
+    "разрушенный портал в болоте"
+  ],
+  "wywf.synonym.structure.minecraft:ruined_portal_mountain": [
+    "разрушенный портал в горах"
+  ],
+  "wywf.synonym.structure.minecraft:ruined_portal_ocean": [
+    "разрушенный портал в океане"
+  ],
+  "wywf.synonym.structure.minecraft:ruined_portal_nether": [
+    "разрушенный портал незера"
+  ],
+  "wywf.synonym.object.minecraft:tree": [
+    "дерево"
+  ],
+  "wywf.synonym.object.minecraft:water": [
+    "вода"
+  ],
+  "wywf.synonym.object.minecraft:lava": [
+    "лава"
+  ],
+  "wywf.synonym.block.minecraft:grass_block": [
+    "трава",
+    "травяной блок"
+  ],
+  "wywf.synonym.block.minecraft:dirt": [
+    "земля"
+  ],
+  "wywf.synonym.block.minecraft:coarse_dirt": [
+    "крупная земля"
+  ],
+  "wywf.synonym.block.minecraft:sand": [
+    "песок",
+    "песчаный блок"
+  ],
+  "wywf.synonym.block.minecraft:stone": [
+    "камень",
+    "камень"
+  ],
+  "wywf.synonym.block.minecraft:snow_block": [
+    "снег",
+    "снежный блок"
+  ],
+  "wywf.synonym.block.minecraft:podzol": [
+    "подзол"
+  ],
+  "wywf.synonym.block.minecraft:mycelium": [
+    "мицелий"
+  ],
+  "wywf.synonym.block.minecraft:gravel": [
+    "гравий"
+  ],
+  "wywf.synonym.block.any_solid": [
+    "любой твёрдый блок",
+    "любой твёрдый",
+    "любые твёрдые",
+    "любых твёрдых",
+    "твёрдый блок",
+    "твердый блок",
+    "твёрдых",
+    "твердых",
+    "твёрдое",
+    "твердое"
+  ],
+  "wywf.synonym.block.minecraft:clay": [
+    "глина"
+  ],
+  "wywf.synonym.block.minecraft:terracotta": [
+    "терракота"
+  ],
+  "wywf.synonym.block.minecraft:red_sand": [
+    "красный песок"
+  ],
+  "wywf.synonym.block.minecraft:netherrack": [
+    "незерит",
+    "адский камень",
+    "неазерит"
+  ],
+  "wywf.synonym.block.minecraft:soul_sand": [
+    "песок душ",
+    "песок душ"
+  ],
+  "wywf.synonym.block.minecraft:basalt": [
+    "базальт"
+  ],
+  "wywf.synonym.block.minecraft:blackstone": [
+    "чёрный камень",
+    "блэкстоун"
+  ],
+  "wywf.synonym.block.minecraft:end_stone": [
+    "эндовый камень",
+    "камень энда"
+  ],
+  "wywf.synonym.block.minecraft:obsidian": [
+    "обсидиан"
+  ],
+  "wywf.synonym.block.minecraft:ice": [
+    "лёд",
+    "лед"
+  ],
+  "wywf.synonym.block.minecraft:packed_ice": [
+    "спрессованный лёд",
+    "спресованный лед"
+  ],
+  "wywf.synonym.block.minecraft:cobblestone": [
+    "булыжник",
+    "гравийный камень"
+  ],
+  "wywf.synonym.block.minecraft:moss_block": [
+    "мох",
+    "моховой блок"
+  ],
+  "wywf.synonym.block.minecraft:rooted_dirt": [
+    "корневая земля",
+    "корневая почва"
+  ],
+  "wywf.variant.minecraft:village": [
+    "minecraft:village_plains",
+    "minecraft:village_desert",
+    "minecraft:village_savanna",
+    "minecraft:village_snowy",
+    "minecraft:village_taiga"
+  ],
+  "wywf.variant.minecraft:smithy": [
+    "minecraft:village_plains",
+    "minecraft:village_desert",
+    "minecraft:village_savanna",
+    "minecraft:village_snowy",
+    "minecraft:village_taiga"
+  ],
+  "wywf.variant.minecraft:jungle_temple": [
+    "minecraft:jungle_pyramid"
+  ],
+  "wywf.variant.minecraft:shipwreck": [
+    "minecraft:shipwreck",
+    "minecraft:shipwreck_beached"
+  ],
+  "wywf.variant.minecraft:ruined_portal": [
+    "minecraft:ruined_portal",
+    "minecraft:ruined_portal_desert",
+    "minecraft:ruined_portal_jungle",
+    "minecraft:ruined_portal_swamp",
+    "minecraft:ruined_portal_mountain",
+    "minecraft:ruined_portal_ocean",
+    "minecraft:ruined_portal_nether"
+  ],
+  "wywf.variant.minecraft:mineshaft": [
+    "minecraft:mineshaft",
+    "minecraft:mineshaft_mesa"
+  ],
+  "wywf.variant.minecraft:ocean_monument": [
+    "minecraft:monument"
+  ],
+  "wywf.variant.minecraft:ocean_ruins": [
+    "minecraft:ocean_ruin_cold",
+    "minecraft:ocean_ruin_warm"
+  ],
+  "wywf.synonym.biome.minecraft:old_growth_birch_forest": [
+    "старовозрастный березняк"
+  ],
+  "wywf.synonym.biome.minecraft:old_growth_spruce_taiga": [
+    "старовозрастная еловая тайга"
+  ],
+  "wywf.synonym.biome.minecraft:windswept_gravelly_hills": [
+    "ветреные гравийные холмы"
+  ],
+  "wywf.synonym.biome.minecraft:snowy_slopes": [
+    "снежные склоны"
+  ],
+  "wywf.synonym.biome.minecraft:deep_lukewarm_ocean": [
+    "глубокий умеренный океан"
+  ],
+  "wywf.synonym.biome.minecraft:deep_cold_ocean": [
+    "глубокий холодный океан"
+  ],
+  "wywf.synonym.biome.minecraft:deep_frozen_ocean": [
+    "глубокий замёрзший океан"
+  ],
+  "wywf.synonym.structure.minecraft:abandoned_camp_bamboo_jungle": [
+    "заброшенный лагерь в бамбуковых джунглях"
+  ],
+  "wywf.synonym.structure.minecraft:abandoned_camp_birch_forest": [
+    "заброшенный лагерь в березняке"
+  ],
+  "wywf.synonym.structure.minecraft:abandoned_camp_cherry_grove": [
+    "заброшенный лагерь в вишнёвой роще"
+  ],
+  "wywf.synonym.structure.minecraft:abandoned_camp_dappled_forest": [
+    "заброшенный лагерь в пятнистом лесу"
+  ],
+  "wywf.synonym.structure.minecraft:abandoned_camp_flower_forest": [
+    "заброшенный лагерь в цветочном лесу"
+  ],
+  "wywf.synonym.structure.minecraft:abandoned_camp_forest": [
+    "заброшенный лагерь в лесу"
+  ],
+  "wywf.synonym.structure.minecraft:abandoned_camp_meadow": [
+    "заброшенный лагерь в лугу"
+  ],
+  "wywf.synonym.structure.minecraft:abandoned_camp_old_growth_birch_forest": [
+    "заброшенный лагерь в старовозрастном березняке"
+  ],
+  "wywf.synonym.structure.minecraft:abandoned_camp_old_growth_pine_taiga": [
+    "заброшенный лагерь в старовозрастной сосновой тайге"
+  ],
+  "wywf.synonym.structure.minecraft:abandoned_camp_old_growth_spruce_taiga": [
+    "заброшенный лагерь в старовозрастной еловой тайге"
+  ],
+  "wywf.synonym.structure.minecraft:abandoned_camp_pale_garden": [
+    "заброшенный лагерь в бледном саду"
+  ],
+  "wywf.synonym.structure.minecraft:abandoned_camp_savanna": [
+    "заброшенный лагерь в саванне"
+  ],
+  "wywf.synonym.structure.minecraft:abandoned_camp_snowy_taiga": [
+    "заброшенный лагерь в снежной тайге"
+  ],
+  "wywf.synonym.structure.minecraft:abandoned_camp_sparse_jungle": [
+    "заброшенный лагерь в редких джунглях"
+  ],
+  "wywf.synonym.structure.minecraft:abandoned_camp_swamp": [
+    "заброшенный лагерь в болоте"
+  ],
+  "wywf.synonym.structure.minecraft:abandoned_camp_taiga": [
+    "заброшенный лагерь в тайге"
+  ],
+  "wywf.synonym.structure.minecraft:abandoned_camp_windswept_forest": [
+    "заброшенный лагерь в ветреном лесу"
+  ],
+  "wywf.synonym.structure.minecraft:abandoned_camp_wooded_badlands": [
+    "заброшенный лагерь в лесистых пустошах"
+  ],
+  "wywf.variant.minecraft:abandoned_camp": [
+    "minecraft:abandoned_camp_bamboo_jungle",
+    "minecraft:abandoned_camp_birch_forest",
+    "minecraft:abandoned_camp_cherry_grove",
+    "minecraft:abandoned_camp_dappled_forest",
+    "minecraft:abandoned_camp_flower_forest",
+    "minecraft:abandoned_camp_forest",
+    "minecraft:abandoned_camp_meadow",
+    "minecraft:abandoned_camp_old_growth_birch_forest",
+    "minecraft:abandoned_camp_old_growth_pine_taiga",
+    "minecraft:abandoned_camp_old_growth_spruce_taiga",
+    "minecraft:abandoned_camp_pale_garden",
+    "minecraft:abandoned_camp_savanna",
+    "minecraft:abandoned_camp_snowy_taiga",
+    "minecraft:abandoned_camp_sparse_jungle",
+    "minecraft:abandoned_camp_swamp",
+    "minecraft:abandoned_camp_taiga",
+    "minecraft:abandoned_camp_windswept_forest",
+    "minecraft:abandoned_camp_wooded_badlands"
+  ],
+  "wywf.synonym.structure.minecraft:fortress": [
+    "крепость незера",
+    "незер крепость"
+  ],
+  "wywf.synonym.structure.minecraft:bastion": [
+    "бастион",
+    "остатки бастиона"
+  ],
+  "wywf.synonym.structure.minecraft:end_city": [
+    "город края",
+    "город энда"
+  ],
+  "wywf.variant.minecraft:bastion": [
+    "minecraft:bastion_remnant"
+  ],
+  "wywf.synonym.biome.minecraft:nether_wastes": [
+    "пустоши незера"
+  ],
+  "wywf.synonym.biome.minecraft:soul_sand_valley": [
+    "долина песка душ"
+  ],
+  "wywf.synonym.biome.minecraft:crimson_forest": [
+    "багровый лес"
+  ],
+  "wywf.synonym.biome.minecraft:warped_forest": [
+    "искажённый лес"
+  ],
+  "wywf.synonym.biome.minecraft:basalt_deltas": [
+    "базальтовые дельты"
+  ],
+  "wywf.synonym.biome.minecraft:the_end": [
+    "край"
+  ],
+  "wywf.synonym.biome.minecraft:small_end_islands": [
+    "малые острова края"
+  ],
+  "wywf.synonym.biome.minecraft:end_midlands": [
+    "средние земли края"
+  ],
+  "wywf.synonym.biome.minecraft:end_highlands": [
+    "высоты края"
+  ],
+  "wywf.synonym.biome.minecraft:end_barrens": [
+    "окраины края"
+  ]
 }

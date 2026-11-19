@@ -3,6 +3,8 @@ package com.wywf.mixin;
 import com.wywf.WYWFClient;
 import com.wywf.client.DidYouMeanScreen;
 import com.wywf.client.SearchScreen;
+import com.wywf.client.SearchAdviceScreen;
+import com.wywf.core.QueryAdvisor;
 import com.wywf.core.ConfigStore;
 import com.wywf.core.ParsedQuery;
 import com.wywf.core.SearchConfig;
@@ -36,6 +38,10 @@ public abstract class CreateWorldScreenMixin {
         if (seedText == null || seedText.isBlank()) return;
 
         ParsedQuery query = WYWFClient.parser().parse(seedText);
+        if (query.error() != null) {
+            ci.cancel();
+            Minecraft.getInstance().setScreenAndShow(new com.wywf.client.QuerySyntaxScreen(self, query, ConfigStore.load())); return;
+        }
         if (query.isEmpty()) {
             if (query.ignoredWords().isEmpty()) return;
             Map<String, String> corrections = DidYouMeanScreen.findCorrections(query.ignoredWords());
@@ -63,7 +69,11 @@ public abstract class CreateWorldScreenMixin {
             }
         }
 
+        if (QueryAdvisor.inspect(query, config).reviewBeforeSearch()) {
+            Minecraft.getInstance().setScreenAndShow(new SearchAdviceScreen(self, seedText, query, config));
+            return;
+        }
         SearchScreen screen = new SearchScreen(self, seedText, query, config);
-        Minecraft.getInstance().setScreenAndShow(screen);
+        screen.open();
     }
 }

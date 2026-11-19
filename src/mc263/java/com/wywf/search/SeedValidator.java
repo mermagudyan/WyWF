@@ -69,6 +69,7 @@ public final class SeedValidator {
         }
     }
 
+    private boolean estimated;
     private final StructureChecker structureChecker;
     private final BiomeChecker     biomeChecker;
     private final int              searchRadiusChunks;
@@ -98,8 +99,7 @@ public final class SeedValidator {
 
     // Copy with term order cached for one query
     public SeedValidator withQuery(ParsedQuery query) {
-        return new SeedValidator(structureChecker, biomeChecker,
-                searchRadiusChunks, biomeRadiusChunks, reorder(query.terms()));
+        var v=new SeedValidator(structureChecker,biomeChecker,searchRadiusChunks,biomeRadiusChunks,reorder(query.terms()));v.estimated=query.estimated();return v;
     }
 
     public StructureChecker structureChecker() {
@@ -108,7 +108,10 @@ public final class SeedValidator {
 
     // Scan radius validate() uses; placement is low-48-only so prefilter rejects whole bases
     public int structureScanRadiusChunks(ParsedQuery.Term term) {
+        if(estimated)return chunks(TargetDistance.radius(term,searchRadiusChunks*16)+TargetDistance.PLACEMENT_MARGIN);
         return switch (term.modifier) {
+            case AT -> chunks(128);
+            case EXACTLY, AT_LEAST, AT_MOST -> chunks(term.betweenMax > 0 ? term.betweenMax : 500);
             case NEAR    -> chunks(NEAR_BLOCKS);
             case IN      -> UNDERGROUND.contains(term.canonical) ? searchRadiusChunks : chunks(IN_ON_BLOCKS);
             case FAR     -> chunks(FAR_MAX_BLOCKS);
@@ -174,8 +177,10 @@ public final class SeedValidator {
 
     // Distance limit evalStructureTerm enforces for DEFAULT/NEAR/IN (keep in sync); used by the placement gate
     public int structureGateLimitBlocks(ParsedQuery.Term term) {
+        if(estimated)return structureScanRadiusChunks(term)*16;
         return switch (term.modifier) {
             case IN -> IN_ON_BLOCKS;
+            case AT -> 128;
             case NEAR -> NEAR_BLOCKS;
             default -> structureScanRadiusChunks(term) * 16;
         };
@@ -393,10 +398,31 @@ public final class SeedValidator {
     }
 
     private Outcome validate(WorldContext ctx, long seed, ParsedQuery query, int cx, int cz) {
+        if (query.error() != null) return Outcome.rejected(Reason.OBJECT_MISMATCH, StructureChecker.Result.notFound());
+        if (!query.hasLogic() && query.terms().stream().anyMatch(com.wywf.core.DimensionSpace::external)) {
+            var local = new ParsedQuery(query.raw(), query.terms().stream().filter(t -> !com.wywf.core.DimensionSpace.external(t)).toList());
+            var outcome = new SeedValidator(structureChecker, biomeChecker, searchRadiusChunks, biomeRadiusChunks)
+                    .withQuery(query.estimated()?local.estimate():local).validate(ctx,seed,query.estimated()?local.estimate():local,cx,cz);
+            return outcome.accepted ? Outcome.accepted(QueryLogic.merge(query, seed, cx, cz, List.of(outcome.result)),
+                    StructureChecker.Result.notFound(), List.of(), List.of()) : outcome;
+        }
+        if (query.hasLogic()) {
+            List<SearchResult> witnesses = new ArrayList<>();
+            var evaluator = new SeedValidator(structureChecker,biomeChecker,searchRadiusChunks,biomeRadiusChunks);evaluator.estimated=query.estimated();
+            var truth = QueryLogic.evaluate(query.logic(), term -> {
+                if (com.wywf.core.DimensionSpace.external(term)||query.estimated()&&TargetDistance.deferred(term)) return QueryLogic.Truth.UNKNOWN;
+                var outcome = evaluator.validate(ctx, seed, (query.estimated() ? new ParsedQuery(term.toString(),List.of(term)).estimate() : new ParsedQuery(term.toString(),List.of(term))), cx, cz);
+                if (outcome.accepted) witnesses.add(outcome.result);
+                return outcome.accepted && (term.biomeRegionCount() || term.loot != null || !term.tags.empty()) ? QueryLogic.Truth.UNKNOWN : QueryLogic.Truth.of(outcome.accepted);
+            });
+            return truth != QueryLogic.Truth.NO
+                    ? Outcome.accepted(QueryLogic.merge(query, seed, cx, cz, witnesses), StructureChecker.Result.notFound(), List.of(), List.of())
+                    : Outcome.rejected(Reason.OBJECT_MISMATCH, StructureChecker.Result.notFound());
+        }
         StructureChecker.Result spawnStruct = StructureChecker.Result.notFound();
 
         List<ParsedQuery.Term> terms = cachedTermOrder.isEmpty() ? reorder(query.terms()) : cachedTermOrder;
-        Map<Integer, BiomeField> fields = sampleBiomeFields(ctx, cx, cz, terms);
+        Map<Integer,BiomeField> fields=null;
 
         List<String> matchedStructures = null;
         List<String> structModifiers = null;
@@ -412,13 +438,14 @@ public final class SeedValidator {
             switch (term.category) {
                 case STRUCTURE -> {
                     StructureChecker.Result r = evalStructureTerm(ctx, cx, cz, term);
+                    SearchDiagnostics.record(term,r!=null);
                     if (r == null) return Outcome.rejected(Reason.NO_STRUCTURE, spawnStruct);
                     if (r.found) {
                         if (matchedStructures == null) { matchedStructures = new ArrayList<>(4); structModifiers = new ArrayList<>(4); }
                         matchedStructures.add(term.canonical);
                         structModifiers.add(term.modifier.name());
                         if (term.modifier == Modifier.SOME || term.modifier == Modifier.ONLY
-                                || term.modifier == Modifier.BETWEEN) {
+                                || term.modifier == Modifier.BETWEEN || term.modifier.counted()) {
                             if (structurePositions == null) structurePositions = new HashMap<>(4);
                             // Reuse the list evalStructureTerm already scanned, same radius
                             List<int[]> all = r.candidates != null ? r.candidates
@@ -432,6 +459,9 @@ public final class SeedValidator {
                                     loSq = (long) term.betweenMin * term.betweenMin - term.betweenMin + 1;
                                 }
                                 hiSq = (long) term.betweenMax * term.betweenMax + term.betweenMax;
+                            } else if (term.modifier.counted()) {
+                                int radius = term.betweenMax > 0 ? term.betweenMax : 500;
+                                hiSq = (long) radius * radius;
                             } else {
                                 hiSq = (long) ONLY_BLOCKS * ONLY_BLOCKS + ONLY_BLOCKS;
                             }
@@ -452,7 +482,10 @@ public final class SeedValidator {
                     }
                 }
                 case BIOME -> {
-                    if (!evalBiomeTerm(ctx, cx, cz, term, fields)) {
+                    if (term.biomeLoot()) continue;
+                    if(fields==null)fields=sampleBiomeFields(ctx,cx,cz,terms);
+                    boolean match=evalBiomeTerm(ctx,cx,cz,term,fields);SearchDiagnostics.record(term,match);
+                    if (!match) {
                         return Outcome.rejected(Reason.BIOME_MISMATCH, spawnStruct);
                     }
                     if (matchedBiomes == null) { matchedBiomes = new ArrayList<>(2); biomeModifiers = new ArrayList<>(2);
@@ -462,7 +495,8 @@ public final class SeedValidator {
                     biomeReportRadius.merge(term.canonical, biomeTermRadiusChunks(term), Math::max);
                 }
                 case SPAWN -> {
-                    if (!evalSpawnTerm(ctx, cx, cz, term, seed)) {
+                    boolean match=evalSpawnTerm(ctx,cx,cz,term,seed);SearchDiagnostics.record(term,match);
+                    if (!match) {
                         return Outcome.rejected(Reason.SPAWN_MISMATCH, spawnStruct);
                     }
                 }
@@ -502,8 +536,26 @@ public final class SeedValidator {
 
     private StructureChecker.Result evalStructureTerm(WorldContext ctx, int cx, int cz, ParsedQuery.Term term) {
         String canonical = term.canonical;
+        if(estimated){
+            if(TargetDistance.deferred(term))return StructureChecker.Result.notFound();
+            var positions=structureChecker.positions(ctx,cx,cz,structureScanRadiusChunks(term),canonical);
+            int needed=term.modifier==Modifier.SOME||term.modifier.counted() ? term.someCount : 1;
+            if(positions.size()<needed)return null;
+            if(positions.isEmpty())return StructureChecker.Result.notFound();
+            var p=positions.stream().min(Comparator.comparingLong(v->distSq(v,cx,cz))).orElseThrow();
+            return StructureChecker.Result.foundWith(p[0],p[1],canonical,positions);
+        }
         Modifier mod = term.modifier;
 
+        if (mod.counted()) {
+            int radius = term.betweenMax > 0 ? term.betweenMax : 500;
+            var positions = structureChecker.positions(ctx, cx, cz, chunks(radius), canonical).stream()
+                    .filter(p -> distSq(p, cx, cz) <= (long) radius * radius).toList();
+            if (!mod.accepts(positions.size(), term.someCount)) return null;
+            if (positions.isEmpty()) return StructureChecker.Result.notFound();
+            int[] best = positions.stream().min(java.util.Comparator.comparingLong(p -> distSq(p, cx, cz))).orElseThrow();
+            return StructureChecker.Result.foundWith(best[0], best[1], canonical, positions);
+        }
         if (mod == Modifier.NEVER) {
             int[] p = structureChecker.firstPosition(ctx, cx, cz, searchRadiusChunks, canonical);
             return p == null ? StructureChecker.Result.notFound() : null;
@@ -575,6 +627,7 @@ public final class SeedValidator {
         }
 
         int scanChunks = switch (mod) {
+            case AT -> chunks(128);
             case NEAR   -> chunks(NEAR_BLOCKS);
             case IN     -> UNDERGROUND.contains(canonical) ? searchRadiusChunks : chunks(IN_ON_BLOCKS);
             default     -> searchRadiusChunks;
@@ -584,6 +637,7 @@ public final class SeedValidator {
         if (found == null) return null;
 
         int distance = dist(found, cx, cz);
+        if (mod == Modifier.AT && distance > 128) return null;
         if (mod == Modifier.IN && distance > IN_ON_BLOCKS) return null;
         if (mod == Modifier.NEAR && distance > NEAR_BLOCKS) return null;
 
@@ -607,13 +661,18 @@ public final class SeedValidator {
 
     private boolean evalBiomeTerm(WorldContext ctx, int cx, int cz, ParsedQuery.Term term,
                                    Map<Integer, BiomeField> fields) {
-        if (fields.isEmpty()) return evalBiomeTermDirect(ctx, cx, cz, term);
+        if (term.biomeRegionCount() || fields.isEmpty()) return evalBiomeTermDirect(ctx, cx, cz, term);
 
         String canonical = term.canonical;
         Modifier mod = term.modifier;
 
         if (biomeChecker instanceof VanillaBiomeChecker vbc && vbc.isUnderground(canonical)) {
             BiomeField f = fields.get(vbc.quartYFor(canonical));
+            if (mod == Modifier.BETWEEN) {
+                ResourceKey<Biome> key = vbc.keyOf(canonical);
+                return f != null && key != null
+                        && f.nearestDistanceBlocks(key, term.betweenMin, term.betweenMax) >= 0;
+            }
             return f != null && vbc.evalUnderground(f, canonical, mod, NEAR_BLOCKS, FAR_MIN_BLOCKS, FAR_MAX_BLOCKS, ctx, cx, cz);
         }
 
@@ -627,6 +686,7 @@ public final class SeedValidator {
         return switch (mod) {
             case IN -> f.exists(key, IN_ON_BLOCKS);
             case UNDER -> biomeChecker.matchesAt(ctx, cx, cz, canonical);
+            case AT -> f.exists(key, 128);
             case NEAR -> f.exists(key, NEAR_BLOCKS);
             case FAR -> {
                 int d = f.nearestDistanceBlocks(key, FAR_MIN_BLOCKS, FAR_MAX_BLOCKS);
@@ -644,6 +704,9 @@ public final class SeedValidator {
 
     // Single biome term: sample directly with early exit, not the whole grid
     private boolean evalBiomeTermDirect(WorldContext ctx, int cx, int cz, ParsedQuery.Term term) {
+        if (term.biomeRegionCount()) {
+            return biomeChecker.exists(ctx, cx, cz, biomeTermRadiusChunks(term), term.canonical);
+        }
         String canonical = term.canonical;
         Modifier mod = term.modifier;
 
@@ -652,6 +715,10 @@ public final class SeedValidator {
             int rChunks = biomeTermRadiusChunks(term);
             int step = vbc.effectiveStep(qy, rChunks);
             BiomeField f = biomeChecker.sampleField(ctx, cx, cz, qy, rChunks, step);
+            if (mod == Modifier.BETWEEN) {
+                ResourceKey<Biome> key = vbc.keyOf(canonical);
+                return key != null && f.nearestDistanceBlocks(key, term.betweenMin, term.betweenMax) >= 0;
+            }
             return vbc.evalUnderground(f, canonical, mod, NEAR_BLOCKS, FAR_MIN_BLOCKS, FAR_MAX_BLOCKS, ctx, cx, cz);
         }
 
@@ -662,6 +729,7 @@ public final class SeedValidator {
         return switch (mod) {
             case IN -> biomeChecker.exists(ctx, cx, cz, chunks(IN_ON_BLOCKS), canonical);
             case UNDER -> biomeChecker.matchesAt(ctx, cx, cz, canonical);
+            case AT -> biomeChecker.exists(ctx, cx, cz, chunks(128), canonical);
             case NEAR -> biomeChecker.exists(ctx, cx, cz, chunks(NEAR_BLOCKS), canonical);
             case FAR -> {
                 int d = biomeChecker.nearestDistanceBlocks(ctx, cx, cz, chunks(FAR_MAX_BLOCKS), canonical);
@@ -718,6 +786,8 @@ public final class SeedValidator {
     private int biomeTermRadiusChunks(ParsedQuery.Term term) {
         return switch (term.modifier) {
             case IN      -> chunks(IN_ON_BLOCKS);
+            case AT -> chunks(128);
+            case EXACTLY, AT_LEAST, AT_MOST -> chunks(term.betweenMax > 0 ? term.betweenMax : 500);
             case NEAR    -> chunks(NEAR_BLOCKS);
             case FAR     -> chunks(FAR_MAX_BLOCKS);
             case BETWEEN -> chunks(term.betweenMax);

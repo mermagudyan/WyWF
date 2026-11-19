@@ -138,6 +138,9 @@ public final class VanillaBiomeChecker implements BiomeChecker {
         Map.entry("minecraft:deep_frozen_ocean", 50), Map.entry("minecraft:snowy_beach", 26),
         Map.entry("minecraft:stony_shore", 25), Map.entry("minecraft:sparse_jungle", 23),
         Map.entry("minecraft:windswept_savanna", 163), Map.entry("minecraft:eroded_badlands", 165),
+        Map.entry("minecraft:old_growth_birch_forest", 155),
+        Map.entry("minecraft:old_growth_spruce_taiga", 160),
+        Map.entry("minecraft:windswept_gravelly_hills", 131),
         Map.entry("minecraft:ice_spikes", 140)
     );
 
@@ -187,6 +190,7 @@ public final class VanillaBiomeChecker implements BiomeChecker {
         long best = Long.MAX_VALUE;
 
         for (int cx = centerChunkX - radiusChunks; cx <= centerChunkX + radiusChunks; cx += step) {
+            com.wywf.core.SearchCancellation.checkpoint();
             for (int cz = centerChunkZ - radiusChunks; cz <= centerChunkZ + radiusChunks; cz += step) {
                 boolean match = false;
 
@@ -244,6 +248,7 @@ public final class VanillaBiomeChecker implements BiomeChecker {
         }
 
         for (int cx = centerChunkX - radiusChunks; cx <= centerChunkX + radiusChunks; cx += step) {
+            com.wywf.core.SearchCancellation.checkpoint();
             for (int cz = centerChunkZ - radiusChunks; cz <= centerChunkZ + radiusChunks; cz += step) {
                 long bx = ((long) cx << 4) - centerX;
                 long bz = ((long) cz << 4) - centerZ;
@@ -303,9 +308,13 @@ public final class VanillaBiomeChecker implements BiomeChecker {
         if (key == null) return false;
 
         boolean found = false;
-        if (mod == Modifier.NEAR || mod == Modifier.UNDER) {
-            int d = field.nearestDistanceBlocks(key, 0, nearRadiusBlocks);
-            found = d >= 0 && d <= nearRadiusBlocks;
+        if (mod == Modifier.AT) {
+            int d = field.nearestDistanceBlocks(key, 0, 128);
+            found = d >= 0 && d <= 128;
+        } else if (mod == Modifier.IN || mod == Modifier.NEAR || mod == Modifier.DEFAULT || mod == Modifier.UNDER) {
+            int radius = mod == Modifier.IN ? 64 : nearRadiusBlocks;
+            int d = field.nearestDistanceBlocks(key, 0, radius);
+            found = d >= 0 && d <= radius;
         } else if (mod == Modifier.FAR && !undergroundNearOnly(biomeId)) {
             int d = field.nearestDistanceBlocks(key, farMinBlocks, farMaxBlocks);
             found = d >= 0;
@@ -371,6 +380,7 @@ public final class VanillaBiomeChecker implements BiomeChecker {
 
         int count = 0;
         for (int cx = centerChunkX - radiusChunks; cx <= centerChunkX + radiusChunks; cx += step) {
+            com.wywf.core.SearchCancellation.checkpoint();
             for (int cz = centerChunkZ - radiusChunks; cz <= centerChunkZ + radiusChunks; cz += step) {
                 count++;
             }
@@ -390,6 +400,7 @@ public final class VanillaBiomeChecker implements BiomeChecker {
 
         int i = 0;
         for (int cx = centerChunkX - radiusChunks; cx <= centerChunkX + radiusChunks; cx += step) {
+            com.wywf.core.SearchCancellation.checkpoint();
             for (int cz = centerChunkZ - radiusChunks; cz <= centerChunkZ + radiusChunks; cz += step) {
                 dx[i] = (cx << 4) - centerX;
                 dz[i] = (cz << 4) - centerZ;

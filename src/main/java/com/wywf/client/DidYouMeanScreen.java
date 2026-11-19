@@ -3,7 +3,6 @@ package com.wywf.client;
 import com.wywf.WYWFClient;
 import com.wywf.core.*;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
@@ -11,110 +10,105 @@ import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
 import net.minecraft.network.chat.Component;
 
 import java.util.*;
+import java.util.function.Consumer;
+import java.util.regex.Pattern;
 
 public final class DidYouMeanScreen extends Screen {
+    private static final Pattern WORD = Pattern.compile("[\\p{L}\\p{N}_-]+");
 
-    private final CreateWorldScreen parentScreen;
-    private final String originalQuery;
-    private final Map<String, String> corrections;
-    private final ParsedQuery parsedQuery;
-    private final SearchConfig config;
+    private final Screen back;
+    private final String original;
+    private final String corrected;
+    private final Consumer<String> accept;
+    private final boolean canUseOriginal;
+    private final BlockMenuSkin skin = BlockMenuSkin.random();
+    private int panelWidth, panelX, panelY, panelHeight;
 
-    public DidYouMeanScreen(CreateWorldScreen parentScreen, String originalQuery,
-                            Map<String, String> corrections, ParsedQuery parsedQuery, SearchConfig config) {
-        super(Minecraft.getInstance(), Minecraft.getInstance().font,
-                Component.literal("Did you mean?"));
-        this.parentScreen = parentScreen;
-        this.originalQuery = originalQuery;
-        this.corrections = corrections;
-        this.parsedQuery = parsedQuery;
-        this.config = config;
+    public DidYouMeanScreen(CreateWorldScreen parent, String original, Map<String, String> corrections,
+                            ParsedQuery parsed, SearchConfig config) {
+        this(parent, original, corrections, parsed.error() == null && !parsed.isEmpty(), queryText -> {
+            ParsedQuery query = WYWFClient.parser().parse(queryText);
+            if (query.error() != null || query.isEmpty()) {
+                Minecraft.getInstance().setScreenAndShow(new QuerySyntaxScreen(parent, query, config));
+                return;
+            }
+            parent.getUiState().setSeed(queryText);
+            if (QueryAdvisor.inspect(query, config).reviewBeforeSearch()) {
+                Minecraft.getInstance().setScreenAndShow(new SearchAdviceScreen(parent, queryText, query, config));
+            } else new SearchScreen(parent, queryText, query, config).open();
+        });
+    }
+
+    DidYouMeanScreen(Screen back, String original, Map<String, String> corrections,
+                     boolean canUseOriginal, Consumer<String> accept) {
+        super(MapTexts.label("spelling_title"));
+        this.back = back;
+        this.original = original;
+        this.corrected = applyCorrections(original, corrections);
+        this.accept = accept;
+        this.canUseOriginal = canUseOriginal;
     }
 
     @Override
     protected void init() {
-        int cx = this.width / 2;
-        int bw = 200;
-
-        String correctedQuery = applyCorrections(originalQuery, corrections);
-
-        this.addRenderableWidget(Button.builder(
-                Component.literal("Use: \"" + truncate(correctedQuery, 40) + "\""),
-                b -> startSearchWith(correctedQuery)
-        ).bounds(cx - bw / 2, this.height / 2 + 20, bw, 20).build());
-
-        this.addRenderableWidget(Button.builder(
-                Component.literal("Search as-is"),
-                b -> startSearchWith(originalQuery)
-        ).bounds(cx - bw / 2, this.height / 2 + 46, bw, 20).build());
-
-        this.addRenderableWidget(Button.builder(
-                Component.literal("Cancel"),
-                b -> onClose()
-        ).bounds(cx - bw / 2, this.height / 2 + 72, bw, 20).build());
-    }
-
-    private void startSearchWith(String queryText) {
-        ParsedQuery query = WYWFClient.parser().parse(queryText);
-        if (query.isEmpty()) {
-            onClose();
-            return;
-        }
-        SearchScreen screen = new SearchScreen(parentScreen, queryText, query, config);
-        Minecraft.getInstance().setScreenAndShow(screen);
+        panelWidth = Math.min(420, width - 24);
+        panelHeight = Math.min(150, height - 24);
+        panelX = (width - panelWidth) / 2;
+        panelY = (height - panelHeight) / 2;
+        int buttonWidth = (panelWidth - 24 - 8) / 3;
+        int x = (width - buttonWidth * 3 - 8) / 2;
+        int y = panelY + panelHeight - 30;
+        addRenderableWidget(Button.builder(MapTexts.label("spelling_use"), b -> accept.accept(corrected))
+                .bounds(x, y, buttonWidth, 20).build());
+        Button unchanged = addRenderableWidget(Button.builder(MapTexts.label("spelling_as_written"), b -> accept.accept(original))
+                .bounds(x + buttonWidth + 4, y, buttonWidth, 20).build());
+        unchanged.active = canUseOriginal;
+        addRenderableWidget(Button.builder(ResultTexts.label("back"), b -> onClose())
+                .bounds(x + 2 * (buttonWidth + 4), y, buttonWidth, 20).build());
     }
 
     @Override
     public void onClose() {
-        Minecraft.getInstance().setScreenAndShow(parentScreen);
+        Minecraft.getInstance().setScreenAndShow(back);
     }
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
+        BlockMenuSkin.panel(g, skin, panelX, panelY, panelWidth, panelHeight, 0xFF83BC9D, 0xFFD9BA86);
+        g.centeredText(font, title, width / 2, panelY + 10, 0xFFFFFFFF);
+        int area = (panelHeight - 60) / 2;
+        int firstY = panelY + 29;
+        int secondY = firstY + area;
+        g.centeredText(font, MapTexts.label("spelling_typed"), width / 2, firstY, 0xFFE3DDD3);
+        drawQuery(g, original, firstY + font.lineHeight + 2, area - font.lineHeight - 3, 0xFFFFC7C0);
+        g.centeredText(font, MapTexts.label("spelling_corrected"), width / 2, secondY, 0xFFE3DDD3);
+        drawQuery(g, corrected, secondY + font.lineHeight + 2, area - font.lineHeight - 3, 0xFFD4F2C9);
         super.extractRenderState(g, mouseX, mouseY, partialTick);
-        Font font = this.font;
-        int cx = this.width / 2;
+    }
 
-        g.centeredText(font, Component.literal("§lDid you mean?§r"), cx, this.height / 2 - 60, 0xFFFFFFFF);
-        g.centeredText(font, Component.literal("§7You typed:§r §c\"" + truncate(originalQuery, 60) + "\""), cx, this.height / 2 - 38, 0xFFFFFFFF);
-
-        StringBuilder sb = new StringBuilder();
-        for (Map.Entry<String, String> e : corrections.entrySet()) {
-            if (!sb.isEmpty()) sb.append(", ");
-            sb.append("§c").append(e.getKey()).append("§r → §a").append(e.getValue());
+    private void drawQuery(GuiGraphicsExtractor g, String query, int y, int area, int color) {
+        int measure = panelWidth - 24;
+        int offset = 0;
+        var lines = font.split(Component.literal(query), measure - font.width("…"));
+        for (var line : lines) {
+            if (offset + font.lineHeight > area) break;
+            g.centeredText(font, line, width / 2, y + offset, color);
+            offset += font.lineHeight;
         }
-        g.centeredText(font, Component.literal("§7Suggested:§r " + sb), cx, this.height / 2 - 22, 0xFFFFFFFF);
+        if (offset < lines.size() * font.lineHeight) g.text(font, "…", panelX + panelWidth - 16, y + Math.max(0, offset - font.lineHeight), color);
     }
 
     static String applyCorrections(String original, Map<String, String> corrections) {
-        String[] words = original.toLowerCase(java.util.Locale.ROOT).split("\\s+");
-        for (int i = 0; i < words.length; i++) {
-            String fix = corrections.get(words[i]);
-            if (fix != null) {
-                words[i] = fix;
-            }
-        }
-        return String.join(" ", words);
+        return WORD.matcher(original).replaceAll(word -> java.util.regex.Matcher.quoteReplacement(
+                corrections.getOrDefault(word.group().toLowerCase(Locale.ROOT), word.group())));
     }
 
     public static Map<String, String> findCorrections(List<String> ignoredWords) {
-        var dict = WYWFClient.dictionary();
         Map<String, String> corrections = new LinkedHashMap<>();
         for (String word : ignoredWords) {
-            if (corrections.containsKey(word)) continue;
-            String fix = dict.findSuggestion(word);
-            if (fix != null) {
-                corrections.put(word, fix);
-            }
+            String fix = WYWFClient.dictionary().findSuggestion(word);
+            if (fix != null) corrections.put(word, fix);
         }
         return corrections;
     }
-
-    private static String truncate(String s, int max) {
-        if (s == null) return "";
-        return s.length() <= max ? s : s.substring(0, max - 1) + "\u2026";
-    }
-
-    @Override
-    public boolean shouldCloseOnEsc() { return false; }
 }

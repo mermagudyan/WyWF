@@ -39,7 +39,6 @@ public final class ConfigStore {
         try (Reader r = Files.newBufferedReader(p, StandardCharsets.UTF_8)) {
             SearchConfig cfg = GSON.fromJson(r, SearchConfig.class);
             if (cfg == null) return SearchConfig.defaults();
-            // Migrate retired values past Gson (fields bypass setters): BOTH becomes ORIGIN
             cfg.searchCenter(cfg.searchCenter());
             return cfg;
         } catch (IOException | RuntimeException e) {
