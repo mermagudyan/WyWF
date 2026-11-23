@@ -12,6 +12,8 @@ pluginManagement {
     }
 }
 
-
-
 rootProject.name = 'wywtf'
+def diyLibDir = file(providers.gradleProperty('diyLibDir').getOrElse('../diy-lib'))
+if (new File(diyLibDir, 'settings.gradle').isFile()) {
+    includeBuild(diyLibDir)
+}

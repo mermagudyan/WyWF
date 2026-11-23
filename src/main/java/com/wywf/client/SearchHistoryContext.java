@@ -7,9 +7,10 @@ import net.minecraft.world.level.levelgen.WorldDimensions;
 import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
 
 final class SearchHistoryContext {
-    static SearchHistory store() {
-        return new SearchHistory(net.fabricmc.loader.api.FabricLoader.getInstance().getConfigDir().resolve("wywf/search-history.json"));
-    }
+    private static final SearchHistory STORE = new SearchHistory(net.fabricmc.loader.api.FabricLoader.getInstance()
+            .getConfigDir().resolve("wywf/search-history.json"));
+
+    static SearchHistory store() { return STORE; }
     static String key(CreateWorldScreen creator, ParsedQuery query, SearchConfig config) {
         var ui = creator.getUiState();
         var context = ui.getSettings();

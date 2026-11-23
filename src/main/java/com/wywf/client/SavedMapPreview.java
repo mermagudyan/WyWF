@@ -18,12 +18,12 @@ final class SavedMapPreview implements WorldMapSource {
     private final Set<VerifiedAnchor> discoveries = new CopyOnWriteArraySet<>();
     private final Set<MapFeature> features = new CopyOnWriteArraySet<>();
     private PreviewWorld.Session preview;
+    private net.minecraft.core.HolderGetter<net.minecraft.world.level.biome.Biome> biomeRegistry;
+    private boolean biomeRegistryLoaded;
     private SurfaceRequest pendingSurface;
     private CompletableFuture<List<SurfaceSnapshot>> diskRead;
     private boolean surfaceNeedsGeneration;
     private boolean allowSurfaceGeneration;
-    private static final ExecutorService DISK = Executors.newSingleThreadExecutor(task ->
-            Thread.ofPlatform().daemon().name("WyWF-Saved-Surface").unstarted(task));
     private record SurfaceRequest(DimensionSpace dimension, int x, int z) {}
     private final SurfaceCache surfaces=new SurfaceCache(1024);
     private final SurfaceCache endSurfaces = new SurfaceCache(1024);
@@ -52,35 +52,60 @@ final class SavedMapPreview implements WorldMapSource {
         if(preview!=null&&preview.cancelled())preview=null;
         if(preview!=null)return true;
         if(PreviewWorld.active()!=null)return false;
-        var client=Minecraft.getInstance();Screen owner=client.gui.screen();
+        var client=Minecraft.getInstance();
+        Screen owner=ClientPlatform.screen(client);
         CreateWorldScreen creator=null;
         try(var access=client.getLevelSource().validateAndCreateAccess(directory.getFileName().toString())){
             var data=new WorldOpenFlows(client,client.getLevelSource()).recreateWorldData(access);
+            biomeRegistry = data.getSecond().worldgenLoadContext().lookupOrThrow(net.minecraft.core.registries.Registries.BIOME);
+            biomeRegistryLoaded = true;
             var packs=CreateWorldScreen.createTempDataPackDirFromExistingWorld(directory.resolve("datapacks"),client);
             creator=CreateWorldScreen.createFromExisting(client,()->client.setScreenAndShow(owner),data.getFirst(),data.getSecond(),packs);
             preview=PreviewWorld.beginMap(creator,original.result(),original.config(),owner);
             return true;
         }catch(PreviewWorld.BusyException busy){return false;}
-        catch(Exception error){failed=true;com.wywf.WYWFClient.LOGGER.warn("Could not prepare saved map discovery",error);return false;}
+        catch(Exception error){
+            failed=true;
+            com.wywf.WYWFClient.LOGGER.warn("Could not prepare saved map discovery",error);
+            return false;
+        }
         finally{HiddenWorldSettings.release(creator);}
     }
+    private net.minecraft.core.HolderGetter<net.minecraft.world.level.biome.Biome> savedBiomes() {
+        if (!SavedSurfaceReader.supportsRegionFiles() || biomeRegistryLoaded) return biomeRegistry;
+        biomeRegistryLoaded = true;
+        var client = Minecraft.getInstance();
+        try (var access = client.getLevelSource().validateAndCreateAccess(directory.getFileName().toString())) {
+            var data = new WorldOpenFlows(client, client.getLevelSource()).recreateWorldData(access);
+            biomeRegistry = data.getSecond().worldgenLoadContext().lookupOrThrow(net.minecraft.core.registries.Registries.BIOME);
+        } catch (Exception error) {
+            com.wywf.WYWFClient.LOGGER.debug("Could not load saved map biomes", error);
+        }
+        return biomeRegistry;
+    }
+
     static void drainWhenReady(java.util.Queue<Runnable> queue,java.util.function.BooleanSupplier ready){
         if(queue.isEmpty()||!ready.getAsBoolean())return;
         Runnable work;while((work=queue.poll())!=null)work.run();
     }
     private <T> CompletableFuture<List<T>> request(Function<PreviewWorld.Session,CompletableFuture<List<T>>> work,Set<T> destination){
-        var answer=new CompletableFuture<List<T>>();waiting.add(()->{
-            if(closed||failed||preview==null){answer.completeExceptionally(new CancellationException("Map preview unavailable"));return;}
+        var answer=new CompletableFuture<List<T>>();
+        waiting.add(()->{
+            if(closed||failed||preview==null){
+                answer.completeExceptionally(new CancellationException("Map preview unavailable"));
+                return;
+            }
             work.apply(preview).whenComplete((found,error)->{
                 if(error!=null)answer.completeExceptionally(error);
                 else {for(var item:found)if(destination.size()<4096)destination.add(item);answer.complete(found);}
             });
-        });return answer;
+        });
+        return answer;
     }
     public CompletableFuture<List<VerifiedAnchor>> confirmMap(List<StructureLayers.Marker> markers){return request(p->p.confirmMap(markers),discoveries);}
     public CompletableFuture<List<MapFeature>> discoverFeatures(int x, int z, Set<String> selected) {
         if (selected.contains(EndReturnGateways.ID)) {
-            return CompletableFuture.supplyAsync(() -> SavedSurfaceReader.endReturnGateways(directory, x, z), DISK)
+            return MapBackground.io(() -> SavedSurfaceReader.endReturnGateways(directory, x, z))
                     .thenApply(found -> {
                         if (!closed) for (var item : found) if (features.size() < 4096) features.add(item);
                         return found;
@@ -90,26 +115,34 @@ final class SavedMapPreview implements WorldMapSource {
     }
     @Override public CompletableFuture<List<ReliefTile>> reliefPage(ReliefRequest request,
                                                                   java.util.function.Consumer<List<ReliefTile>> partial) {
+        return reliefPage(request, Set.of(), partial);
+    }
+
+    @Override public CompletableFuture<List<ReliefTile>> reliefPage(ReliefRequest request, Set<Long> alreadyShown,
+                                                                  java.util.function.Consumer<List<ReliefTile>> partial) {
         var answer = new CompletableFuture<List<ReliefTile>>();
-        var read = CompletableFuture.supplyAsync(() -> SavedSurfaceReader.reliefPage(directory, result().seed, request), DISK);
+        var biomes = savedBiomes();
+        var read = MapBackground.io(() -> SavedSurfaceReader.reliefPage(directory, result().seed, request, biomes));
         answer.whenComplete((tiles, error) -> { if (answer.isCancelled()) read.cancel(false); });
         read.whenComplete((saved, error) -> {
                     if (answer.isCancelled()) return;
                     if (error != null) { answer.completeExceptionally(error); return; }
                     int side = ReliefBlocks.SIZE / 16;
-                    if (saved.size() == side * side) { answer.complete(saved); return; }
+                    var existing = new HashSet<>(alreadyShown);
+                    for (var tile : saved) existing.add(SurfaceCache.key(tile.x(), tile.z()));
+                    if (existing.size() == side * side) { answer.complete(saved); return; }
                     if (!saved.isEmpty()) partial.accept(saved);
                     Runnable generate = () -> {
                         if (answer.isCancelled()) return;
-                        if (closed || failed || preview == null) { answer.complete(saved); return; }
-                        var existing = new HashSet<Long>();
-                        for (var tile : saved) existing.add(SurfaceCache.key(tile.x(), tile.z()));
-                        var generated = preview.reliefPage(request, existing);
+                        if (closed || failed || preview == null) {
+                            answer.completeExceptionally(new IllegalStateException("Saved world preview unavailable"));
+                            return;
+                        }
+                        var generated = preview.reliefPage(request, existing, partial);
                         answer.whenComplete((tiles, failure) -> { if (answer.isCancelled()) generated.cancel(false); });
                         generated.whenComplete((tiles, failure) -> {
                             if (failure != null) {
-                                if (saved.isEmpty()) answer.completeExceptionally(failure);
-                                else answer.complete(saved);
+                                answer.completeExceptionally(failure);
                                 return;
                             }
                             var byChunk = new LinkedHashMap<Long, ReliefTile>();
@@ -138,7 +171,9 @@ final class SavedMapPreview implements WorldMapSource {
         var position = pendingSurface;
         if (!surfaceNeedsGeneration) {
             if (diskRead == null) {
-                diskRead = CompletableFuture.supplyAsync(() -> SavedSurfaceReader.read(directory, result().seed, position.dimension(), position.x(), position.z()), DISK);
+                var biomes = savedBiomes();
+                diskRead = MapBackground.io(() -> SavedSurfaceReader.read(directory, result().seed,
+                        position.dimension(), position.x(), position.z(), biomes));
                 return;
             }
             if (!diskRead.isDone()) return;
@@ -172,7 +207,10 @@ final class SavedMapPreview implements WorldMapSource {
     }
 
     public void closeMap(){
-        closed=true;pauseSurface();surfaces.clear();endSurfaces.clear();if(preview!=null)preview.cancel();Runnable work;while((work=waiting.poll())!=null)work.run();
+        closed=true;
+        pauseSurface();
+        surfaces.clear();
+        endSurfaces.clear();if(preview!=null)preview.cancel();Runnable work;while((work=waiting.poll())!=null)work.run();
         try {
             var unqualified = new LinkedHashSet<>(discoveries);
             unqualified.removeAll(anchors());

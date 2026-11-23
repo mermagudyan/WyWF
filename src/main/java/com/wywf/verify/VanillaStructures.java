@@ -49,16 +49,20 @@ final class VanillaStructures {
                         notes.add("Buried treasure chest did not generate in chunk " + pos.x() + ", " + pos.z());
                         continue;
                     }
-                    x = chest.getX(); z = chest.getZ();
+                    x = chest.getX();
+                    z = chest.getZ();
                 }
-                var anchor = new VerifiedAnchor(term.canonical, x, z, box.minX(), box.minZ(), box.maxX(), box.maxZ(),
-                        start.getPieces().size(), level.dimension().identifier().toString());
+
                 boolean matches = true;
                 if(matches&&!term.tags.empty())matches=VanillaTags.verify(session,level,start,term.tags,notes);
                 if(matches&&term.loot!=null)matches=VanillaLoot.verify(session,term,start,notes);
                 if(matches&&(term.modifier==Modifier.BETWEEN&&distance<term.betweenMin||term.modifier==Modifier.FAR&&distance<500))
                     return new Verdict(false,List.of("Nearest qualifying footprint is below the minimum distance"));
-                if(matches){nearest=Math.min(nearest,distance);if(!session.anchors.contains(anchor))session.anchors.add(anchor);}
+                                if (matches) {
+                    nearest = Math.min(nearest, distance);
+                    var anchor = VerifiedAnchor.of(term.canonical, actual, x, z, level.dimension().identifier().toString(), start);
+                    if (!session.anchors.contains(anchor)) session.anchors.add(anchor);
+                }
                 valid |= matches;
                 notes.add(actual + ": " + start.getPieces().size() + " pieces; box "
                         + box.minX() + "," + box.minZ() + ".." + box.maxX() + "," + box.maxZ());
@@ -131,8 +135,7 @@ final class VanillaStructures {
                     notes.clear();
                     continue;
                 }
-                var anchor = new VerifiedAnchor(actual, pos.getBlockX(8), pos.getBlockZ(8), box.minX(), box.minZ(),
-                        box.maxX(), box.maxZ(), start.getPieces().size(), dimension.id);
+                var anchor = VerifiedAnchor.of(actual, pos.getBlockX(8), pos.getBlockZ(8), dimension.id, start);
                 if (!session.anchors.contains(anchor)) session.anchors.add(anchor);
                 notes.add("Confirmed qualifying container in biome " + term.canonical);
                 return new Verdict(true, List.copyOf(notes));

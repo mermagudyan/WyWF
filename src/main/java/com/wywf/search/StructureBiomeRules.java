@@ -27,7 +27,8 @@ public final class StructureBiomeRules {
                 if(name.startsWith("#")){var nested=read(name.substring(1),visiting);if(nested==null)return null;result.addAll(nested);}
                 else{var biome=Identifier.tryParse(name);if(biome==null)return null;result.add(ResourceKey.create(Registries.BIOME,biome));}
             }
-            visiting.remove(tag);return Set.copyOf(result);
+            visiting.remove(tag);
+            return Set.copyOf(result);
         }catch(IOException|RuntimeException error){return null;}
     }
     private StructureBiomeRules(){}

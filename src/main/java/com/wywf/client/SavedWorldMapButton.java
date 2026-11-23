@@ -14,7 +14,9 @@ public final class SavedWorldMapButton extends ConstructorCompassButton implemen
     private static final ThreadPoolExecutor IO = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS,
             new ArrayBlockingQueue<>(1), runnable -> {
                 Thread thread = new Thread(runnable, "WyWF-Saved-Map");
-                thread.setDaemon(true); thread.setPriority(Thread.MIN_PRIORITY); return thread;
+                thread.setDaemon(true);
+                thread.setPriority(Thread.MIN_PRIORITY);
+                return thread;
             }, new ThreadPoolExecutor.DiscardOldestPolicy());
     private final Screen owner;
     private Future<?> pending;
@@ -50,8 +52,14 @@ public final class SavedWorldMapButton extends ConstructorCompassButton implemen
     private void load() {
         long version = ++revision;
         if (pending != null) pending.cancel(true);
-        IO.purge(); active = false; data = null; directory = null;
-        if (selected == null) { setTooltip(Tooltip.create(MapTexts.label("saved_unavailable"))); return; }
+        IO.purge();
+        active = false;
+        data = null;
+        directory = null;
+        if (selected == null) {
+            setTooltip(Tooltip.create(MapTexts.label("saved_unavailable")));
+            return;
+        }
         Minecraft client = Minecraft.getInstance();
         Path root = client.getLevelSource().getBaseDir().toAbsolutePath().normalize();
         Path directory = root.resolve(selected).normalize();
@@ -67,8 +75,9 @@ public final class SavedWorldMapButton extends ConstructorCompassButton implemen
             }
             SavedWorldMap loaded = restored;
             client.execute(() -> {
-                if (version != revision || client.gui.screen() != owner || !owner.children().contains(this)) return;
-                data = loaded; active = data != null;
+                if (version != revision || ClientPlatform.screen(client) != owner || !owner.children().contains(this)) return;
+                data = loaded;
+                active = data != null;
                 this.directory = active ? directory : null;
                 setTooltip(Tooltip.create(MapTexts.label(active ? "saved_open_help" : "saved_unavailable")));
             });
@@ -76,7 +85,11 @@ public final class SavedWorldMapButton extends ConstructorCompassButton implemen
     }
 
     @Override public void close() {
-        revision++; data = null; selected = null; directory = null; active = false;
+        revision++;
+        data = null;
+        selected = null;
+        directory = null;
+        active = false;
         if (pending != null) pending.cancel(true);
         IO.purge();
     }

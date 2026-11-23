@@ -78,7 +78,11 @@ public final class ParsedQuery {
 
     private boolean estimated;
     public boolean estimated(){return estimated;}
-    public ParsedQuery estimate(){var q=new ParsedQuery(raw,terms,ignoredWords,logic,error).withPlace(place);q.estimated=true;return q;}
+    public ParsedQuery estimate(){
+        var q=new ParsedQuery(raw,terms,ignoredWords,logic,error).withPlace(place);
+        q.estimated=true;
+        return q;
+    }
     private PlaceSearch place;
     public PlaceSearch place(){return place;}
     public ParsedQuery withPlace(PlaceSearch value){place=value;return this;}
@@ -114,7 +118,8 @@ public final class ParsedQuery {
     public ParsedQuery(String raw, List<Term> terms, List<String> ignoredWords) { this(raw, terms, ignoredWords, null, null); }
 
     public ParsedQuery(String raw, List<Term> terms, List<String> ignoredWords, QueryLogic.Node logic, String error) {
-        this.logic = logic; this.error = error;
+        this.logic = logic;
+        this.error = error;
         this.raw = raw;
         this.terms = List.copyOf(terms);
         this.ignoredWords = List.copyOf(ignoredWords);

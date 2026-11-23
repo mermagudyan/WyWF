@@ -7,28 +7,12 @@ chunks.
 
 ## Version compatibility
 
-<table>
-<tr><th rowspan="2">Minecraft version</th><th colspan="5" style="text-align:center">Version of mod</th></tr>
-<tr><th>1.4.1</th><th>1.4.0</th><th>1.3.x</th><th>1.2.x</th><th>1.1.x</th></tr>
-<tr><td>1.16.5</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
-<tr><td>1.17.1</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
-<tr><td>1.18.2</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
-<tr><td>1.19.2</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
-<tr><td>1.20.1</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
-<tr><td>1.20.4</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
-<tr><td>1.21.1</td><td>✅</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
-<tr><td>1.21.5</td><td>✅</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
-<tr><td>1.21.11</td><td>✅</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td></tr>
-<tr><td>26.1</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
-<tr><td>26.1.2</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
-<tr><td>26.2</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
-<tr><td>26.3</td><td>✅</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
-</table>
+![In-game compatibility table preview](.github/assets/version-compatibility.gif)
 
-Each MC version has its own jar — pick the one matching your Minecraft version.
-There are two 26.x jars: `1.4.1+26.x` for 26.1–26.2 and `1.4.1+26.3`
-for 26.3+ (the loader refuses to start a jar on the wrong game).
-The 1.21.x line ships separately at version 1.4.1.
+WyWF 26.3 requires the standalone 26.3 edition of DIY Lib. Build with a
+sibling `../diy-lib` checkout,
+pass `-PdiyLibDir=<path>` for a custom checkout, or install `dev.diylib:diy-lib:0.1.0`
+with DIY Lib's `publishToMavenLocal` task
 
 ## What it does
 
@@ -144,6 +128,10 @@ faster.
 
 ## Configuration
 
+With Mod Menu installed, open **Mods → What you Want to Find → Configure** to launch the constructor.
+Its **Settings** tab contains the search and map options. The world creation screen also offers
+**More → WyWF Settings** when Mod Menu is absent
+
 Defaults (`SearchConfig`):
 
 - Threads: `MAX` (all CPU cores, or `manualThreads` if set). Other modes:
@@ -221,11 +209,8 @@ Copy-paste the seed:
 - **No manual Gradle install needed.** The project ships the Gradle Wrapper
   (`gradlew` / `gradlew.bat`), which downloads the correct Gradle version
   automatically.
-- **Internet access on the first build.** Fabric Loom downloads Minecraft
-  26.3 (26.2 with `-PmcLine=262`), the Yarn mappings, Fabric Loader and
-  Fabric API and caches them under `~/.gradle` / `.gradle`. Later builds
-  are offline-friendly. The 26.1–26.2 line builds with `-PmcLine=262`;
-  the default is the 26.3 line.
+- **Internet access on the first build.** Fabric Loom downloads Minecraft 26.3,
+  Fabric Loader and Fabric API. Later builds can use `--offline` once dependencies are cached.
 
 ### Commands
 
@@ -236,9 +221,6 @@ Run the wrapper from the project root. On Windows use `gradlew.bat` instead of
 # Build the mod jar (compiles main + tests, runs the test suite)
 ./gradlew build
 
-# Same for the 26.1–26.2 line
-./gradlew build -PmcLine=262
-
 # Run the unit tests only (JUnit 5)
 ./gradlew test
 
@@ -247,6 +229,9 @@ Run the wrapper from the project root. On Windows use `gradlew.bat` instead of
 
 # Same with the full debug log enabled
 ./gradlew runClient -Pdebug
+
+# Enable the DIY Lib console and UI debug screen on Minecraft 26.3
+./gradlew runClient -Ddiylib.debug=true
 
 # List all available tasks
 ./gradlew tasks
@@ -259,17 +244,45 @@ Run the wrapper from the project root. On Windows use `gradlew.bat` instead of
 (Loom) and needs Fabric API, which is already declared as an `implementation`
 dependency, so it works out of the box.
 
+### Capture the compatibility table
+
+The test screen opens on the Minecraft panorama and stays open until you leave it.
+Its border uses a ten-second loop.
+
+```bash
+./gradlew runClient -I tools/compatibility-preview/run.gradle
+
+./gradlew runClient -I tools/compatibility-preview/run.gradle -Dwywf.compatibility.gif=build/compatibility-recording/version-compatibility.gif
+```
+
+Relative output paths are resolved from the project directory.
+
 ### Output
 
 The built mod jars are written to:
 
 ```
-build/libs/wywf-1.4.1+26.3.jar      (default: Minecraft 26.3+)
-build/libs/wywf-1.4.1+26.x.jar      (-PmcLine=262: Minecraft 26.1–26.2)
+build/libs/wywf-2.0.0+26.3.jar
 ```
 
 (the name is `<archives_base_name>-<mod_version>.jar`, taken from
-`gradle.properties`). Drop that jar into your `mods/` folder to install.
+`gradle.properties`). Build DIY Lib with its own Gradle wrapper to get
+`diylib-0.1.0.jar` in its `build/libs/` directory.
+
+### Build all three branches on Windows
+
+Keep the `26.x` and `1.21.x` working trees alongside this checkout in `WyWF_26.x`
+and `WyWF_1.21.x`. Alternate paths can be given with `-Wywf26x` and `-Wywf121x`.
+
+```powershell
+powershell -NoProfile -File .\build-all\Build-All.ps1
+```
+
+Use `-Offline` once the dependencies are cached. The script checks the shared code
+and native library across the 26 branches, runs the builds and tests, and copies the
+verified JARs beside the script: three WyWF builds and two standalone DIY Lib
+builds. Sync shared `src/main` changes across `26.3`
+and `26.x`. Keep version-specific sources and resources in each branch's `src/mc*`.
 
 ### Troubleshooting
 
@@ -283,7 +296,7 @@ build/libs/wywf-1.4.1+26.x.jar      (-PmcLine=262: Minecraft 26.1–26.2)
 
 1. Install Fabric Loader 0.19+ for Minecraft 26.x (tested on 26.2; 26.3
    uses the same setup) and Fabric API.
-2. Drop the jar into your `mods/` folder.
+2. Put the WyWF JAR and DIY Lib into your `mods/` folder.
 
 ## Extending the dictionary
 

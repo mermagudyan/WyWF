@@ -4,6 +4,12 @@ import com.mojang.serialization.Codec;
 import com.wywf.core.DimensionSpace;
 import net.minecraft.SharedConstants;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Holder;
+import net.minecraft.core.HolderGetter;
+import net.minecraft.client.renderer.block.BlockAndTintGetter;
+import net.minecraft.world.level.CardinalLighting;
+import net.minecraft.world.level.ColorResolver;
+import net.minecraft.world.level.biome.Biome;
 import net.minecraft.core.IdMapper;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
@@ -45,6 +51,9 @@ public final class SavedSurfaceReader {
             Codec.STRING, Strategy.createForBiomes(new IdMapper<>()), DEFAULT_BIOME);
     private final Path directory;
     private final DimensionSpace dimension;
+    private final HolderGetter<Biome> biomeRegistry;
+
+    public static boolean supportsRegionFiles() { return true; }
     private final it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap<Optional<Chunk>> chunks =
             new it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap<>();
     private record Section(PalettedContainer<BlockState> blocks, PalettedContainerRO<String> biomes) {}
@@ -62,15 +71,17 @@ public final class SavedSurfaceReader {
         }
     }
 
-    private SavedSurfaceReader(Path world, DimensionSpace dimension) {
+    private SavedSurfaceReader(Path world, DimensionSpace dimension, HolderGetter<Biome> biomeRegistry) {
         this.dimension = dimension;
+        this.biomeRegistry = biomeRegistry;
         String folder = dimension.id.substring("minecraft:".length());
         directory = world.resolve("dimensions/minecraft").resolve(folder).resolve("region");
     }
 
-    public static Map<Long, SurfaceSnapshot> readVisited(Path world, long seed, DimensionSpace dimension, List<Long> keys) {
-        if (hasDatapacks(world)) return Map.of();
-        var reader = new SavedSurfaceReader(world, dimension);
+    public static Map<Long, SurfaceSnapshot> readVisited(Path world, long seed, DimensionSpace dimension, List<Long> keys,
+                                                         HolderGetter<Biome> biomes) {
+        if (biomes == null && hasDatapacks(world)) return Map.of();
+        var reader = new SavedSurfaceReader(world, dimension, biomes);
         var result = new HashMap<Long, SurfaceSnapshot>();
         for (long key : keys) {
             var tile = reader.tile(seed, (int)(key >> 32) << 4, (int)key << 4);
@@ -79,9 +90,10 @@ public final class SavedSurfaceReader {
         return result;
     }
 
-    public static List<SurfaceSnapshot> read(Path world, long seed, DimensionSpace dimension, int x, int z) {
-        if (hasDatapacks(world)) return List.of();
-        var reader = new SavedSurfaceReader(world, dimension);
+    public static List<SurfaceSnapshot> read(Path world, long seed, DimensionSpace dimension, int x, int z,
+                                             HolderGetter<Biome> biomes) {
+        if (biomes == null && hasDatapacks(world)) return List.of();
+        var reader = new SavedSurfaceReader(world, dimension, biomes);
         var result = new ArrayList<SurfaceSnapshot>();
         int startX = (x - 32) & ~15, startZ = (z - 32) & ~15;
         for (int dz = 0; dz < 64 && !Thread.currentThread().isInterrupted(); dz += 16)
@@ -92,9 +104,9 @@ public final class SavedSurfaceReader {
         return result;
     }
 
-    public static List<ReliefTile> reliefPage(Path world, long seed, ReliefRequest request) {
-        if (hasDatapacks(world)) return List.of();
-        var reader = new SavedSurfaceReader(world, request.dimension());
+    public static List<ReliefTile> reliefPage(Path world, long seed, ReliefRequest request, HolderGetter<Biome> biomes) {
+        if (biomes == null && hasDatapacks(world)) return List.of();
+        var reader = new SavedSurfaceReader(world, request.dimension(), biomes);
         var result = new ArrayList<ReliefTile>();
         var manager = new BiomeManager(reader::noiseBiome, BiomeManager.obfuscateSeed(seed));
         for (int dz = 0; dz < ReliefBlocks.SIZE; dz += 16) for (int dx = 0; dx < ReliefBlocks.SIZE; dx += 16) {
@@ -104,11 +116,12 @@ public final class SavedSurfaceReader {
                 int bottom = chunk.minSection * 16;
                 int fog = request.dimension() == DimensionSpace.NETHER && request.containsFocus(x, z)
                         ? reader.fogAt(seed, request.focus()) : 0;
-                result.add(ReliefBlocks.tile(request.dimension(), x, z, request.cut(), bottom, chunk.maxY(), EmptyBlockGetter.INSTANCE,
+                var tintView = reader.tintView(manager, chunk);
+                result.add(ReliefBlocks.tile(request.dimension(), x, z, request.cut(), bottom, chunk.maxY(), tintView,
                         p -> chunk.at(p.getX(), p.getY(), p.getZ()),
                         (wx, wz) -> bottom + chunk.heights.get((wz & 15) * 16 + (wx & 15)) - 1,
                         (wx, wz) -> reader.reliefHeight(wx, wz, x, z, chunk),
-                        p -> reader.riverAt(manager, p), fog));
+                        p -> reader.riverAt(manager, p), p -> reader.waterTint(manager, p), fog));
             }
         }
         return result;
@@ -118,6 +131,18 @@ public final class SavedSurfaceReader {
         var neighbor = wx >> 4 == x >> 4 && wz >> 4 == z >> 4 ? current : chunk(wx >> 4, wz >> 4);
         return neighbor == null ? Integer.MIN_VALUE
                 : neighbor.minSection * 16 + neighbor.heights.get((wz & 15) * 16 + (wx & 15)) - 1;
+    }
+
+    private int waterTint(BiomeManager manager, BlockPos pos) {
+        try {
+            return manager.getBiome(pos).unwrapKey()
+                    .map(key -> com.wywf.map.WaterMap.tint(key.identifier().toString())).orElse(0xFF1B464E);
+        } catch (MissingBiome unavailable) {
+            var chunk = chunk(pos.getX() >> 4, pos.getZ() >> 4);
+            var section = chunk == null ? null : chunk.section(pos.getY() >> 4);
+            if (section == null) return 0xFF1B464E;
+            return com.wywf.map.WaterMap.tint(section.biomes.get(pos.getX() >> 2 & 3, pos.getY() >> 2 & 3, pos.getZ() >> 2 & 3));
+        }
     }
 
     private boolean riverAt(BiomeManager manager, BlockPos pos) {
@@ -167,7 +192,7 @@ public final class SavedSurfaceReader {
     }
 
     public static List<MapFeature> endReturnGateways(Path world, int x, int z) {
-        var reader = new SavedSurfaceReader(world, DimensionSpace.END);
+        var reader = new SavedSurfaceReader(world, DimensionSpace.END, null);
         var features = new ArrayList<MapFeature>();
         for (int cz = z >> 4; cz < (z >> 4) + 4; cz++) for (int cx = x >> 4; cx < (x >> 4) + 4; cx++) {
             if (!EndReturnGateways.mayContain(cx, cz)) continue;
@@ -254,10 +279,45 @@ public final class SavedSurfaceReader {
         if (section == null) throw new MissingBiome();
         var id = Identifier.tryParse(section.biomes.get(x & 3, y & 3, z & 3));
         if (id == null) throw new MissingBiome();
-        return SavedBiomeLookup.LOOKUP.get(ResourceKey.create(Registries.BIOME, id)).orElseThrow(MissingBiome::new);
+        var registry = biomeRegistry == null ? SavedBiomeLookup.LOOKUP : biomeRegistry;
+        return registry.get(ResourceKey.create(Registries.BIOME, id)).orElseThrow(MissingBiome::new);
     }
     private static final class MissingBiome extends RuntimeException {
         MissingBiome() { super(null, null, false, false); }
+    }
+
+    private Holder<Biome> biomeAt(BiomeManager manager, BlockPos pos) {
+        try {
+            return manager.getBiome(pos);
+        } catch (MissingBiome unavailable) {
+            return noiseBiome(pos.getX() >> 2, pos.getY() >> 2, pos.getZ() >> 2);
+        }
+    }
+
+    private BlockAndTintGetter tintView(BiomeManager manager, Chunk reference) {
+        return new BlockAndTintGetter() {
+            @Override public int getBlockTint(BlockPos pos, ColorResolver resolver) {
+                try {
+                    return resolver.getColor(biomeAt(manager, pos).value(), pos.getX(), pos.getZ());
+                } catch (MissingBiome unavailable) {
+                    return -1;
+                }
+            }
+            @Override public CardinalLighting cardinalLighting() { return CardinalLighting.DEFAULT; }
+            @Override public net.minecraft.world.level.lighting.LevelLightEngine getLightEngine() {
+                return net.minecraft.world.level.lighting.LevelLightEngine.EMPTY;
+            }
+            @Override public int getHeight() { return reference.maxY() - getMinY() + 1; }
+            @Override public int getMinY() { return reference.minSection * 16; }
+            @Override public BlockState getBlockState(BlockPos pos) {
+                var local = chunk(pos.getX() >> 4, pos.getZ() >> 4);
+                return local == null ? Blocks.AIR.defaultBlockState() : local.at(pos.getX(), pos.getY(), pos.getZ());
+            }
+            @Override public net.minecraft.world.level.material.FluidState getFluidState(BlockPos pos) {
+                return getBlockState(pos).getFluidState();
+            }
+            @Override public net.minecraft.world.level.block.entity.BlockEntity getBlockEntity(BlockPos pos) { return null; }
+        };
     }
 
     private SurfaceSnapshot tile(long seed, int x, int z) {
@@ -268,6 +328,8 @@ public final class SavedSurfaceReader {
         String[] blocks = new String[256], biomes = new String[256];
         float[] temperatures = new float[256], climate = new float[256];
         Arrays.fill(climate, Float.NaN);
+        var biomeColors = new HashMap<String, Integer>();
+        var tintView = tintView(manager, chunk);
         var pos = new BlockPos.MutableBlockPos();
         try {
             for (int dz = 0; dz < 16; dz++) for (int dx = 0; dx < 16; dx++) {
@@ -280,17 +342,18 @@ public final class SavedSurfaceReader {
                     state = chunk.at(wx, --y, wz);
                     color = state.getMapColor(EmptyBlockGetter.INSTANCE, pos.set(wx, y, wz));
                 }
-                var biome = manager.getBiome(pos);
-                colors[index] = ReliefBlocks.surfaceColor(state, EmptyBlockGetter.INSTANCE, pos, bottom,
+                var biome = biomeAt(manager, pos);
+                colors[index] = ReliefBlocks.surfaceColor(state, tintView, pos, bottom,
                         p -> chunk.at(p.getX(), p.getY(), p.getZ()));
                 heights[index] = dimension == DimensionSpace.END && state.isAir() ? Integer.MIN_VALUE : y;
                 blocks[index] = BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
                 biomes[index] = biome.unwrapKey().orElseThrow().identifier().toString();
+                dev.diylib.client.render.DiyBlockColors.recordBiomeColor(biomeColors, biomes[index], biome.value());
                 temperatures[index] = biome.value().getBaseTemperature();
             }
         } catch (MissingBiome unavailable) {
             return null;
         }
-        return new SurfaceSnapshot(seed, x, z, 16, colors, heights, blocks, biomes, temperatures, climate, true);
+        return new SurfaceSnapshot(seed, x, z, 16, colors, heights, blocks, biomes, temperatures, climate, true, biomeColors);
     }
 }

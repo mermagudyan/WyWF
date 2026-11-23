@@ -13,7 +13,9 @@ public final class PreviewAdaptation implements AutoCloseable {
     private static final ExecutorService WORKER = new ThreadPoolExecutor(1, 1, 0, TimeUnit.MILLISECONDS,
             new ArrayBlockingQueue<>(1), r -> {
                 Thread thread = new Thread(r, "WyWF-ExampleFit");
-                thread.setDaemon(true); thread.setPriority(Thread.MIN_PRIORITY); return thread;
+                thread.setDaemon(true);
+                thread.setPriority(Thread.MIN_PRIORITY);
+                return thread;
             }, new ThreadPoolExecutor.DiscardOldestPolicy());
     private volatile long revision;
     private volatile boolean paused;
@@ -31,7 +33,8 @@ public final class PreviewAdaptation implements AutoCloseable {
     private int fitSeconds = 5;
     public void fitSeconds(int seconds) { fitSeconds = Math.max(1,Math.min(10,seconds)); }
     public synchronized void request(long seed, List<Goal> goals) {
-        cancel(); result = null;
+        cancel();
+        result = null;
         long version = revision, start = System.nanoTime(), deadline = start + fitSeconds * 1_000_000_000L;
         List<Goal> requested = List.copyOf(goals);
         if (requested.isEmpty()) { result = new Result(seed, true, 0, 0); return; }
@@ -42,7 +45,8 @@ public final class PreviewAdaptation implements AutoCloseable {
                 Random random = new Random(seed ^ requested.hashCode());
                 while (version == revision && System.nanoTime() < deadline) {
                     if (paused) { LockSupport.parkNanos(25_000_000); continue; }
-                    long candidate = attempts == 0 ? seed : random.nextLong(); attempts++;
+                    long candidate = attempts == 0 ? seed : random.nextLong();
+                    attempts++;
                     var context = factory.create(candidate, false);
                     boolean fits = true;
                     var dimensions = new EnumMap<com.wywf.core.DimensionSpace, com.wywf.search.WorldContext>(com.wywf.core.DimensionSpace.class);

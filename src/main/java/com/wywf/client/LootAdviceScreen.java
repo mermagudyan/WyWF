@@ -73,13 +73,14 @@ final class LootAdviceScreen extends Screen {
             String line = issue.absent()
                     ? MapTexts.text("loot_absent",ResultTexts.name(issue.item().item()),ResultTexts.name(issue.term().canonical))
                     : MapTexts.text("loot_too_many",ResultTexts.name(issue.item().item()),issue.item().count(),issue.chestMax(),issue.rollMax(),issue.slotMax());
-            lines.addAll(font.split(Component.literal(line),width-24)); lines.add(net.minecraft.util.FormattedCharSequence.EMPTY);
+            lines.addAll(font.split(Component.literal(line),width-24));
+            lines.add(net.minecraft.util.FormattedCharSequence.EMPTY);
         }
         int w=(width-30)/2;
-        Button use = addRenderableWidget(Button.builder(MapTexts.label("loot_use_fix"), b -> applyCorrection.accept(corrected))
+        Button use = addRenderableWidget(MenuButton.builder(MapTexts.label("loot_use_fix"), b -> applyCorrection.accept(corrected))
                 .bounds(12, height - 30, w, 20).build());
         use.setTooltip(Tooltip.create(Component.literal(corrected)));
-        addRenderableWidget(Button.builder(MapTexts.label("loot_edit"),b -> onClose()).bounds(18+w,height-30,w,20).build());
+        addRenderableWidget(MenuButton.builder(MapTexts.label("loot_edit"),b -> onClose()).bounds(18+w,height-30,w,20).build());
     }
     @Override public boolean mouseScrolled(double x,double y,double h,double v) {
         offset=Math.max(0,Math.min(Math.max(0,lines.size()-(height-105)/12),offset+(v>0?-3:3)));

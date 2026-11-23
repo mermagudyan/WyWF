@@ -16,6 +16,7 @@ import java.util.regex.Pattern;
 public final class DidYouMeanScreen extends Screen {
     private static final Pattern WORD = Pattern.compile("[\\p{L}\\p{N}_-]+");
 
+    private final Component heading = MenuAccent.heading(title.getString());
     private final Screen back;
     private final String original;
     private final String corrected;
@@ -58,12 +59,12 @@ public final class DidYouMeanScreen extends Screen {
         int buttonWidth = (panelWidth - 24 - 8) / 3;
         int x = (width - buttonWidth * 3 - 8) / 2;
         int y = panelY + panelHeight - 30;
-        addRenderableWidget(Button.builder(MapTexts.label("spelling_use"), b -> accept.accept(corrected))
+        addRenderableWidget(MenuButton.builder(MapTexts.label("spelling_use"), b -> accept.accept(corrected))
                 .bounds(x, y, buttonWidth, 20).build());
-        Button unchanged = addRenderableWidget(Button.builder(MapTexts.label("spelling_as_written"), b -> accept.accept(original))
+        Button unchanged = addRenderableWidget(MenuButton.builder(MapTexts.label("spelling_as_written"), b -> accept.accept(original))
                 .bounds(x + buttonWidth + 4, y, buttonWidth, 20).build());
         unchanged.active = canUseOriginal;
-        addRenderableWidget(Button.builder(ResultTexts.label("back"), b -> onClose())
+        addRenderableWidget(MenuButton.builder(ResultTexts.label("back"), b -> onClose())
                 .bounds(x + 2 * (buttonWidth + 4), y, buttonWidth, 20).build());
     }
 
@@ -75,7 +76,7 @@ public final class DidYouMeanScreen extends Screen {
     @Override
     public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
         BlockMenuSkin.panel(g, skin, panelX, panelY, panelWidth, panelHeight, 0xFF83BC9D, 0xFFD9BA86);
-        g.centeredText(font, title, width / 2, panelY + 10, 0xFFFFFFFF);
+        g.centeredText(font, heading, width / 2, panelY + 10, 0xFFFFFFFF);
         int area = (panelHeight - 60) / 2;
         int firstY = panelY + 29;
         int secondY = firstY + area;

@@ -26,9 +26,9 @@ public class ConstructorCompassButton extends Button {
         this.labeled = labeled;
     }
     @Override protected void extractContents(GuiGraphicsExtractor g, int mx, int my, float tick) {
-        extractDefaultSprite(g);
-        var panorama = Minecraft.getInstance().gameRenderer.gameRenderState().guiRenderState.panoramaRenderState;
-        float bearing = !active || panorama == null ? 0 : panorama.spin();
+        if (active) extractDefaultSprite(g);
+        else TargetTileLayer.button(g, getX(), getY(), getWidth(), getHeight(), false, false, 0xFFB385E5);
+        float bearing = active ? ClientPlatform.panoramaBearing(Minecraft.getInstance()) : 0;
         int frame = Math.floorMod(Math.round(bearing / 360f * 32), 32);
         g.blit(RenderPipelines.GUI_TEXTURED, FRAMES[frame], getX() + 4, getY() + 2, 0, 0, 16, 16, 16, 16);
         if (labeled) g.text(Minecraft.getInstance().font, "WyWF", getX() + 23, getY() + 6, 0xFFFFFFFF);

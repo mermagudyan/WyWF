@@ -42,7 +42,7 @@ public final class PreviewDirectory {
         Path source=path.toAbsolutePath().normalize();
         Path parent=source.getParent().toRealPath();
         if(!source.getParent().equals(parent)||!owned(source)||!accepted(source))throw new IOException("Only an accepted owned preview can be renamed");
-        String name="WyWF - "+splash.replaceAll("[^A-Za-z0-9 -]", "").strip();
+        String name="WyWF - "+splash.replaceAll("(?i)\u00a7[0-9A-FK-OR]", "").replaceAll("[^A-Za-z0-9 -]", "").strip();
         if(name.length()>90||name.length()<=7)throw new IOException("Invalid world splash name");
         for(int n=1;n<=10000;n++){
             Path target=parent.resolve(name+(n==1?"":" ("+n+")")).normalize();

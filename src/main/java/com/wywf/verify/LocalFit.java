@@ -46,7 +46,9 @@ public final class LocalFit {
     }
 
     public static int[] overview(com.wywf.map.BiomeMapSnapshot map,ParsedQuery query,SearchConfig config,List<VerifiedAnchor> anchors,java.util.function.BooleanSupplier cancelled) {
-        int width=map.width(),height=map.height();int[] scores=new int[width*height];int conditions=0;
+        int width=map.width(),height=map.height();
+        int[] scores=new int[width*height];
+        int conditions=0;
         for(var term:query.terms()){
             if(DimensionSpace.external(term)||term.modifier.counted()||term.modifier==Modifier.ONLY||term.modifier==Modifier.SOME||term.modifier==Modifier.NEVER||term.modifier==Modifier.FAR
                     ||term.category!=KeywordDictionary.Category.STRUCTURE&&term.category!=KeywordDictionary.Category.BIOME)continue;
@@ -77,7 +79,8 @@ public final class LocalFit {
         }
         int[] pixels=new int[scores.length];for(int i=0;i<pixels.length;i++){
             if(map.cells()[i]==null){pixels[i]=0;continue;}if(conditions==0){pixels[i]=0xff50616b;continue;}
-            double ratio=scores[i]/(double)conditions;pixels[i]=0xff000046|(int)(190-120*ratio)<<16|(int)(70+120*ratio)<<8;
+            double ratio=scores[i]/(double)conditions;
+            pixels[i]=0xff000046|(int)(190-120*ratio)<<16|(int)(70+120*ratio)<<8;
         }
         return pixels;
     }

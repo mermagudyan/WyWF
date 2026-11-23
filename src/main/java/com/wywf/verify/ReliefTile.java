@@ -1,6 +1,6 @@
 package com.wywf.verify;
 
-public record ReliefTile(int x, int z, int[] colors, int[] heights, int[] voxels, int fog, int[] ground, int caveDepth, String[][] trace, char[] blockIds, ReliefColumns columns, long[] sampledAir, int[] solidUpTo) {
+public record ReliefTile(int x, int z, int[] colors, int[] heights, int[] voxels, int fog, int[] ground, int caveDepth, String[][] trace, char[] blockIds, ReliefColumns columns, long[] sampledAir, int[] solidUpTo, int[] coveredWaterOffsets) {
     public ReliefTile(int x, int z, int[] colors, int[] heights, int[] voxels, int fog, int[] ground) {
         this(x, z, colors, heights, voxels, fog, ground, 0);
     }
@@ -17,6 +17,19 @@ public record ReliefTile(int x, int z, int[] colors, int[] heights, int[] voxels
     public ReliefTile(int x, int z, int[] colors, int[] heights, int[] voxels, int fog, int[] ground,
                       int caveDepth, String[][] trace, char[] blockIds, ReliefColumns columns, long[] sampledAir) {
         this(x, z, colors, heights, voxels, fog, ground, caveDepth, trace, blockIds, columns, sampledAir, null);
+    }
+
+    public ReliefTile(int x, int z, int[] colors, int[] heights, int[] voxels, int fog, int[] ground,
+                      int caveDepth, String[][] trace, char[] blockIds, ReliefColumns columns,
+                      long[] sampledAir, int[] solidUpTo) {
+        this(x, z, colors, heights, voxels, fog, ground, caveDepth, trace, blockIds, columns, sampledAir, solidUpTo, null);
+    }
+
+    public boolean hasCoveredWater() { return coveredWaterOffsets != null; }
+
+    public int coveredWaterTop(int column) {
+        int offset = coveredWaterOffsets == null ? 0 : coveredWaterOffsets[column];
+        return offset == 0 ? Integer.MIN_VALUE : heights[column] - offset;
     }
 
     private int stride() { return Math.max(DEPTH, caveDepth); }
@@ -55,6 +68,8 @@ public record ReliefTile(int x, int z, int[] colors, int[] heights, int[] voxels
     public static final int CAVE_FLOOR = 0xFA000000, COVERED_WATER = 0xF9000000;
     public static final int WATER_FACE = 0xFE000000, ENTRANCE_FACE = 0xFD000000;
     public static final int CLIPPED_FACE = 0xFC000000, PLANT_FACE = 0xFB000000, FACE_TYPE = 0xFF000000;
+    public static final int ICE_WATER_SHADOW = 0xF2000000;
+    public static final int END_CRYSTAL = 0xF3000000;
     public static final int BERRY_FACE = 0xF4000000, SHAPED_BLOCK = 0xF5000000;
 
     public static boolean plant(int material) {
@@ -78,6 +93,8 @@ public record ReliefTile(int x, int z, int[] colors, int[] heights, int[] voxels
     public boolean sampledAir(int column, int offset) {
         if (offset < 0 || sampledAir == null) return false;
         if (offset < DEPTH) return (sampledAir[column] & (1L << offset)) != 0;
-        return columns != null && columns.color(column, offset - DEPTH) == SAMPLED_AIR;
+        if (columns == null) return false;
+        int color = columns.color(column, offset - DEPTH);
+        return color == SAMPLED_AIR || shaped(color & FACE_TYPE);
     }
 }

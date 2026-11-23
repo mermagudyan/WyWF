@@ -15,9 +15,13 @@ public final class SearchRun {
     private boolean retry;
 
     public SearchRun() { this(() -> System.nanoTime() / 1_000_000L); }
-    SearchRun(LongSupplier clock) { this.clock = clock; started = clock.getAsLong(); }
+    SearchRun(LongSupplier clock) {
+        this.clock = clock;
+        started = clock.getAsLong();
+    }
 
     public Set<Long> excluded() { return Set.copyOf(excluded); }
+    public void exclude(Collection<Long> seeds) { excluded.addAll(seeds); }
 
     public void batch(Collection<Long> seeds, long count, String reason) { batch(seeds,count,0,reason); }
 

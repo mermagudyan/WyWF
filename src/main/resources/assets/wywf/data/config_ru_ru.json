@@ -47,8 +47,8 @@
   "wywf.config.candidates.ramp": "Ожидание снижения числа результатов",
   "wywf.config.search.candidates.server_verification": "Проверять кандидатов на локальном сервере",
   "wywf.config.search.candidates.server_verification.desc": "Подтверждает условия генерацией мира. Если выключить проверку, поиск выдаст кандидатов после локальных фильтров без подтверждения.",
-  "wywf.config.search.candidates.offer_history": "Предлагать ранее проверенные сиды",
-  "wywf.config.search.candidates.offer_history.desc": "Перед новым поиском с проверкой предлагать повторно проверить совпадения из истории.",
+  "wywf.config.search.candidates.offer_history": "Предлагать предыдущие результаты",
+  "wywf.config.search.candidates.offer_history.desc": "Предлагать результаты того же запроса перед новым поиском. Если проверка включена, сиды проверяются повторно.",
   "wywf.config.map.gpu_relief": "GPU-рендер в Энде (экспериментально)",
   "wywf.config.map.gpu_relief.desc": "Включает GPU для непрозрачных 3D-сцен Энда при следующем открытии карты. Дебаг-пробы используют CPU.",
   "wywf.config.map.category": "Карта и пример",
@@ -59,5 +59,6 @@
   "wywf.config.map.pause.desc": "Приостанавливать расчёт карты и подбор примера, когда окно Minecraft неактивно.",
   "wywf.config.map.fit.desc": "Время поиска примерного сида под поставленные биомы. Если совпадение не найдено, показывается иллюстрация пожелания.",
   "wywf.config.candidates.minimum.desc": "После ожидания разрешить меньше итоговых результатов, чтобы редкие запросы завершались быстрее.",
-  "wywf.config.candidates.ramp.desc": "Через сколько секунд можно снизить цель поиска до минимального числа результатов."
+  "wywf.config.candidates.ramp.desc": "Через сколько секунд можно снизить цель поиска до минимального числа результатов.",
+  "wywf.config.constructor.performance": "Производительность и движок поиска"
 }

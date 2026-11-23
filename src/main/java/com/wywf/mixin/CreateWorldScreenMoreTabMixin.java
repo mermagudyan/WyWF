@@ -1,11 +1,9 @@
 package com.wywf.mixin;
 
-import com.wywf.client.WywfSettingsScreen;
-import net.minecraft.client.Minecraft;
+import com.wywf.client.SearchConstructorScreen;
+
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.layouts.GridLayout;
-import net.minecraft.client.gui.layouts.Layout;
-import net.minecraft.client.gui.components.tabs.GridLayoutTab;
 import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -20,16 +18,15 @@ public abstract class CreateWorldScreenMoreTabMixin {
         if (net.fabricmc.loader.api.FabricLoader.getInstance().isModLoaded("modmenu")) return;
 
         try {
-            Layout rawLayout = ((GridLayoutTab) (Object) this).getLayout();
-            if (rawLayout instanceof GridLayout layout) {
+            GridLayout layout = ((GridLayoutAccessor) this).wywf_layout();
+            if (layout != null) {
                 final int[] childCount = {0};
                 layout.visitChildren(w -> childCount[0]++);
                 int nextRow = childCount[0];
                 layout.addChild(
                         Button.builder(
                                 net.minecraft.network.chat.Component.literal("WyWF Settings"),
-                                b -> Minecraft.getInstance().setScreenAndShow(
-                                        new WywfSettingsScreen(screen))
+                                b -> SearchConstructorScreen.openSettings(screen)
                         ).width(210).build(),
                         nextRow, 0
                 );

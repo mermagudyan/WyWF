@@ -1,26 +1,43 @@
 package com.wywf.core;
 
+import dev.diylib.theme.DiyColorMath;
+
 public final class MenuColors {
-    public static int[] palette(String version,int first,int last){
-        if(version.startsWith("26.1"))return new int[]{0xFFB4DDA4,0xFFF0B7D0};
-        if(version.startsWith("26.2"))return new int[]{0xFFC78F82,0xFFE4D99B};
-        return new int[]{first,last};
-    }
-    public static int tone(int color, float lightness) {
-        float t = Math.clamp(lightness, -1f, 1f);
-        int toned = color & 0xFF000000;
-        for (int shift = 0; shift <= 16; shift += 8) {
-            int channel = color >>> shift & 255;
-            toned |= Math.round(t >= 0 ? channel + (255 - channel) * t : channel * (1 + t)) << shift;
-        }
-        return toned;
-    }
-    public static float borderBlend(long millis, double position) {
-        double sway = Math.sin(Math.floorMod(millis, 6400) * Math.TAU / 6400) * .18;
-        double blend = .5 + .5 * Math.cos((position - sway) * Math.TAU);
-        return (float) (blend * blend * (3 - 2 * blend));
+    public static final int GOLD = 0xFFE8BE68;
+
+    private MenuColors() {}
+
+    public static int[] palette(String version, int first, int last) {
+        if (release(version, "26.1")) return new int[]{0xFFB4DDA4, 0xFFF0B7D0};
+        if (release(version, "26.2")) return new int[]{0xFFC78F82, 0xFFE4D99B};
+        return new int[]{first, last};
     }
 
-    public static float wave(long millis,float position){return (float)(0.5+0.5*Math.sin(position*Math.PI*2-(millis%5120)/5120d*Math.PI*2));}
-    private MenuColors(){}
+    public static ReadyFramePalette readyFramePalette(String version) {
+        if (release(version, "26.1")) return new ReadyFramePalette(0xFFF0B7D0, 0xFF91C784);
+        if (release(version, "26.2")) return new ReadyFramePalette(0xFFAC4559, 0xFFE7D671);
+        if (release(version, "26.3")) return new ReadyFramePalette(0xFFEA9652, 0xFF81B96A);
+        return new ReadyFramePalette(0xFFD8BE7F, 0xFFB7E8BF);
+    }
+
+    public static float readyFrameCenter(long millis) {
+        return .5f + (wave(millis, 0) - .5f) * .32f;
+    }
+
+    public record ReadyFramePalette(int first, int last) {
+        public int shade(boolean lastColor, long millis, float position) {
+            float lightness = (wave(millis, position) - .5f) * .46f;
+            return tone(lastColor ? last : first, lightness);
+        }
+    }
+
+    private static boolean release(String version, String line) {
+        return version.equals(line) || version.startsWith(line + ".") || version.startsWith(line + "-");
+    }
+
+    public static int tone(int color, float lightness) { return DiyColorMath.tone(color, lightness); }
+
+    public static float borderBlend(long millis, double position) { return DiyColorMath.borderBlend(millis, position); }
+
+    public static float wave(long millis, float position) { return DiyColorMath.wave(millis, position); }
 }

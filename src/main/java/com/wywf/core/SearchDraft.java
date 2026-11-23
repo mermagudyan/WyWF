@@ -98,7 +98,46 @@ public final class SearchDraft {
         }
     }
 
-    public enum Preset { VILLAGE_AND_CHERRY, STRONGHOLD_START, DESERT_EXPLORER }
+    private record PresetTarget(String name, int radius, double angle) {}
+
+    public enum Preset {
+        VILLAGE(SearchConfig.SearchCenter.SPAWN, pick("village", 64)),
+        CHERRY_GROVE(SearchConfig.SearchCenter.SPAWN, pick("cherry_grove", 128)),
+        VILLAGE_AND_CHERRY(SearchConfig.SearchCenter.SPAWN, pick("village", 128, 0), pick("cherry_grove", 128, 2.4)),
+        STRONGHOLD_START(SearchConfig.SearchCenter.SPAWN, pick("village", 128, .5), pick("stronghold", 456, 3.2)),
+        DESERT_EXPLORER(SearchConfig.SearchCenter.SPAWN, pick("desert", 64, 0), pick("desert_pyramid", 128, 2.4), pick("ruined_portal", 128, 4.6)),
+        FARM_START(SearchConfig.SearchCenter.SPAWN, pick("plains", 128), pick("village", 256), pick("ruined_portal", 448)),
+        WARM_COAST(SearchConfig.SearchCenter.SPAWN, pick("warm_ocean", 128), pick("shipwreck", 128)),
+        MONUMENT_COAST(SearchConfig.SearchCenter.SPAWN, pick("ocean_monument", 128), pick("shipwreck", 128)),
+        SNOWY_START(SearchConfig.SearchCenter.SPAWN, pick("snowy_plains", 64), pick("village", 128), pick("frozen_peaks", 256)),
+        MOUNTAIN_MEADOW(SearchConfig.SearchCenter.SPAWN, pick("meadow", 128), pick("stony_peaks", 128), pick("village", 64)),
+        ANCIENT_DEPTHS(SearchConfig.SearchCenter.SPAWN, pick("deep_dark", 64), pick("ancient_city", 128)),
+        TRIAL_START(SearchConfig.SearchCenter.SPAWN, pick("trial_chambers", 64), pick("village", 128)),
+        PALE_EXPLORER(SearchConfig.SearchCenter.SPAWN, pick("pale_garden", 64), pick("mansion", 128)),
+        SWAMP_OUTPOST(SearchConfig.SearchCenter.SPAWN, pick("swamp", 64), pick("swamp_hut", 128)),
+        MUSHROOM_COAST(SearchConfig.SearchCenter.SPAWN, pick("mushroom_fields", 256), pick("shipwreck", 256)),
+        BADLANDS_PORTAL(SearchConfig.SearchCenter.SPAWN, pick("badlands", 256), pick("ruined_portal", 64)),
+        CAMP_AND_VILLAGE(SearchConfig.SearchCenter.SPAWN, pick("abandoned_camp", 256), pick("village", 64)),
+        NETHER_FORTRESS(SearchConfig.SearchCenter.SPAWN, pick("ruined_portal", 64), pick("fortress", 64));
+
+        private final SearchConfig.SearchCenter searchCenter;
+        private final PresetTarget[] targets;
+
+        Preset(SearchConfig.SearchCenter searchCenter, PresetTarget... targets) {
+            this.searchCenter = searchCenter;
+            this.targets = targets;
+        }
+
+        public SearchConfig.SearchCenter searchCenter() { return searchCenter; }
+
+        private static PresetTarget pick(String name, int radius) {
+                        return pick(name, radius, Double.NaN);
+        }
+
+        private static PresetTarget pick(String name, int radius, double angle) {
+            return new PresetTarget("minecraft:" + name, radius, angle);
+        }
+    }
 
     public static boolean supportsModifier(KeywordDictionary.Category category, Modifier modifier) {
         return switch (modifier) {
@@ -135,15 +174,17 @@ public final class SearchDraft {
         }
     }
 
-    private record Snapshot(List<Placement> placements, QueryLogic.Op logic) {}
+    private record Snapshot(List<Placement> placements, QueryLogic.Op logic, SearchConfig.SearchCenter requiredCenter) {}
 
     private final List<Placement> placements = new ArrayList<>();
     private final List<Snapshot> history = new ArrayList<>();
     private QueryLogic.Op logic = QueryLogic.Op.AND;
+    private SearchConfig.SearchCenter requiredCenter;
     private Snapshot moveStart;
     private int nextInstance = 1;
 
     public QueryLogic.Op logic() { return logic; }
+    public SearchConfig.SearchCenter requiredSearchCenter() { return requiredCenter; }
 
     public void logic(QueryLogic.Op value) {
         Objects.requireNonNull(value);
@@ -229,18 +270,22 @@ public final class SearchDraft {
         var old = placement(target).orElseThrow();
         var next = new Placement(target, old.x(), old.y(), old.minRadius(), old.radius(), old.countMode(), old.quantity(), value,old.pinned(),old.tags());
         if (next.equals(old)) return;
-        remember(); replace(next);
+        remember();
+        replace(next);
     }
 
     public void pin(Target target,boolean value){
-        endMove();var p=placement(target).orElseThrow();if(p.pinned()==value)return;
-        remember();replace(new Placement(target,p.x(),p.y(),p.minRadius(),p.radius(),p.countMode(),p.quantity(),p.loot(),value,p.tags()));
+        endMove();
+        var p=placement(target).orElseThrow();if(p.pinned()==value)return;
+        remember();
+        replace(new Placement(target,p.x(),p.y(),p.minRadius(),p.radius(),p.countMode(),p.quantity(),p.loot(),value,p.tags()));
     }
     public void remove(Target target) {
         endMove();
         if (placement(target).isEmpty()) return;
         remember();
         placements.removeIf(p -> p.target().equals(target));
+        if (placements.isEmpty()) requiredCenter = null;
     }
 
     public void clear() {
@@ -248,6 +293,7 @@ public final class SearchDraft {
         if (placements.isEmpty()) return;
         remember();
         placements.clear();
+        requiredCenter = null;
     }
 
     public void undo() {
@@ -260,18 +306,11 @@ public final class SearchDraft {
         endMove();
         remember();
         placements.clear();
-        switch (preset) {
-            case VILLAGE_AND_CHERRY -> { add(Target.VILLAGE, 200, 0); add(Target.CHERRY, 320, 2.4); }
-            case STRONGHOLD_START -> {
-                add(Target.VILLAGE, 320, 0.5);
-                add(Target.STRONGHOLD, 3008, 3.2);
-                add(Target.CHERRY, 640, 5);
-            }
-            case DESERT_EXPLORER -> {
-                add(Target.DESERT, 200, 0);
-                add(Target.TEMPLE, 640, 2.4);
-                add(Target.PORTAL, 640, 4.6);
-            }
+        requiredCenter = preset.searchCenter();
+        for (int i = 0; i < preset.targets.length; i++) {
+            var target = preset.targets[i];
+                        double angle = Double.isNaN(target.angle()) ? i * Math.TAU / preset.targets.length : target.angle();
+            add(Target.CATALOG.get(target.name()), target.radius(), angle);
         }
     }
 
@@ -347,7 +386,10 @@ public final class SearchDraft {
 
     private void replace(Placement next) {
         for (int i = 0; i < placements.size(); i++) {
-            if (placements.get(i).target().equals(next.target())) { placements.set(i, next); return; }
+            if (placements.get(i).target().equals(next.target())) {
+                placements.set(i, next);
+                return;
+            }
         }
         placements.add(next);
     }
@@ -358,13 +400,14 @@ public final class SearchDraft {
     }
 
     private Snapshot snapshot() {
-        return new Snapshot(List.copyOf(placements), logic);
+        return new Snapshot(List.copyOf(placements), logic, requiredCenter);
     }
 
     private void restore(Snapshot snapshot) {
         placements.clear();
         placements.addAll(snapshot.placements());
         logic = snapshot.logic();
+        requiredCenter = snapshot.requiredCenter();
     }
 
     private void remember() { remember(snapshot()); }

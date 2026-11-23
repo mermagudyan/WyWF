@@ -27,31 +27,36 @@ public final class VerificationScreen extends Screen {
     public VerificationScreen(CandidateReviewScreen parent, CreateWorldScreen creator, SearchResult result,
                               ParsedQuery query, SearchConfig config) {
         super(MapTexts.label("verify_title"));
-        this.parent = parent; this.creator = creator; this.result = result; this.query = query; this.config = config.copy();
+        this.parent = parent;
+        this.creator = creator;
+        this.result = result;
+        this.query = query;
+        this.config = config.copy();
         var current = PreviewWorld.active();
         if (current != null && current.matches(result, query, config)) {
-            session = current; launched = true;
+            session = current;
+            launched = true;
         } else if (current != null) { current.cancel(); waitingPrevious = true; }
     }
 
     @Override protected void init() {
         int w = (width - 42) / 4;
-        map = addRenderableWidget(Button.builder(MapTexts.label("surface"), b ->
+        map = addRenderableWidget(MenuButton.builder(MapTexts.label("surface"), b ->
                 Minecraft.getInstance().setScreenAndShow(new SurfaceMapScreen(this, session)))
                 .bounds(12, height - 30, w, 20).build());
-        enter = addRenderableWidget(Button.builder(ResultTexts.label("create"), b -> {
+        enter = addRenderableWidget(MenuButton.builder(ResultTexts.label("create"), b -> {
             try { session.join(); } catch (Exception failure) { error = failure.toString(); }
         }).bounds(18 + w, height - 30, w, 20).build());
-        fallback = addRenderableWidget(Button.builder(MapTexts.label("offline_create"), b -> {
+        fallback = addRenderableWidget(MenuButton.builder(MapTexts.label("offline_create"), b -> {
             Minecraft.getInstance().setScreenAndShow(new net.minecraft.client.gui.screens.ConfirmScreen(accepted -> {
                 Minecraft.getInstance().setScreenAndShow(this);
                 if (accepted) { offline = true; if (session != null) session.cancel(); }
             }, MapTexts.label("offline_create"), MapTexts.label("offline_warning")));
         }).bounds(24 + w * 2, height - 30, w, 20).build());
-        cancel = addRenderableWidget(Button.builder(MapTexts.label("discard"), b -> {
+        cancel = addRenderableWidget(MenuButton.builder(MapTexts.label("discard"), b -> {
             if (session != null) session.cancel(); Minecraft.getInstance().setScreenAndShow(parent);
         }).bounds(30 + w * 3, height - 30, w, 20).build());
-        addRenderableWidget(Button.builder(ResultTexts.label("back"), b -> onClose())
+        addRenderableWidget(MenuButton.builder(ResultTexts.label("back"), b -> onClose())
                 .bounds(width - 102, 7, 90, 20).build());
         updateButtons();
     }
@@ -83,7 +88,8 @@ public final class VerificationScreen extends Screen {
             shown = session.summary();
             List<String> all = new ArrayList<>();
             all.add(MapTexts.text("verify_status", shown.status()));
-            all.add(shown.note()); all.addAll(shown.evidence());
+            all.add(shown.note());
+            all.addAll(shown.evidence());
             List<String> wrapped = new ArrayList<>();
             for (String line : all) {
                 if (line.isEmpty()) wrapped.add("");

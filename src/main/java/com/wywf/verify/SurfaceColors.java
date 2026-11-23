@@ -16,10 +16,10 @@ public final class SurfaceColors {
             int up = z > 0 && s.blocks()[i - s.size()] != null && s.heights()[i - s.size()] != Integer.MIN_VALUE ? i - s.size() : i;
             int dx = s.heights()[i] - s.heights()[left], dz = s.heights()[i] - s.heights()[up];
             int color = switch (layer) {
-                case SURFACE -> BlockMapColors.light(BlockMapColors.material(s.blocks()[i],
+                case SURFACE -> BlockMapColors.light(BlockMapColors.surfaceMaterial(s.blocks()[i],
                                 s.colors()[i] == legacyWater && liquidWater(s.blocks()[i]) ? 0xFF23434A : s.colors()[i]),
                         water(s.blocks()[i]) ? 1 : 1 - Math.clamp((float)((dx + dz) * .022), -.14f, .25f));
-                case BIOMES -> BiomePalette.color(s.biomes()[i]);
+                case BIOMES -> biomeColor(s, s.biomes()[i], s.x() + x + .5, s.z() + z + .5);
                 case HEIGHT -> BiomePalette.temperature((s.heights()[i] + 64) / 384f * 2.5f - 0.5f);
                 case SLOPE -> BiomePalette.temperature((float) (Math.atan(Math.hypot(dx, dz)) / (Math.PI / 2) * 2.5 - 0.5));
                 case WATER -> water(s.blocks()[i]) ? 0xFF397AC6 : shade(s.colors()[i], 0.45);
@@ -37,10 +37,16 @@ public final class SurfaceColors {
         }
         return pixels;
     }
+    private static int biomeColor(SurfaceSnapshot snapshot, String biome, double x, double z) {
+        Integer custom = snapshot.biomeColors().get(biome);
+        return custom == null ? BiomePalette.mapColor(biome, snapshot.seed(), x, z) : custom;
+    }
+
     public static float[] climateRange(SurfaceSnapshot s) {
         float min = Float.POSITIVE_INFINITY, max = Float.NEGATIVE_INFINITY;
         for (int i = 0; i < s.climate().length; i++) if (s.blocks()[i] != null) {
-            min = Math.min(min, s.climate()[i]); max = Math.max(max, s.climate()[i]);
+            min = Math.min(min, s.climate()[i]);
+            max = Math.max(max, s.climate()[i]);
         }
         return new float[]{min, max};
     }
@@ -59,17 +65,30 @@ public final class SurfaceColors {
     public static int[] reduceBiomes(SurfaceSnapshot s, int step) {
         int size = s.size() / step;
         int[] result = new int[size * size];
+        var counts = new java.util.HashMap<String, Integer>();
         for (int z = 0; z < size; z++) for (int x = 0; x < size; x++) {
-            java.util.Map<String, Integer> counts = new java.util.HashMap<>();
+            counts.clear();
             boolean missing = false;
             for (int dz = 0; dz < step; dz++) for (int dx = 0; dx < step; dx++) {
                 int i = (z * step + dz) * s.size() + x * step + dx;
                 if (s.blocks()[i] == null) missing = true;
                 else counts.merge(s.biomes()[i], 1, Integer::sum);
             }
-            result[z * size + x] = missing ? 0xFF26343D : BiomePalette.color(counts.entrySet().stream()
-                    .sorted(java.util.Map.Entry.<String, Integer>comparingByValue().reversed()
-                    .thenComparing(java.util.Map.Entry.comparingByKey())).findFirst().orElseThrow().getKey());
+            if (missing) {
+                result[z * size + x] = 0xFF26343D;
+                continue;
+            }
+            String dominant = null;
+            int most = 0;
+            for (var entry : counts.entrySet()) {
+                int count = entry.getValue();
+                if (count > most || count == most && entry.getKey().compareTo(dominant) < 0) {
+                    dominant = entry.getKey();
+                    most = count;
+                }
+            }
+            result[z * size + x] = biomeColor(s, dominant,
+                    s.x() + (x + .5) * step, s.z() + (z + .5) * step);
         }
         return result;
     }
@@ -78,11 +97,14 @@ public final class SurfaceColors {
         int size = s.size() / step;
         int[] result = new int[size * size];
         for (int z = 0; z < size; z++) for (int x = 0; x < size; x++) {
-            long r = 0, g = 0, b = 0; boolean missing = false;
+            long r = 0, g = 0, b = 0;
+            boolean missing = false;
             for (int dz = 0; dz < step; dz++) for (int dx = 0; dx < step; dx++) {
                 int i = (z * step + dz) * s.size() + x * step + dx;
                 missing |= s.blocks()[i] == null;
-                r += pixels[i] >> 16 & 255; g += pixels[i] >> 8 & 255; b += pixels[i] & 255;
+                r += pixels[i] >> 16 & 255;
+                g += pixels[i] >> 8 & 255;
+                b += pixels[i] & 255;
             }
             int n = step * step;
             result[z * size + x] = missing ? 0xFF26343D : 0xFF000000 | (int) (r / n) << 16 | (int) (g / n) << 8 | (int) (b / n);

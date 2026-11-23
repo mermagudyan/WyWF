@@ -76,7 +76,10 @@ public final class AuditLogger {
                 String mod = (structModifiers != null && i < structModifiers.size()) ? structModifiers.get(i) : "DEFAULT";
                 sb.append(",\"mod\":\"").append(escapeJson(mod)).append('"');
                 int[] pos = structurePositions != null ? structurePositions.get(matchedStructures.get(i)) : null;
-                if (pos != null) { sb.append(",\"x\":").append(pos[0]); sb.append(",\"z\":").append(pos[1]); }
+                if (pos != null) {
+                    sb.append(",\"x\":").append(pos[0]);
+                    sb.append(",\"z\":").append(pos[1]);
+                }
                 sb.append('}');
             }
         }

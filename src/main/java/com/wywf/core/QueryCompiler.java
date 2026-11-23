@@ -27,10 +27,12 @@ public final class QueryCompiler {
             return new ParsedQuery(input, parsed.terms(), parsed.ignoredWords(), parsed.logic(), parsed.error());
         }
         var compiler = new QueryCompiler(leaves);
-        var matcher = TOKENS.matcher(text); int end = 0;
+        var matcher = TOKENS.matcher(text);
+        int end = 0;
         while (matcher.find()) {
             compiler.add(text.substring(end, matcher.start()));
-            compiler.add(matcher.group().toUpperCase(Locale.ROOT)); end = matcher.end();
+            compiler.add(matcher.group().toUpperCase(Locale.ROOT));
+            end = matcher.end();
         }
         compiler.add(text.substring(end));
         if (compiler.tokens.size() > 256) return new ParsedQuery(input, List.of(), List.of(), null, "Query is too long");
@@ -50,7 +52,10 @@ public final class QueryCompiler {
     private void add(String token) { if (!token.isBlank()) tokens.add(token.trim()); }
     private boolean take(String... values) {
         if (cursor == tokens.size()) return false;
-        for (String value : values) if (tokens.get(cursor).equals(value)) { cursor++; return true; }
+        for (String value : values) if (tokens.get(cursor).equals(value)) {
+            cursor++;
+            return true;
+        }
         return false;
     }
     private QueryLogic.Node parseOr() {
@@ -83,7 +88,8 @@ public final class QueryCompiler {
         if (cursor == tokens.size() || Set.of(")", "AND", "OR", "XOR", "И", "ИЛИ", "ЛИБО").contains(tokens.get(cursor)))
             throw new IllegalArgumentException("Missing condition");
         var leaf = leaves.apply(tokens.get(cursor++));
-        ignored.addAll(leaf.ignoredWords()); terms.addAll(leaf.terms());
+        ignored.addAll(leaf.ignoredWords());
+        terms.addAll(leaf.terms());
         if (leaf.error() != null) throw new IllegalArgumentException(leaf.error());
         if (leaf.isEmpty()) throw new IllegalArgumentException("Unrecognized condition");
         QueryLogic.Node node = new QueryLogic.Leaf(leaf.terms().getFirst());

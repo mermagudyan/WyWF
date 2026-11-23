@@ -30,7 +30,8 @@ public final class PauseMapButton extends ConstructorCompassButton {
                     || !(button.getMessage().getContents() instanceof TranslatableContents text))
                 continue;
             if (text.getKey().equals("options.worldOptions.button")
-                    || text.getKey().equals("menu.shareToLan"))
+                    || text.getKey().equals("menu.shareToLan")
+                    || text.getKey().equals("menu.multiplayerOptions.button"))
                 worldOptions = button;
             if (text.getKey().equals("menu.options")) options = button;
         }

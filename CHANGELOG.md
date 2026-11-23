@@ -2,6 +2,83 @@
 
 Written in plain language — every change, explained so anyone can understand.
 
+## 2.0.0
+### New
+- **A visual search constructor.** The compass next to the seed field opens a
+  map and a list of conditions. Place biome and structure markers, edit their
+  distance ranges, and lock conditions you want to keep while revising a query.
+  Use a preset to start with a prepared combination and its search center
+- **More ways to express a search.** Combine conditions with `AND`, `OR`, `NOT`
+  and parentheses, ask for exact or minimum and maximum structure counts,
+  and narrow supported targets with structure tags. The syntax and suggestion
+  screens help identify conflicting conditions and edit the request
+- **Search for items in structure chests.** Use the item picker to select
+  quantities and a container type where available. The game checks whether a
+  single chest contains the requested items. Loot advice flags items or quantities
+  the chosen chest cannot supply
+- **Verify worlds with the local server.** Optional verification checks actual
+  generation before presenting a candidate as confirmed. A verified preview can
+  be opened as the world you play in. The map and results show which evidence
+  comes from generation and which comes from offline estimates
+- **Browse candidate cards.** View candidate maps, open the details, and copy the
+  seed or search-center coordinates. `Search more` adds candidates to the list.
+  `Verify on server` checks the collected candidates on every page. The layout
+  is shared by offline and server-verified results
+  Selected confirmed worlds have an orange-to-green border with light and dark shades
+- **Reuse searches from history.** For the same query and world settings, reopen
+  saved offline candidates with their positions and biome distances, or recheck
+  saved server-mode seeds against the current world generation
+- **Explore maps before creating the world.** Zoom and pan through General,
+  Biomes, Top view and Terrain views. Switch between supported dimensions, show
+  structure layers and biome borders, inspect a cave-biome slice, or color the
+  terrain by temperature, water, steepness or coverage of the query conditions.
+  Generated top blocks are shown where terrain is available
+- **Inspect local terrain in 3D.** Open the relief view from the map and rotate,
+  pan or zoom around the area. Underground shadows and underwater fog hide the
+  edges of the terrain cut. The End view can also use GPU rendering when the
+  option is enabled. Biome color variations are stable for the same seed,
+  and nearby water colors blend across biome boundaries
+- **Open maps for worlds you already have.** The world list can open saved WyWF
+  maps with the original search details. The in-world map marks your position
+  and can show visited chunks, matching structures and recorded discoveries
+- **New menu controls.** Target editors and context menus share layered controls.
+  Dropdowns reveal text and icons inside their borders as they open, and can
+  open upward when there is more room there. DIY Lib supplies the shared controls,
+  vanilla-style buttons and keyboard navigation
+
+### Changed
+- **Minecraft-specific builds.**  For WyWF to work in Minecraft version 26.3.x,
+  you need the DIY Lib version for 26.3
+- **Search filters do less expensive work.** If a candidate already fails a
+  structure condition, the search can skip the biome samples. Fast placement
+  checks narrow the pool before deeper offline validation and optional local
+  server generation
+- **Choose a seed before creating the world.** A completed search opens the
+  results screen instead of going straight to world creation. You pick the seed
+  and confirm before creating an unchecked world with server verification off
+- **The progress screen shows each stage.** The new layout displays the query
+  as WyWF understood it, the scan rate and active threads, and how many seeds
+  remain to be verified. If the search hits a limit, you can review found seeds,
+  revise the query or keep searching
+- **Settings are grouped inside the constructor.** Related options have gold
+  headings and ordinary labels are easier to read. Sliders expose their current
+  value and show clearly when another setting locks them
+- **“Did you mean?” and related dialogs use the same style.** Text wraps in a
+  textured panel with a gold title and standard Minecraft buttons. The suggested
+  words are highlighted so you can see what would change before applying them
+
+### Fixed
+- **Nearby abandoned camps are found correctly.** `abandoned camp near me`
+  checks the nearby placements against the search center and reports the
+  nearest matching camp within range [(#1)](https://github.com/mermagudyan/WyWF/issues/1)
+- **Cave-biome distance ranges are respected.** A search for lush caves
+  between two distances now checks that interval during both the first search
+  and the deeper check, so a nearby patch outside the requested range cannot
+  stand in for a match
+- **Closing a search stops that run.** Leaving the progress screen cancels the
+  work. A result that finishes after cancellation can no longer change the
+  current screen or mix into the next search
+
 ## 1.4.1
 
 Two jars, one native library. `1.4.1+26.x` is for Minecraft 26.1–26.2

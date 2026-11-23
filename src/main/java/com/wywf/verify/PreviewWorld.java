@@ -30,7 +30,9 @@ public final class PreviewWorld {
     private static final CopyOnWriteArrayList<Session> retained = new CopyOnWriteArrayList<>();
     private static final ExecutorService GENERATION = Executors.newFixedThreadPool(2, runnable -> {
         Thread thread = new Thread(runnable, "WyWF-Preview-Generation");
-        thread.setDaemon(true); thread.setPriority(Thread.MIN_PRIORITY); return thread;
+        thread.setDaemon(true);
+        thread.setPriority(Thread.MIN_PRIORITY);
+        return thread;
     });
 
     public static Session active() {
@@ -71,7 +73,11 @@ public final class PreviewWorld {
         return begin(parent,result,query,config,progress,diagnostics,false);
     }
     public static synchronized Session beginMap(CreateWorldScreen parent,SearchResult result,SearchConfig config,Screen progress)throws Exception{
-        return begin(parent,result,new ParsedQuery("",List.of()),config,progress,null,true);
+        return beginMap(parent,result,new ParsedQuery("",List.of()),config,progress);
+    }
+    public static synchronized Session beginMap(CreateWorldScreen parent, SearchResult result, ParsedQuery query,
+                                                 SearchConfig config, Screen progress) throws Exception {
+        return begin(parent, result, query, config, progress, null, true);
     }
     private static Session begin(CreateWorldScreen parent,SearchResult result,ParsedQuery query,
                                  SearchConfig config,Screen progress,SearchDiagnostics diagnostics,boolean mapOnly)throws Exception{
@@ -86,7 +92,9 @@ public final class PreviewWorld {
         Session session = new Session(result, query, config, directory, progress,
                 ui.getGameRules().copy(context.dataConfiguration().enabledFeatures()),mapOnly);
         session.diagnostics=diagnostics;
-        active.set(session); booting = session; PreviewScreenGuard.loading = true;
+        active.set(session);
+        booting = session;
+        PreviewScreenGuard.loading = true;
         try {
             JsonElement encoded = WorldDimensions.CODEC.codec().encodeStart(
                     RegistryOps.create(JsonOps.INSTANCE, context.worldgenLoadContext()), context.selectedDimensions()).getOrThrow();
@@ -112,7 +120,8 @@ public final class PreviewWorld {
                 client.setScreenAndShow(progress);
             }
         } catch (Exception error) {
-            session.error(error.toString()); session.cancel();
+            session.error(error.toString());
+            session.cancel();
             throw error;
         } finally { finishBoot(session); }
         return session;
@@ -133,22 +142,27 @@ public final class PreviewWorld {
             }
             return true;
         }
-        session.storage = storage; session.packs = packs; session.stem = stem;
+        session.storage = storage;
+        session.packs = packs;
+        session.stem = stem;
         storage.saveDataTag(stem.worldDataAndGenSettings().data());
         session.server = MinecraftServer.spin(thread -> new QuietIntegratedServer(thread, Minecraft.getInstance(),
                 storage, packs, stem, Optional.of(session.rules), Minecraft.getInstance().services(),
                 LoggingLevelLoadListener.forSingleplayer(), session));
         Thread monitor = new Thread(() -> session.monitor(), "WyWF-Preview-Control");
-        monitor.setDaemon(true); monitor.setPriority(Thread.MIN_PRIORITY); monitor.start();
+        monitor.setDaemon(true);
+        monitor.setPriority(Thread.MIN_PRIORITY);
+        monitor.start();
         finishBoot(session);
-        if (Minecraft.getInstance().gui.screen() != session.progress) Minecraft.getInstance().setScreenAndShow(session.progress);
+        if (com.wywf.client.ClientPlatform.screen(Minecraft.getInstance()) != session.progress) Minecraft.getInstance().setScreenAndShow(session.progress);
         return true;
     }
 
     public static MinecraftServer startOrReuse(Function<Thread, MinecraftServer> factory) {
         Session session = active.get();
         if (session != null && session.joined && session.joinPending) {
-            session.joinPending = false; return session.server;
+            session.joinPending = false;
+            return session.server;
         }
         return MinecraftServer.spin(factory);
     }
@@ -199,30 +213,45 @@ public final class PreviewWorld {
         private final java.util.concurrent.atomic.AtomicBoolean mapBusy=new java.util.concurrent.atomic.AtomicBoolean();
         private final java.util.Map<String,VerifiedAnchor> discoveredAnchors=new ConcurrentHashMap<>();
         private final java.util.Map<String,MapFeature> discoveredFeatures=new ConcurrentHashMap<>();
-        public List<VerifiedAnchor> mapAnchors(){var all=new ArrayList<>(anchors);all.addAll(discoveredAnchors.values());return List.copyOf(all);}
+        public List<VerifiedAnchor> mapAnchors(){
+            var all=new ArrayList<>(anchors);
+            all.addAll(discoveredAnchors.values());
+            return List.copyOf(all);
+        }
         public List<MapFeature> mapFeatures(){return List.copyOf(discoveredFeatures.values());}
         public CompletableFuture<List<VerifiedAnchor>> confirmMap(java.util.List<com.wywf.map.StructureLayers.Marker> markers){
-            var future=new CompletableFuture<List<VerifiedAnchor>>();mapWork.add(new MapWork<>(()->{
+            var future=new CompletableFuture<List<VerifiedAnchor>>();
+            mapWork.add(new MapWork<>(()->{
                 var confirmed=MapDiscovery.confirm(this,markers);for(var a:confirmed)if(discoveredAnchors.size()+anchors.size()<4096)discoveredAnchors.put(a.id()+":"+a.x()+":"+a.z(),a);return confirmed;
-            },future));return future;
+            },future));
+            return future;
         }
         public CompletableFuture<List<MapFeature>> discoverFeatures(int x,int z,Set<String> selected){
-            var future=new CompletableFuture<List<MapFeature>>();mapWork.add(new MapWork<>(()->{
+            var future=new CompletableFuture<List<MapFeature>>();
+            mapWork.add(new MapWork<>(()->{
                 var found=MapDiscovery.features(this,x,z,selected);for(var f:found)if(discoveredFeatures.size()<4096)discoveredFeatures.put(f.id()+":"+f.x()+":"+f.y()+":"+f.z(),f);return found;
-            },future));return future;
+            },future));
+            return future;
         }
         public CompletableFuture<PlaceSurvey.Report> survey(PlaceSurvey.Request request) {
             var future = new CompletableFuture<PlaceSurvey.Report>();
             mapWork.add(new MapWork<>(() -> PlaceSurvey.scan(this, request, future::isCancelled), future));
             return future;
         }
-        public CompletableFuture<List<ReliefTile>> reliefPage(ReliefRequest request) {
-            return reliefPage(request, Set.of());
+        @Override public CompletableFuture<List<ReliefTile>> reliefPage(ReliefRequest request) {
+            return reliefPage(request, Set.of(), ignored -> {});
         }
 
-        public CompletableFuture<List<ReliefTile>> reliefPage(ReliefRequest request, Set<Long> alreadySaved) {
+        @Override public CompletableFuture<List<ReliefTile>> reliefPage(
+                ReliefRequest request, java.util.function.Consumer<List<ReliefTile>> partial) {
+            return reliefPage(request, Set.of(), partial);
+        }
+
+        @Override public CompletableFuture<List<ReliefTile>> reliefPage(ReliefRequest request, Set<Long> alreadySaved,
+                                                               java.util.function.Consumer<List<ReliefTile>> partial) {
             var future = new CompletableFuture<List<ReliefTile>>();
             var work = new MapWork<>(() -> {
+                checkpoint();
                 var level = level(request.dimension());
                 Integer slice = request.cut() == null ? null : Math.clamp(request.cut(), level.getMinY(), level.getMaxY() - 1);
                 var result = new java.util.ArrayList<ReliefTile>();
@@ -230,26 +259,14 @@ public final class PreviewWorld {
                 for (int dz = 0; dz < ReliefBlocks.SIZE; dz += 16) for (int dx = 0; dx < ReliefBlocks.SIZE; dx += 16) {
                     if (future.isCancelled()) return List.of();
                     int x = request.x() + dx, z = request.z() + dz;
-                    if (!alreadySaved.contains(SurfaceCache.key(x, z)))
-                        level.getChunkSource().getChunkFuture(x >> 4, z >> 4, status, true);
-                }
-                var neighbors = new it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap<
-                        java.util.Optional<net.minecraft.world.level.chunk.ChunkAccess>>();
-                for (int dz = 0; dz < ReliefBlocks.SIZE; dz += 16) for (int dx = 0; dx < ReliefBlocks.SIZE; dx += 16) {
-                    if (future.isCancelled()) return List.of();
-                    int x = request.x() + dx, z = request.z() + dz;
                     if (alreadySaved.contains(SurfaceCache.key(x, z))) continue;
+                    checkpoint();
                     var chunk = chunk(level, x >> 4, z >> 4, status);
-                    neighbors.put(SurfaceCache.key(x, z), java.util.Optional.of(chunk));
-                }
-                for (int dz = 0; dz < ReliefBlocks.SIZE; dz += 16) for (int dx = 0; dx < ReliefBlocks.SIZE; dx += 16) {
-                    if (future.isCancelled()) return List.of();
-                    int x = request.x() + dx, z = request.z() + dz;
-                    if (alreadySaved.contains(SurfaceCache.key(x, z))) continue;
-                    var chunk = neighbors.get(SurfaceCache.key(x, z)).orElseThrow();
+                    var neighbors = new it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap<
+                            java.util.Optional<net.minecraft.world.level.chunk.ChunkAccess>>();
                     int fog = request.dimension() == DimensionSpace.NETHER && request.containsFocus(x, z)
                             ? MinecraftReliefFog.at(level, request.focus()) : 0;
-                    result.add(ReliefBlocks.tile(request.dimension(), x, z, slice, level.getMinY(), level.getMaxY() - 1, level,
+                    var tile = ReliefBlocks.tile(request.dimension(), x, z, slice, level.getMinY(), level.getMaxY() - 1, level,
                             chunk::getBlockState, (wx, wz) -> chunk.getHeight(
                                     net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, wx & 15, wz & 15),
                             (wx, wz) -> {
@@ -261,7 +278,11 @@ public final class PreviewWorld {
                                 }
                                 return neighbor.isEmpty() ? Integer.MIN_VALUE : neighbor.get().getHeight(
                                         net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, wx & 15, wz & 15);
-                            }, p -> level.getBiome(p).is(net.minecraft.tags.BiomeTags.IS_RIVER), fog));
+                            }, p -> level.getBiome(p).is(net.minecraft.tags.BiomeTags.IS_RIVER),
+                            p -> level.getBiome(p).unwrapKey()
+                                    .map(key -> com.wywf.map.WaterMap.tint(key.identifier().toString())).orElse(0xFF1B464E), fog);
+                    result.add(tile);
+                    partial.accept(List.of(tile));
                 }
                 return List.copyOf(result);
             }, future);
@@ -272,7 +293,10 @@ public final class PreviewWorld {
 
         public void tickMap(){
             if(pendingSurface!=null&&!mapBusy.get()&&!surfaceBusy.get()&&!closing.get()){
-                var position=pendingSurface;pendingSurface=null;requestSurface(position.dimension(), position.x(), position.z());return;
+                var position=pendingSurface;
+                pendingSurface=null;
+                requestSurface(position.dimension(), position.x(), position.z());
+                return;
             }
             if(mapWork.isEmpty()||mapBusy.get())return;
             if(cancelled||joined){cancelMapWork("Map preview closed");return;}
@@ -293,7 +317,10 @@ public final class PreviewWorld {
         }
 
         private <T> void runMap(MapWork<T> job){
-            try{chunks.clear();deadline=System.nanoTime()+90_000_000_000L;if(!job.future.isCancelled())job.future.complete(job.task.call());}
+            try{
+                chunks.clear();
+                deadline=System.nanoTime()+90_000_000_000L;if(!job.future.isCancelled())job.future.complete(job.task.call());
+            }
             catch(Exception error){job.future.completeExceptionally(error);}
             finally{mapBusy.set(false);if(pauseSurface&&!surfaceBusy.get())park();}
         }
@@ -313,7 +340,10 @@ public final class PreviewWorld {
         }
         public List<SurfaceSnapshot> surfaceTiles(){return surfaceCache.tiles();}
         void tile(DimensionSpace dimension, SurfaceSnapshot tile) { surfaceCache(dimension).put(tile); }
-        public void pauseSurface(){pendingSurface=null;pauseSurface=true;if(!surfaceBusy.get()&&!mapBusy.get())park();}
+        public void pauseSurface(){
+            pendingSurface=null;
+            pauseSurface=true;if(!surfaceBusy.get()&&!mapBusy.get())park();
+        }
         private final java.util.concurrent.atomic.AtomicBoolean surfaceBusy = new java.util.concurrent.atomic.AtomicBoolean();
         private final java.util.concurrent.atomic.AtomicBoolean closing = new java.util.concurrent.atomic.AtomicBoolean();
         public final List<LootWitness> loot = new java.util.concurrent.CopyOnWriteArrayList<>();
@@ -339,23 +369,40 @@ public final class PreviewWorld {
             this(result,query,config,directory,progress,rules,false);
         }
         Session(SearchResult result, ParsedQuery query, SearchConfig config, Path directory, Screen progress, GameRules rules,boolean mapOnly) {
-            this.result = result; this.query = query; this.config = config.copy();
-            this.directory = directory; this.progress = progress; this.rules = rules;this.mapOnly=mapOnly;
+            this.result = result;
+            this.query = query;
+            this.config = config.copy();
+            this.directory = directory;
+            this.progress = progress;
+            this.rules = rules;
+            this.mapOnly=mapOnly;
         }
         static boolean parkable(boolean mapOnly,VerificationSummary.Status status){
             return status==VerificationSummary.Status.PASS||mapOnly&&status==VerificationSummary.Status.PARTIAL;
         }
-        private volatile SearchResult confirmedResult;
+        private volatile SearchResult resolvedResult;
         final Set<String> confirmedBiomes = new java.util.concurrent.CopyOnWriteArraySet<>();
-        public SearchResult result() { return confirmedResult == null ? result : confirmedResult; }
+        public SearchResult result() { return resolvedResult == null ? result : resolvedResult; }
         private void recordResult(VerificationSummary verified) {
             var structures = new LinkedHashSet<>(result.matchedStructures);
-            var biomes = new LinkedHashSet<>(result.matchedBiomes); biomes.addAll(confirmedBiomes);
+            var biomes = new LinkedHashSet<>(result.matchedBiomes);
+            biomes.addAll(confirmedBiomes);
             var positions = new HashMap<>(result.structurePositions);
-            for (var anchor : anchors) { structures.add(anchor.id()); positions.putIfAbsent(anchor.id(), new int[]{anchor.x(), anchor.z()}); }
+            var confirmed = new LinkedHashMap<String, List<VerifiedAnchor>>();
+            for (var anchor : anchors) {
+                confirmed.computeIfAbsent(anchor.id(), id -> new ArrayList<>()).add(anchor);
+            }
+            structures.addAll(confirmed.keySet());
+            positions.keySet().removeIf(id -> confirmed.containsKey(id.split("#", 2)[0]));
+            confirmed.forEach((id, matches) -> {
+                for (int i = 0; i < matches.size(); i++) {
+                    var anchor = matches.get(i);
+                    positions.put(i == 0 ? id : id + "#" + (i + 1), new int[]{anchor.x(), anchor.z()});
+                }
+            });
             int x = config.searchCenter() == SearchConfig.SearchCenter.SPAWN ? verified.spawnX() : result.centerX;
             int z = config.searchCenter() == SearchConfig.SearchCenter.SPAWN ? verified.spawnZ() : result.centerZ;
-            confirmedResult = new SearchResult(result.seed, x, z, result.structureX, result.structureZ, result.primaryDescription,
+            resolvedResult = new SearchResult(result.seed, x, z, result.structureX, result.structureZ, result.primaryDescription,
                     List.copyOf(structures), List.copyOf(biomes), result.stopReason, positions, result.biomeDistances);
         }
         public ParsedQuery query() { return query; }
@@ -387,7 +434,7 @@ public final class PreviewWorld {
                     pauseSurface = false;
                     if (reopen) {
                         expanding = new SurfaceRequest(dimension, x, z);
-                        progress = Minecraft.getInstance().gui.screen();
+                        progress = com.wywf.client.ClientPlatform.screen(Minecraft.getInstance());
                         parked = false;
                         retained.remove(this);
                         active.set(this);
@@ -401,19 +448,24 @@ public final class PreviewWorld {
                     new WorldOpenFlows(Minecraft.getInstance(), Minecraft.getInstance().getLevelSource()).openWorld(
                             directory.getFileName().toString(), () -> {
                                 finishBoot(this);
-                                expanding = null; surfaceBusy.set(false); park();
+                                expanding = null;
+                                surfaceBusy.set(false);
+                                park();
                                 Minecraft.getInstance().setScreenAndShow(progress);
                             });
                 } catch (Exception error) {
                     org.slf4j.LoggerFactory.getLogger(PreviewWorld.class).warn("Could not reopen surface preview", error);
                     finishBoot(this);
-                    expanding = null; surfaceBusy.set(false); park();
+                    expanding = null;
+                    surfaceBusy.set(false);
+                    park();
                 }
                 return;
             }
             running.execute(() -> {
                 try {
-                    chunks.clear(); deadline = System.nanoTime() + 90_000_000_000L;
+                    chunks.clear();
+                    deadline = System.nanoTime() + 90_000_000_000L;
                     VanillaVerifier.buildSurface(this, dimension, x, z, 64);
                 } catch (Exception error) {
                     org.slf4j.LoggerFactory.getLogger(PreviewWorld.class).warn("Surface preview stopped", error);
@@ -422,7 +474,7 @@ public final class PreviewWorld {
         }
         public boolean matches(SearchResult other, ParsedQuery conditions, SearchConfig options) {
             return !mapOnly && !joined && !cancelled && result.seed == other.seed && (result.centerX == other.centerX && result.centerZ == other.centerZ
-                        || confirmedResult != null && confirmedResult.centerX == other.centerX && confirmedResult.centerZ == other.centerZ)
+                        || resolvedResult != null && resolvedResult.centerX == other.centerX && resolvedResult.centerZ == other.centerZ)
                     && query.normalized().equals(conditions.normalized())
                     && query.ignoredWords().equals(conditions.ignoredWords())
                     && config.searchCenter() == options.searchCenter()
@@ -440,24 +492,37 @@ public final class PreviewWorld {
         private void monitor() {
             long timeout = System.nanoTime() + 120_000_000_000L;
             while (!cancelled && server != null && !server.isReady() && server.isRunning() && System.nanoTime() < timeout) {
-                try { Thread.sleep(50); } catch (InterruptedException error) { Thread.currentThread().interrupt(); return; }
+                try { Thread.sleep(50); } catch (InterruptedException error) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
             }
             if (cancelled) return;
-            if (server == null || !server.isReady()) { error("Local server startup failed or timed out"); cancel(); return; }
+            if (server == null || !server.isReady()) {
+                error("Local server startup failed or timed out");
+                cancel();
+                return;
+            }
             deadline = System.nanoTime() + 90_000_000_000L;
             if (expanding != null) {
-                var center = expanding; expanding = null;
+                var center = expanding;
+                expanding = null;
                 server.execute(() -> {
-                    try { chunks.clear(); VanillaVerifier.buildSurface(this, center.dimension(), center.x(), center.z(), 64); }
+                    try {
+                        chunks.clear();
+                        VanillaVerifier.buildSurface(this, center.dimension(), center.x(), center.z(), 64);
+                    }
                     catch (Exception error) { org.slf4j.LoggerFactory.getLogger(PreviewWorld.class).warn("Surface expansion stopped", error); }
                     finally { surfaceBusy.set(false);if(pauseSurface&&!mapBusy.get())park(); }
                 });
                 return;
             }
-            if(mapOnly){
-                var spawn=server.getRespawnData().pos();
-                summary=new VerificationSummary(VerificationSummary.Status.PARTIAL,spawn.getX(),spawn.getY(),spawn.getZ(),
-                        List.of("Map preview only; no search conditions verified"),"Map preview ready");
+            if (mapOnly) {
+                var spawn = server.getRespawnData().pos();
+                var mapSummary = new VerificationSummary(VerificationSummary.Status.PARTIAL, spawn.getX(), spawn.getY(), spawn.getZ(),
+                        List.of("Map preview only; no search conditions verified"), "Map preview ready");
+                if (!query.isEmpty() && config.searchCenter() == SearchConfig.SearchCenter.SPAWN) recordResult(mapSummary);
+                summary = mapSummary;
                 return;
             }
             summary = new VerificationSummary(VerificationSummary.Status.VERIFYING, 0, 0, 0, List.of(), "");
@@ -484,7 +549,7 @@ public final class PreviewWorld {
             if (System.nanoTime() > deadline) throw new BudgetExceeded("Verification time budget reached");
             Runtime memory = Runtime.getRuntime();
             if (memory.maxMemory() - memory.totalMemory() + memory.freeMemory() < 192L * 1024 * 1024)
-                throw new BudgetExceeded("Verification stopped to keep 192 MiB of Java heap headroom");
+                throw new BudgetExceeded("Verification stopped to keep 192 MiB of Java heap headroom", true);
         }
 
         public net.minecraft.world.level.chunk.ChunkAccess chunk(int x, int z, net.minecraft.world.level.chunk.status.ChunkStatus status) {
@@ -517,7 +582,9 @@ public final class PreviewWorld {
         public void join() throws Exception {
             if (mapOnly || cancelled || joined || joinRequested || !summary.terminal() || summary.status() != VerificationSummary.Status.PASS) return;
             if(!parked||closing.get()||server!=null||surfaceBusy.get()||mapBusy.get()){
-                joinRequested=true;pendingSurface=null;pauseSurface=true;
+                joinRequested=true;
+                pendingSurface=null;
+                pauseSurface=true;
                 cancelMapWork("Opening accepted world");
                 if(!parked&&!surfaceBusy.get()&&!mapBusy.get())park();
                 Thread wait=new Thread(()->{
@@ -529,7 +596,9 @@ public final class PreviewWorld {
                         try{join();}catch(Exception error){org.slf4j.LoggerFactory.getLogger(PreviewWorld.class).warn("Could not open accepted world",error);}
                     });
                 },"WyWF-World-Open");
-                wait.setDaemon(true);wait.start();return;
+                wait.setDaemon(true);
+                wait.start();
+                return;
             }
             String version = net.minecraft.SharedConstants.getCurrentVersion().id();
             SavedWorldMaps.write(directory, new SavedWorldMap(UUID.randomUUID().toString(),
@@ -545,7 +614,8 @@ public final class PreviewWorld {
             PreviewDirectory.accept(directory);
             try{directory=PreviewDirectory.promote(directory,WorldSplashes.choose());}
             catch(java.io.IOException error){org.slf4j.LoggerFactory.getLogger(PreviewWorld.class).warn("Could not apply splash world name; keeping accepted save {}",directory,error);}
-            joined = true; retained.remove(this);
+            joined = true;
+            retained.remove(this);
             for (Session other : retained) other.cancel();
             if (parked) {
                 new WorldOpenFlows(Minecraft.getInstance(), Minecraft.getInstance().getLevelSource()).openWorld(
@@ -562,7 +632,12 @@ public final class PreviewWorld {
         }
         public synchronized void cancel() {
             if (joined) return;
-            cancelled = true;pendingSurface=null;surfaceCache.clear();endSurfaceCache.clear();endSurface=null; retained.remove(this);
+            cancelled = true;
+            pendingSurface=null;
+            surfaceCache.clear();
+            endSurfaceCache.clear();
+            endSurface=null;
+            retained.remove(this);
             cancelMapWork("Map preview closed");
             if (active.get() == this) PreviewScreenGuard.loading = false;
             stop();
@@ -590,11 +665,16 @@ public final class PreviewWorld {
                             org.slf4j.LoggerFactory.getLogger(PreviewWorld.class).warn("Preview server is still running for {}", directory);
                             return;
                         }
-                        server = null; storage = null; packs = null; stem = null;
+                        server = null;
+                        storage = null;
+                        packs = null;
+                        stem = null;
                         if (cancelled) {
                             progress = null;
                             surface = null;
-                            surfaceCache.clear();endSurfaceCache.clear();endSurface=null;
+                            surfaceCache.clear();
+                            endSurfaceCache.clear();
+                            endSurface=null;
                         }
                         if (parked && !cancelled) retained.addIfAbsent(this);
                         else PreviewDirectory.discard(Minecraft.getInstance().getLevelSource().getBaseDir(), directory);
@@ -607,7 +687,8 @@ public final class PreviewWorld {
                     }
                 }
             }, "WyWF-Preview-Cleanup");
-            cleanup.setDaemon(true); cleanup.start();
+            cleanup.setDaemon(true);
+            cleanup.start();
         }
         public boolean parked() { return parked; }
     }
@@ -615,7 +696,16 @@ public final class PreviewWorld {
         public BusyException(){super("Verifier already active");}
     }
     public static final class BudgetExceeded extends RuntimeException {
-        public BudgetExceeded(String message) { super(message); }
+        private final boolean heapPressure;
+
+        public BudgetExceeded(String message) { this(message, false); }
+
+        private BudgetExceeded(String message, boolean heapPressure) {
+            super(message);
+            this.heapPressure = heapPressure;
+        }
+
+        public boolean heapPressure() { return heapPressure; }
     }
     private PreviewWorld() {}
 }

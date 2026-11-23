@@ -509,7 +509,8 @@ public final class VanillaStructureChecker implements StructureChecker {
     }
 
     private boolean hasFallbackSet(WorldContext ctx,ResourceKey<Structure> key){
-        var set=resolveSetKey(key.identifier().toString());return set!=null&&ctx.structureSets().get(set).isPresent();
+        var set=resolveSetKey(key.identifier().toString());
+        return set!=null&&ctx.structureSets().get(set).isPresent();
     }
 
     // Placement-only scan of one key over a chunk window

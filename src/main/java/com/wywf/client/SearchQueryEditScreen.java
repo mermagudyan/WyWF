@@ -23,15 +23,18 @@ final class SearchQueryEditScreen extends Screen {
         if(query!=null)
             text=query.getValue();
         int w=Math.min(700,width-32);
-        query=addRenderableWidget(new EditBox(font,(width-w)/2,65,w,20,title));query.setMaxLength(20000);query.setValue(text);
-        addRenderableWidget(Button.builder(MapTexts.label("search_again"),b->{
-            var value=query.getValue();var parsed=new QueryParser(new KeywordDictionary(config.queryLanguage())).parse(value);
+        query=addRenderableWidget(new EditBox(font,(width-w)/2,65,w,20,title));
+        query.setMaxLength(20000);
+        query.setValue(text);
+        addRenderableWidget(MenuButton.builder(MapTexts.label("search_again"),b->{
+            var value=query.getValue();
+            var parsed=new QueryParser(new KeywordDictionary(config.queryLanguage())).parse(value);
             if(parsed.isEmpty())
                 return;
             creator.getUiState().setSeed(value);
             Minecraft.getInstance().setScreenAndShow(new SearchScreen(creator,value,parsed,config).fresh());
         }).bounds(width/2-153,height-30,150,20).build());
-        addRenderableWidget(Button.builder(ResultTexts.label("back"),b->onClose()).bounds(width/2+3,height-30,150,20).build());
+        addRenderableWidget(MenuButton.builder(ResultTexts.label("back"),b->onClose()).bounds(width/2+3,height-30,150,20).build());
         setInitialFocus(query);
     }
     @Override public void extractRenderState(GuiGraphicsExtractor g,int x,int y,float delta){

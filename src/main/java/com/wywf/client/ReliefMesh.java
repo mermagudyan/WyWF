@@ -1,6 +1,7 @@
 package com.wywf.client;
 
 import com.wywf.core.DimensionSpace;
+import com.wywf.map.WaterMap;
 import com.wywf.verify.ReliefTile;
 import com.wywf.verify.ReliefDiagnostics;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
@@ -8,16 +9,24 @@ import java.util.Arrays;
 import java.util.function.BooleanSupplier;
 
 record ReliefMesh(int side, int[] faces, int minimum, int maximum, float[] sunlight, int[] chunkOffsets, int[] fogRim, int[] chunkHeights,
-                  int[] stripOffsets, int[] stripHeights, long[][] directions) {
+                  int[] stripOffsets, int[] stripHeights, long[][] directions, IceWaterFog iceWaterFog) {
     static final int STRIP_ROWS = 4, STRIPS_PER_CHUNK = 16 / STRIP_ROWS;
     ReliefMesh(int side, int[] faces, int minimum, int maximum) {
-        this(side, faces, minimum, maximum, null, null, null, null, null, null, null);
+        this(side, faces, minimum, maximum, null, null, null, null, null, null, null, null);
     }
 
     ReliefMesh(int side, int[] faces, int minimum, int maximum, float[] sunlight, int[] chunkOffsets, int[] fogRim) {
-        this(side, faces, minimum, maximum, sunlight, chunkOffsets, fogRim, null, null, null, null);
+        this(side, faces, minimum, maximum, sunlight, chunkOffsets, fogRim, null, null, null, null, null);
     }
+    ReliefMesh(int side, int[] faces, int minimum, int maximum, float[] sunlight, int[] chunkOffsets,
+               int[] fogRim, int[] chunkHeights, int[] stripOffsets, int[] stripHeights, long[][] directions) {
+        this(side, faces, minimum, maximum, sunlight, chunkOffsets, fogRim, chunkHeights,
+                stripOffsets, stripHeights, directions, null);
+    }
+
     static final int TOP = 0, WEST = 1, EAST = 2, NORTH = 3, SOUTH = 4, BOTTOM = 5;
+    private static final int WATER_BLEND_RADIUS = 12;
+    private static final int[] CRYSTAL_COLORS = {0xD88DFF, 0xB260EE, 0x963FDA, 0xCC71FF, 0xA54BE4, 0xB854F1};
     private static final String[] SIDE_NAMES = {"west", "east", "north", "south"};
     private static final int[] SIDE_FACES = {WEST, EAST, NORTH, SOUTH};
     private static final int[] SIDE_X = {-1, 1, 0, 0}, SIDE_Z = {0, 0, -1, 1};
@@ -34,6 +43,7 @@ record ReliefMesh(int side, int[] faces, int minimum, int maximum, float[] sunli
         private ReliefMesh prior;
         private ReliefTile[] priorTiles;
         private ReliefOpenAir.Exposure priorExposure;
+        private int[] priorWaterTints;
         private DimensionSpace priorDimension;
         private int reusedChunks;
 
@@ -41,6 +51,7 @@ record ReliefMesh(int side, int[] faces, int minimum, int maximum, float[] sunli
             boolean surface = Arrays.stream(tiles).anyMatch(tile -> tile != null && tile.ground() != null);
             var openAir = surface ? new ReliefOpenAir(tiles, tileSide, cancelled) : null;
             var exposure = openAir == null ? null : openAir.exposure();
+            int[] waterTints = dimension == DimensionSpace.OVERWORLD ? waterTints(tiles, tileSide, cancelled) : null;
             boolean compatible = prior != null && prior.side == tileSide * 16 && priorDimension == dimension
                     && (priorExposure == null) == (exposure == null);
             boolean[] dirty = new boolean[tiles.length];
@@ -55,10 +66,22 @@ record ReliefMesh(int side, int[] faces, int minimum, int maximum, float[] sunli
                     if (z + 1 < tileSide) dirty[chunk + tileSide] = true;
                 }
                 if (exposure != null) exposure.markChanges(priorExposure, dirty, tileSide * 16);
+                if (waterTints != null || priorWaterTints != null) {
+                    int side = tileSide * 16;
+                    for (int z = 0; z < side; z++) {
+                        for (int x = 0; x < side; x++) {
+                            int cell = z * side + x;
+                            int oldTint = priorWaterTints == null ? 0 : priorWaterTints[cell];
+                            int newTint = waterTints == null ? 0 : waterTints[cell];
+                            if (oldTint != newTint) dirty[(z >> 4) * tileSide + (x >> 4)] = true;
+                        }
+                    }
+                }
             } else {
                 Arrays.fill(dirty, true);
             }
-            var mesh = buildMesh(tiles, tileSide, dimension, openAir, compatible ? prior : null, dirty, cancelled);
+            var mesh = buildMesh(tiles, tileSide, dimension, openAir, waterTints,
+                    compatible ? prior : null, dirty, cancelled);
             reusedChunks = 0;
             for (int chunk = 0; chunk < tiles.length; chunk++) {
                 if (!dirty[chunk] && tiles[chunk] != null) reusedChunks++;
@@ -66,6 +89,7 @@ record ReliefMesh(int side, int[] faces, int minimum, int maximum, float[] sunli
             prior = mesh;
             priorTiles = tiles.clone();
             priorExposure = exposure;
+            priorWaterTints = waterTints;
             priorDimension = dimension;
             return mesh;
         }
@@ -76,7 +100,8 @@ record ReliefMesh(int side, int[] faces, int minimum, int maximum, float[] sunli
     }
 
     private static ReliefMesh buildMesh(ReliefTile[] tiles, int tileSide, DimensionSpace dimension,
-                                        ReliefOpenAir openAir, ReliefMesh prior, boolean[] dirty, BooleanSupplier cancelled) {
+                                        ReliefOpenAir openAir, int[] waterTints, ReliefMesh prior, boolean[] dirty,
+                                        BooleanSupplier cancelled) {
         int side = tileSide * 16;
         var faces = prior == null ? new IntArrayList() : new IntArrayList(prior.faces.length);
         var neighbors = new ReliefTile[4];
@@ -153,30 +178,55 @@ record ReliefMesh(int side, int[] faces, int minimum, int maximum, float[] sunli
                 for (int offset = 0; offset < visibleDepth; offset++) {
                     int y = top - offset;
                     int color = tile.voxel(col, y);
-                    if (color == 0) {
-                        if (openAir != null && offset == depth - 1 && openAir.contains(x, y, z)
-                                && y < tile.ground()[col] - 1)
-                            face(faces, cell, y, TOP, ReliefTile.CAVE_SHADOW);
+                    int type = color & ReliefTile.FACE_TYPE;
+                    if ((color == 0 || ReliefTile.shaped(type))
+                            && openAir != null && y < tile.ground()[col] - 1 && openAir.contains(x, y, z)) {
+                        if (offset == depth - 1) {
+                            int capY = color == 0 ? y : y - 1;
+                            face(faces, cell, capY, TOP, ReliefTile.CAVE_SHADOW);
+                        }
+                        for (int d = 0; d < neighbors.length; d++) {
+                            if (neighbors[d] != null && neighbors[d].belowSample(columns[d], y))
+                                face(faces, cell + SIDE_X[d] + SIDE_Z[d] * side, y, opposite(SIDE_FACES[d]), ReliefTile.CAVE_SHADOW);
+                        }
+                    }
+                    if (color == 0) continue;
+                    if (color == ReliefTile.COVERED_WATER) {
+                        int tint = IceWaterFog.shadow(waterTints == null ? 0 : waterTints[cell]);
+                        for (int d = 0; d < neighbors.length; d++) {
+                            var neighbor = neighbors[d];
+                            if (neighbor == null) continue;
+                            int adjacent = neighbor.voxel(columns[d], y);
+                            if ((adjacent & ReliefTile.FACE_TYPE) == ReliefTile.WATER_FACE
+                                    || adjacent == 0 && !neighbor.belowSample(columns[d], y))
+                                face(faces, cell, y, SIDE_FACES[d], ReliefTile.ICE_WATER_SHADOW | (tint & 0xFFFFFF));
+                        }
                         continue;
                     }
-                    if (color == ReliefTile.COVERED_WATER) continue;
-                    int type = color & ReliefTile.FACE_TYPE;
+                    if (type == ReliefTile.END_CRYSTAL) {
+                        for (int direction = 0; direction < CRYSTAL_COLORS.length; direction++)
+                            face(faces, cell, y, direction, type | CRYSTAL_COLORS[direction]);
+                        continue;
+                    }
                     if (type == ReliefTile.WATER_FACE) {
+                        int blended = waterTints == null ? 0 : waterTints[cell];
+                        int tint = blended == 0 ? color : ReliefTile.WATER_FACE | (blended & 0xFFFFFF);
                         if ((tile.voxel(col, y + 1) & ReliefTile.FACE_TYPE) != ReliefTile.WATER_FACE)
-                            face(faces, cell, y, TOP, color);
+                            face(faces, cell, y, TOP, tint);
                         for (int d = 0; d < 4; d++) {
                             var neighbor = neighbors[d];
                             if (neighbor == null) continue;
                             int c = columns[d];
                             if (neighbor.ground() != null && y < neighbor.ground()[c] && neighbor.colors()[c] != 0) continue;
                             if (neighbor.voxel(c, y) == 0 && !neighbor.belowSample(c, y))
-                                face(faces, cell, y, SIDE_FACES[d], color);
+                                face(faces, cell, y, SIDE_FACES[d], tint);
                         }
                         continue;
                     }
                     boolean aboveGround = tile.ground() == null || y >= tile.ground()[col];
                     if (ReliefTile.shaped(type)) {
-                        if (shapeExposed(tile, col, neighbors, columns, x, y, z, aboveGround, openAir))
+                        if ((!ReliefTile.plant(type) || aboveGround)
+                                && shapeExposed(tile, col, neighbors, columns, x, y, z, aboveGround, openAir))
                             face(faces, cell, y, TOP, color);
                         continue;
                     }
@@ -185,10 +235,10 @@ record ReliefMesh(int side, int[] faces, int minimum, int maximum, float[] sunli
                     if (exposesFace(above)) {
                         if (aboveGround && type != ReliefTile.CLIPPED_FACE && (tile.caveDepth() == 0 || offset > 0))
                             face(faces, cell, y, TOP, color);
-                        else if (type == ReliefTile.CAVE_FLOOR && above == 0)
+                        else if (type == ReliefTile.CAVE_FLOOR && (above == 0 || ReliefTile.shaped(above & ReliefTile.FACE_TYPE)))
                             face(faces, cell, y, TOP, 0xEF000000 | (color & 0xFFFFFF));
                         else if (openAir != null && ((above & ReliefTile.FACE_TYPE) == ReliefTile.WATER_FACE
-                                || above == 0 && openAir.contains(x, y + 1, z)))
+                                || openAir.contains(x, y + 1, z)))
                             face(faces, cell, y, TOP, recessedColor(color, tile.ground()[col] - y));
                         else if (tile.trace() != null)
                             ReliefDiagnostics.face(tile, col, y, "top", aboveGround ? "slice-cap" : "below-ground", tile, col);
@@ -250,7 +300,8 @@ record ReliefMesh(int side, int[] faces, int minimum, int maximum, float[] sunli
         int[] packedFaces = faces.toIntArray();
         long[][] directions = packedFaces.length >= 300_000 ? directionMask(packedFaces, cancelled) : null;
         return new ReliefMesh(side, packedFaces, min, max, sunlight, chunkOffsets, fogRim, chunkHeights,
-                stripOffsets, stripHeights, directions);
+                stripOffsets, stripHeights, directions,
+                surface ? IceWaterFog.build(tiles, tileSide, cancelled) : null);
     }
 
     static long[][] directionMask(int[] faces, java.util.function.BooleanSupplier cancelled) {
@@ -258,7 +309,15 @@ record ReliefMesh(int side, int[] faces, int minimum, int maximum, float[] sunli
         var directions = new long[6][Math.ceilDiv(count, Long.SIZE)];
         for (int i = 0; i < count; i++) {
             if ((i & 4095) == 0 && cancelled.getAsBoolean()) throw new java.util.concurrent.CancellationException();
-            directions[faces[i * 3] % 6][i >>> 6] |= 1L << (i & 63);
+            long bit = 1L << (i & 63);
+            int word = i >>> 6;
+            if ((faces[i * 3 + 2] & ReliefTile.FACE_TYPE) == ReliefTile.END_CRYSTAL) {
+                // rotated faces can be visible from either side of the horizontal plane
+                directions[TOP][word] |= bit;
+                directions[BOTTOM][word] |= bit;
+            } else {
+                directions[faces[i * 3] % 6][word] |= bit;
+            }
         }
         return directions;
     }
@@ -267,6 +326,10 @@ record ReliefMesh(int side, int[] faces, int minimum, int maximum, float[] sunli
         if (color == com.wywf.verify.BlockMapColors.LAVA)
             return color;
         return (0xE0 + Math.clamp(depth, 1, 15)) << 24 | (color & 0xFFFFFF);
+    }
+
+    private static int opposite(int direction) {
+        return direction == WEST || direction == NORTH ? direction + 1 : direction - 1;
     }
 
     private static boolean shapeExposed(ReliefTile tile, int col, ReliefTile[] neighbors, int[] columns,
@@ -283,9 +346,29 @@ record ReliefMesh(int side, int[] faces, int minimum, int maximum, float[] sunli
         return false;
     }
 
+    private static int[] waterTints(ReliefTile[] tiles, int tileSide, BooleanSupplier cancelled) {
+        int side = tileSide * 16;
+        int[] tints = null;
+        for (int chunk = 0; chunk < tiles.length; chunk++) {
+            if (cancelled.getAsBoolean()) throw new java.util.concurrent.CancellationException();
+            var tile = tiles[chunk];
+            if (tile == null) continue;
+            int start = (chunk / tileSide) * 16 * side + (chunk % tileSide) * 16;
+            for (int col = 0; col < 256; col++) {
+                if ((tile.colors()[col] & ReliefTile.FACE_TYPE) != ReliefTile.WATER_FACE) continue;
+                int color = tile.voxel(col, tile.heights()[col]) & 0xFFFFFF;
+                if (color == 0) continue;
+                if (tints == null) tints = new int[side * side];
+                tints[start + (col >> 4) * side + (col & 15)] = 0xFF000000 | color;
+            }
+        }
+        return tints == null ? null : WaterMap.smoothTints(tints, side, side, WATER_BLEND_RADIUS);
+    }
+
     private static boolean exposesFace(int neighbor) {
         int material = neighbor & ReliefTile.FACE_TYPE;
-        return neighbor == 0 || material == ReliefTile.WATER_FACE || ReliefTile.shaped(material);
+        return neighbor == 0 || material == ReliefTile.WATER_FACE || material == ReliefTile.END_CRYSTAL
+                || ReliefTile.shaped(material);
     }
 
     private static void face(IntArrayList faces, int cell, int y, int direction, int color) {

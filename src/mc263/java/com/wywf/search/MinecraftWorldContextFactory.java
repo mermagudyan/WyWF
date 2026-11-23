@@ -111,7 +111,8 @@ public final class MinecraftWorldContextFactory implements WorldContextFactory {
                 : net.minecraft.world.level.biome.TheEndBiomeSource.create(registries.lookupOrThrow(Registries.BIOME));
         var state = RandomState.create(noiseParameters, seed, holder.value());
         var sampler = state.createClimateSampler(net.minecraft.world.level.levelgen.densityfunction.SamplerContext.builder().enableCaches().build());
-        var terrain = new ReusableTerrainSampler(holder.value(), noiseParameters); terrain.reseed(seed);
+        var terrain = new ReusableTerrainSampler(holder.value(), noiseParameters);
+        terrain.reseed(seed);
         return new WorldContext(seed, source, () -> sampler, placementsByStructure, spawnPredictor, registries,
                 key, structureSets, holder.value(), () -> terrain, () -> state);
     }

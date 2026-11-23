@@ -5,6 +5,17 @@ public final class BlockMapColors {
 
     private BlockMapColors() {}
 
+    // keep sampled RGB through saved surface tiles while retaining support for older tiles
+    private static final int SURFACE_TINT = 0xFE000000;
+
+    static int surfaceTint(int rgb) {
+        return SURFACE_TINT | (rgb & 0xFFFFFF);
+    }
+
+    static int surfaceMaterial(String id, int sampled) {
+        return (sampled & 0xFF000000) == SURFACE_TINT ? 0xFF000000 | sampled : material(id, sampled);
+    }
+
     public static int material(String id, int fallback) {
         if (!id.startsWith("minecraft:")) return fallback;
         return switch (id) {

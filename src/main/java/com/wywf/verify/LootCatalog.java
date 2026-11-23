@@ -35,7 +35,8 @@ public final class LootCatalog {
     }
     public static List<String> containers(CreateWorldScreen creator, String canonical) {
         if(creator==null)return List.of("any");
-        List<String> values=new ArrayList<>();values.add("any");
+        List<String> values=new ArrayList<>();
+        values.add("any");
         creator.getUiState().getSettings().dataPackResources().fullRegistries().lookup().lookupOrThrow(Registries.LOOT_TABLE)
                 .listElementIds().map(k->k.identifier().toString()).filter(id->LootContainers.accepts(canonical,id))
                 .sorted().map(LootContainers::normalize).forEach(values::add);

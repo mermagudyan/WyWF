@@ -14,7 +14,7 @@ final class BiomeMapCanvas implements AutoCloseable {
     private final BiomeMaps.Session session;
     private final BiomeMaps.Scope scope;
     private final boolean ownsScope;
-    private final MapTiles tiles = new MapTiles();
+    private final MapTiles tiles;
     private BiomeMapSnapshot displayed;
     private long requestAt;
     private boolean dirty = true, temperature, borders, distances = true;
@@ -28,7 +28,8 @@ final class BiomeMapCanvas implements AutoCloseable {
         structures.dimension(value);
         tiles.dimension(value);
         displayed = null;
-        session.invalidate(); dirty();
+        session.invalidate();
+        dirty();
     }
     void layer(com.wywf.verify.SurfaceColors.Layer value) {
         boolean requested = value == com.wywf.verify.SurfaceColors.Layer.CLIMATE;
@@ -61,8 +62,13 @@ final class BiomeMapCanvas implements AutoCloseable {
         this(result,resolution,shared,structures,scope,false);
     }
     private BiomeMapCanvas(SearchResult result,int resolution,MapViewport shared,StructureLayers structures,BiomeMaps.Scope scope,boolean ownsScope) {
-        this.scope=scope;this.ownsScope=ownsScope;session=BiomeMaps.open(scope);
-        this.result = result; this.resolution = resolution; this.structures = structures;
+        this.scope=scope;
+        this.ownsScope=ownsScope;
+        session=BiomeMaps.open(scope);
+        this.result = result;
+        tiles = new MapTiles(result.seed);
+        this.resolution = resolution;
+        this.structures = structures;
         settings(com.wywf.core.ConfigStore.load());
         view = shared != null ? shared : new MapViewport(result.centerX, result.centerZ, resolution <= 32 ? 32 : 2);
     }
@@ -84,7 +90,10 @@ final class BiomeMapCanvas implements AutoCloseable {
     }
     void y(int value) {
         if (sampleY != value) {
-            sampleY = value; tiles.y(value); displayed = null; dirty();
+            sampleY = value;
+            tiles.y(value);
+            displayed = null;
+            dirty();
         }
     }
     void borders(boolean value) {
@@ -135,7 +144,8 @@ final class BiomeMapCanvas implements AutoCloseable {
     }
     void resume() {
         if (displayed != null) {
-        upload(displayed); tiles.prepare(view);
+        upload(displayed);
+        tiles.prepare(view);
         }
     }
     void settings(com.wywf.core.SearchConfig config) {
@@ -183,7 +193,7 @@ final class BiomeMapCanvas implements AutoCloseable {
             counts.merge(id, 1, Integer::sum);
         }
         legend = counts.entrySet().stream().sorted(java.util.Map.Entry.<String, Integer>comparingByValue().reversed())
-                .limit(8).map(e -> new Legend(BiomePalette.color(e.getKey()), ResultTexts.name(e.getKey()))).toList();
+                .limit(8).map(e -> new Legend(BiomePalette.mapColor(e.getKey()), ResultTexts.name(e.getKey()))).toList();
     }
 
     String status() {
@@ -210,16 +220,21 @@ final class BiomeMapCanvas implements AutoCloseable {
         drawBase(g);
         drawSlimeChunks(g);
         if (markers) {
-            drawCross(g); drawMarkers(g);
+            drawCross(g);
+            drawMarkers(g);
         }
     }
 
     void drawBase(GuiGraphicsExtractor g) {
+        drawBase(g, false);
+    }
+
+    void drawBase(GuiGraphicsExtractor g, boolean overviewOnly) {
         if(view.advance())dirty();
         g.fill(x, y, x + width, y + height, dimension == DimensionSpace.END ? DimensionSpace.END_VOID_COLOR : 0xFF29343D);
         g.enableScissor(x, y, x + width, y + height);
         tiles.prepare(view);
-        tiles.draw(g, view, x, y, temperature);
+        tiles.draw(g, view, x, y, temperature, overviewOnly);
         g.disableScissor();
     }
     void drawCross(GuiGraphicsExtractor g) {
@@ -232,10 +247,15 @@ final class BiomeMapCanvas implements AutoCloseable {
     }
 
     void drawCrossAt(GuiGraphicsExtractor g, int cx, int cy, String label) {
+        drawCrossAt(g, cx, cy, label, x, y, width, height);
+    }
+
+    static void drawCrossAt(GuiGraphicsExtractor g, int cx, int cy, String label,
+                            int x, int y, int width, int height) {
         g.enableScissor(x, y, x + width, y + height);
         g.fill(cx - 4, cy, cx + 5, cy + 1, 0xFFFFFFFF);
         g.fill(cx, cy - 4, cx + 1, cy + 5, 0xFFFFFFFF);
-        int[] labelBox = crossLabelBounds(cx, cy, label);
+        int[] labelBox = crossLabelBounds(cx, cy, label, x, y, width, height);
         if (labelBox != null) {
             g.fill(labelBox[0], labelBox[1], labelBox[2], labelBox[3], 0xDC182027);
             g.text(Minecraft.getInstance().font, label, labelBox[0] + 2, labelBox[1] + 1, 0xFFFFFFFF);
@@ -243,7 +263,7 @@ final class BiomeMapCanvas implements AutoCloseable {
         g.disableScissor();
     }
 
-    private int[] crossLabelBounds(int cx, int cy, String label) {
+    private static int[] crossLabelBounds(int cx, int cy, String label, int x, int y, int width, int height) {
         if (label == null) return null;
         var font = Minecraft.getInstance().font;
         int labelWidth = font.width(label);
@@ -268,14 +288,21 @@ final class BiomeMapCanvas implements AutoCloseable {
     String markerHover(double mx, double my) {
         if (!contains(mx, my))
             return null;
+        com.wywf.map.StructureLayers.Marker closest = null;
+        double distance = 10;
         for (var marker : shownMarkers()) {
-            if (Math.hypot(markerX(marker) - mx, markerY(marker) - my) <= 9)
-                return MapTexts.text("target", ResultTexts.name(marker.id()), marker.x(), marker.z(),
-                        structures.distance(marker,centerX(),centerZ()))
-                        + " · " + MapTexts.text(marker.queryMatched() ? "query_match" : marker.verified() ? "confirmed" : "predicted")
-                        + " · " + MapTexts.text(structures.boundary(marker) && marker.verified() ? "distance_edge" : "distance_start")+structures.featureHeights(marker);
+            double pixels = Math.hypot(markerX(marker) - mx, markerY(marker) - my);
+            if (pixels <= 9 && pixels < distance) {
+                closest = marker;
+                distance = pixels;
+            }
         }
-        return null;
+        if (closest == null) return null;
+        return MapTexts.text("target", ResultTexts.name(closest.id()), closest.x(), closest.z(),
+                structures.distance(closest, centerX(), centerZ()))
+                + " · " + MapTexts.text(closest.queryMatched() ? "query_match" : closest.verified() ? "confirmed" : "predicted")
+                + " · " + MapTexts.text(structures.boundary(closest) && closest.verified() ? "distance_edge" : "distance_start")
+                + structures.featureHeights(closest);
     }
 
     private long markerLayoutVersion=Long.MIN_VALUE;
@@ -313,7 +340,8 @@ final class BiomeMapCanvas implements AutoCloseable {
         g.enableScissor(x, y, x + width, y + height);
         for(int cz=minZ;cz<=maxZ;cz++)
             for(int cx=minX;cx<=maxX;cx++){
-            long key=((long)cx<<32)^(cz&0xffffffffL);final int tx=cx,tz=cz;
+            long key=((long)cx<<32)^(cz&0xffffffffL);
+            final int tx=cx,tz=cz;
             if(!slimeCache.computeIfAbsent(key,k->SlimeChunks.contains(result.seed,tx,tz)))continue;
             g.fill(x + view.edgeX(cx * 16), y + view.edgeZ(cz * 16),
                     x + view.edgeX(cx * 16 + 16), y + view.edgeZ(cz * 16 + 16), 0x6635FF3A);
@@ -331,7 +359,7 @@ final class BiomeMapCanvas implements AutoCloseable {
         var labelBoxes = new java.util.ArrayList<int[]>();
         if (centerLabel != null) {
             var pointer = MapPointer.project(view.pixelX(centerX()), view.pixelZ(centerZ()), width - 1, height - 1, 0);
-            int[] labelBox = crossLabelBounds(x + pointer.x(), y + pointer.y(), centerLabel);
+            int[] labelBox = crossLabelBounds(x + pointer.x(), y + pointer.y(), centerLabel, x, y, width, height);
             if (labelBox != null) labelBoxes.add(labelBox);
         }
         for (var marker : shown) {
@@ -340,7 +368,8 @@ final class BiomeMapCanvas implements AutoCloseable {
                 String text=structures.distance(marker,centerX(),centerZ())+" b";
                 int tw=Minecraft.getInstance().font.width(text);
                 for(int[] pos:new int[][]{{sx+11,sy-4},{sx-tw-11,sy-4},{sx-tw/2,sy-20}}){
-                    int[] box={pos[0],pos[1],pos[0]+tw,pos[1]+10};boolean blocked=box[0]<x||box[2]>x+width||box[1]<y||box[3]>y+height;
+                    int[] box={pos[0],pos[1],pos[0]+tw,pos[1]+10};
+                    boolean blocked=box[0]<x||box[2]>x+width||box[1]<y||box[3]>y+height;
                     for(var other:shown){
                         int ox=markerX(other),oy=markerY(other);
                         if(box[0]<ox+10&&box[2]>ox-10&&box[1]<oy+10&&box[3]>oy-10)
@@ -350,7 +379,7 @@ final class BiomeMapCanvas implements AutoCloseable {
                         if(box[0]<previous[2]+2&&box[2]>previous[0]-2&&box[1]<previous[3]+2&&box[3]>previous[1]-2)
                             blocked=true;
                     if(!blocked){
-                        g.text(Minecraft.getInstance().font,text,pos[0],pos[1],0xFFFFE1A0);
+                        g.text(Minecraft.getInstance().font,text,pos[0],pos[1],MapTexts.EMPHASIS);
                         labelBoxes.add(box);
                         break;
                     }

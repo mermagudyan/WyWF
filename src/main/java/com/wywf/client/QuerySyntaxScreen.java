@@ -28,11 +28,11 @@ public final class QuerySyntaxScreen extends Screen {
     }
     @Override protected void init() {
         if (suggestion != null && WYWFClient.parser().parse(suggestion).error() == null) {
-            addRenderableWidget(Button.builder(MapTexts.label("use_suggestion"), b -> {
+            addRenderableWidget(MenuButton.builder(MapTexts.label("use_suggestion"), b -> {
                 accept.accept(suggestion);
             }).bounds(width / 2 - 120, height - 58, 240, 20).build());
         }
-        addRenderableWidget(Button.builder(ResultTexts.label("back"), b -> onClose())
+        addRenderableWidget(MenuButton.builder(ResultTexts.label("back"), b -> onClose())
                 .bounds(width / 2 - 120, height - 30, 240, 20).build());
     }
     @Override public void onClose() { Minecraft.getInstance().setScreenAndShow(parent); }

@@ -1,10 +1,12 @@
 package com.wywf.core;
 
+import com.wywf.verify.VerificationSummary;
 import java.util.*;
 
 public final class CandidateReview {
     private record Key(long seed, int x, int z) {}
     private final List<SearchResult> candidates;
+    private final Map<Key, VerificationSummary> verifications = new HashMap<>();
     private int selected;
 
     public CandidateReview(List<SearchResult> pool, SearchResult recommended, boolean distanceFirst) {
@@ -34,6 +36,28 @@ public final class CandidateReview {
     }
 
     private static Key key(SearchResult result) { return new Key(result.seed, result.centerX, result.centerZ); }
+    public CandidateReview prepend(List<SearchResult> previous) {
+        var combined = new ArrayList<>(previous);
+        combined.addAll(candidates);
+        var merged = new CandidateReview(combined, selected().orElse(null), false);
+        merged.verifications.putAll(verifications);
+        return merged;
+    }
+
+    public CandidateReview prepend(CandidateReview previous) {
+        CandidateReview combined = prepend(previous.candidates());
+        previous.verifications.forEach(combined.verifications::putIfAbsent);
+        return combined;
+    }
+
+    public VerificationSummary verification(SearchResult result) {
+        return verifications.get(key(result));
+    }
+
+    public void recordVerification(SearchResult result, VerificationSummary summary) {
+        verifications.put(key(result), summary);
+    }
+
     public List<SearchResult> candidates() { return candidates; }
     public int selectedIndex() { return selected; }
     public Optional<SearchResult> selected() {

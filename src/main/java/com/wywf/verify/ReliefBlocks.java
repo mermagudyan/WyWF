@@ -1,6 +1,7 @@
 package com.wywf.verify;
 
 import com.wywf.core.DimensionSpace;
+import dev.diylib.client.render.DiyBlockColors;
 import net.minecraft.core.BlockPos;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.tags.BlockTags;
@@ -12,6 +13,9 @@ import net.minecraft.world.level.block.GrowingPlantBlock;
 
 import net.minecraft.world.level.block.HangingMossBlock;
 import net.minecraft.world.level.block.LeavesBlock;
+import net.minecraft.world.level.block.BaseTorchBlock;
+import net.minecraft.world.level.block.ButtonBlock;
+import net.minecraft.world.level.block.LeafLitterBlock;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.VegetationBlock;
 import net.minecraft.world.level.material.Fluids;
@@ -35,6 +39,14 @@ public final class ReliefBlocks {
     public static ReliefTile tile(DimensionSpace dimension, int x, int z, Integer cut, int bottom, int ceiling,
                                   BlockGetter level, Function<BlockPos, BlockState> block, IntBinaryOperator top,
                                   IntBinaryOperator surroundingTop, Predicate<BlockPos> river, int fog) {
+        return tile(dimension, x, z, cut, bottom, ceiling, level, block, top, surroundingTop, river,
+                pos -> 0xFF1B464E, fog);
+    }
+
+    public static ReliefTile tile(DimensionSpace dimension, int x, int z, Integer cut, int bottom, int ceiling,
+                                  BlockGetter level, Function<BlockPos, BlockState> block, IntBinaryOperator top,
+                                  IntBinaryOperator surroundingTop, Predicate<BlockPos> river,
+                                  java.util.function.ToIntFunction<BlockPos> waterTint, int fog) {
         if (dimension == DimensionSpace.END) return endTile(x, z, bottom, level, block, top, fog);
         if (cut != null) {
             return caveTile(x, z, cut, bottom, ceiling, level, block,
@@ -47,6 +59,7 @@ public final class ReliefBlocks {
         int[] ground = dimension == DimensionSpace.OVERWORLD ? new int[256] : null;
         long[] sampledAir = ground == null ? null : new long[256];
         int[] solidUpTo = ground == null ? null : new int[256];
+        int[] coveredWaterOffsets = null;
         var deeper = ground == null ? null : new ReliefColumns.Builder(blockIds != null);
         var terrainHeights = ground == null ? null : new ReliefSurfaceHeights(x, z, top, surroundingTop);
         var pos = new BlockPos.MutableBlockPos();
@@ -72,6 +85,7 @@ public final class ReliefBlocks {
                 continue;
             }
             int waterColor = waterSurface ? waterColor(wx, floor, wz, bottom, level, block, palette, pos) : 0;
+            int surfaceWater = waterSurface ? ReliefTile.WATER_FACE | (waterTint.applyAsInt(pos.set(wx, floor, wz)) & 0xFFFFFF) : 0;
             boolean entrance = ground != null && !waterSurface && color != BlockMapColors.LAVA && floor < ceiling
                     && block.apply(pos.set(wx, floor + 1, wz)).is(Blocks.CAVE_AIR);
             if (waterSurface) color = ReliefTile.WATER_FACE | (waterColor & 0xFFFFFF);
@@ -90,9 +104,12 @@ public final class ReliefBlocks {
                 var below = block.apply(pos.set(wx, floor - offset, wz));
                 boolean air = open(below);
                 underRiverIce = underRiverIce && hasWater(below);
-                int value = offset == 0 ? color : 0;
-                if (underRiverIce) value = ReliefTile.COVERED_WATER;
-                else if (offset != 0 && !air) {
+                int value = offset == 0 ? waterSurface ? surfaceWater : color : 0;
+                if (underRiverIce) {
+                    value = ReliefTile.COVERED_WATER;
+                    if (coveredWaterOffsets == null) coveredWaterOffsets = new int[256];
+                    if (coveredWaterOffsets[i] == 0) coveredWaterOffsets[i] = offset;
+                } else if (offset != 0 && !air) {
                     value = water(below) ? ReliefTile.WATER_FACE : reliefColor(below, level, pos, palette);
                     if (ground != null && caveAirAbove && (value & ReliefTile.FACE_TYPE) == ReliefTile.FACE_TYPE
                             && value != BlockMapColors.LAVA)
@@ -100,13 +117,15 @@ public final class ReliefBlocks {
                 }
                 if (offset < ReliefTile.DEPTH) {
                     voxels[first + offset] = value;
-                    if (sampledAir != null && air) sampledAir[i] |= 1L << offset;
+                    if (sampledAir != null && (air || ReliefTile.shaped(value & ReliefTile.FACE_TYPE)))
+                        sampledAir[i] |= 1L << offset;
                     if (blockIds != null) blockIds[first + offset] = debugBlockId(below);
                 } else {
                     deeper.add(offset - ReliefTile.DEPTH, air ? ReliefTile.SAMPLED_AIR : value,
                             blockIds == null ? 0 : debugBlockId(below));
                 }
-                caveAirAbove = ground != null && below.is(Blocks.CAVE_AIR);
+                caveAirAbove = ground != null && (below.is(Blocks.CAVE_AIR)
+                        || caveAirAbove && ReliefTile.shaped(value & ReliefTile.FACE_TYPE));
                 if (traced) ReliefDiagnostics.sample(traceColumn, offset, wx, floor - offset, wz, below, sampleReason(below, value));
                 if (canCoverWater && (below.is(Blocks.ICE) || below.is(Blocks.FROSTED_ICE)))
                     underRiverIce = river.test(pos);
@@ -123,7 +142,7 @@ public final class ReliefBlocks {
             }
         }
         return new ReliefTile(x, z, colors, heights, voxels, fog, ground, 0, trace, blockIds,
-                deeper == null ? null : deeper.build(), sampledAir, solidUpTo);
+                deeper == null ? null : deeper.build(), sampledAir, solidUpTo, coveredWaterOffsets);
     }
 
     private static ReliefTile endTile(int x, int z, int bottom, BlockGetter level,
@@ -138,9 +157,13 @@ public final class ReliefBlocks {
             int column = dz * 16 + dx, wx = x + dx, wz = z + dz;
             int y = top.applyAsInt(wx, wz);
             int rgb = 0;
+            // vanilla spikes place fire inside the crystal, one block above the bedrock
+            boolean crystal = y - 2 >= bottom && block.apply(pos.set(wx, y, wz)).is(Blocks.FIRE)
+                    && block.apply(pos.set(wx, y - 1, wz)).is(Blocks.BEDROCK)
+                    && block.apply(pos.set(wx, y - 2, wz)).is(Blocks.OBSIDIAN);
             while (y >= bottom) {
                 var state = block.apply(pos.set(wx, y, wz));
-                rgb = reliefColor(state, level, pos, palette);
+                rgb = crystal ? ReliefTile.END_CRYSTAL : reliefColor(state, level, pos, palette);
                 if (rgb != 0) break;
                 y--;
             }
@@ -150,7 +173,8 @@ public final class ReliefBlocks {
             String[] traceColumn = traced ? (trace[column] = new String[Math.max(0, y - bottom + 1)]) : null;
             for (int by = y; by >= bottom; by--) {
                 var state = block.apply(pos.set(wx, by, wz));
-                int value = reliefColor(state, level, pos, palette), offset = y - by;
+                int offset = y - by;
+                int value = offset == 0 ? rgb : reliefColor(state, level, pos, palette);
                 columns.add(offset, value, debug ? debugBlockId(state) : 0);
                 if (traced) ReliefDiagnostics.sample(traceColumn, offset, wx, by, wz, state, sampleReason(state, value));
             }
@@ -161,7 +185,11 @@ public final class ReliefBlocks {
 
     public static int surfaceColor(BlockState state, BlockGetter level, BlockPos pos, int bottom,
                                    Function<BlockPos, BlockState> block) {
-        if (!water(state)) return 0xFF000000 | state.getMapColor(level, pos).col;
+        if (!water(state)) {
+            int tint = DiyBlockColors.sample(state, level, pos);
+            return tint == DiyBlockColors.NO_TINT ? 0xFF000000 | state.getMapColor(level, pos).col
+                    : BlockMapColors.surfaceTint(tint);
+        }
         return waterColor(pos.getX(), pos.getY(), pos.getZ(), bottom, level, block,
                 new java.util.IdentityHashMap<>(), new BlockPos.MutableBlockPos());
     }
@@ -193,7 +221,7 @@ public final class ReliefBlocks {
     }
 
     private static boolean water(BlockState state) {
-        return (state.is(Blocks.WATER) || state.is(Blocks.BUBBLE_COLUMN) || aquaticDecoration(state))
+        return (state.is(Blocks.WATER) || state.is(Blocks.BUBBLE_COLUMN) || aquaticDecoration(state) || hiddenDecoration(state))
                 && hasWater(state);
     }
 
@@ -258,9 +286,15 @@ public final class ReliefBlocks {
         return switch (color & ReliefTile.FACE_TYPE) {
             case ReliefTile.WATER_FACE -> "water-overlay";
             case ReliefTile.COVERED_WATER -> "under-river-ice";
+            case ReliefTile.END_CRYSTAL -> "end-crystal";
             case ReliefTile.PLANT_FACE, ReliefTile.BERRY_FACE -> "passable-plant-20-percent-transparent";
             default -> null;
         };
+    }
+
+    private static boolean hiddenDecoration(BlockState state) {
+        return state.getBlock() instanceof BaseTorchBlock || state.getBlock() instanceof ButtonBlock
+                || state.is(Blocks.GLOW_LICHEN);
     }
 
     private static boolean aquaticDecoration(BlockState state) {
@@ -273,7 +307,7 @@ public final class ReliefBlocks {
                                    java.util.Map<BlockState, Integer> palette) {
         Integer cached = palette.get(state);
         if (cached != null) return cached;
-        if (open(state) || aquaticDecoration(state)) return 0;
+        if (open(state) || aquaticDecoration(state) || hiddenDecoration(state)) return 0;
         var fluid = state.getFluidState();
         var mapColor = state.getMapColor(level, pos);
         int fallback;
@@ -281,24 +315,29 @@ public final class ReliefBlocks {
         else if (mapColor != MapColor.NONE) fallback = 0xFF000000 | mapColor.col;
         else fallback = state.getCollisionShape(level, pos).isEmpty() ? 0 : 0xFF929CA3;
         String id = net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
-        int color = BlockMapColors.material(id, fallback);
-        color = decorate(state, level, pos, color);
-        if (mapColor != MapColor.NONE) palette.put(state, color);
+        var sources = DiyBlockColors.sources(state);
+        int tint = DiyBlockColors.sample(sources, state, level, pos);
+        int color = tint != DiyBlockColors.NO_TINT ? tint
+                : OreMapColors.choose(id, BlockMapColors.material(id, fallback));
+        color = decorate(state, level, pos, color, tint != DiyBlockColors.NO_TINT);
+        if (sources.isEmpty() && mapColor != MapColor.NONE) palette.put(state, color);
         return color;
     }
 
-    private static int decorate(BlockState state, BlockGetter level, BlockPos pos, int color) {
+    private static int decorate(BlockState state, BlockGetter level, BlockPos pos, int color, boolean tinted) {
         var block = state.getBlock();
+        if (block instanceof LeafLitterBlock) return ReliefShapes.pack(Blocks.MOSS_CARPET.defaultBlockState(), color);
+        if (state.is(Blocks.VINE)) return ReliefShapes.pack(state, color);
         if (color == BlockMapColors.LAVA || block instanceof LeavesBlock || state.is(BlockTags.LEAVES)
                 || state.is(Blocks.MOSS_BLOCK) || state.is(Blocks.PALE_MOSS_BLOCK)) return color;
         boolean plant = block instanceof VegetationBlock || block instanceof GrowingPlantBlock || block instanceof HangingMossBlock
-                || state.is(Blocks.VINE) || state.is(Blocks.CACTUS) || state.is(Blocks.SUGAR_CANE)
+                || state.is(Blocks.CACTUS) || state.is(Blocks.SUGAR_CANE)
                 || state.is(Blocks.CHORUS_PLANT) || state.is(Blocks.CHORUS_FLOWER);
         if (plant && state.getCollisionShape(level, pos).isEmpty()) {
             if (color == 0) return 0;
             int material = state.is(Blocks.SWEET_BERRY_BUSH) && state.getValue(BlockStateProperties.AGE_3) >= 2
                     ? ReliefTile.BERRY_FACE : ReliefTile.PLANT_FACE;
-            if (state.is(Blocks.SHORT_GRASS) || state.is(Blocks.TALL_GRASS)) color = 0xFF668A38;
+            if (!tinted && (state.is(Blocks.SHORT_GRASS) || state.is(Blocks.TALL_GRASS))) color = 0xFF668A38;
             return material | (color & 0xFFFFFF);
         }
         return ReliefShapes.pack(state, color);

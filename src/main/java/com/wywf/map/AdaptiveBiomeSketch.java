@@ -33,7 +33,10 @@ public final class AdaptiveBiomeSketch {
                         + 0.10 * Math.sin(angle * 7 - patch.phase());
                 double score = (dx * dx / (patch.width() * patch.width())
                         + dy * dy / (patch.height() * patch.height())) / (edge * edge);
-                if (score < best) { best = score; color = BiomePalette.color(patch.placement().target().canonical()); }
+                if (score < best) {
+                    best = score;
+                    color = BiomePalette.color(patch.placement().target().canonical());
+                }
             }
             pixels[y * width + x] = color;
         }
@@ -57,16 +60,21 @@ public final class AdaptiveBiomeSketch {
             String shape = map.cells()[source].id();
             boolean[] selected = new boolean[map.cells().length];
             java.util.ArrayDeque<Integer> queue = new java.util.ArrayDeque<>();
-            selected[source] = true; queue.add(source);
+            selected[source] = true;
+            queue.add(source);
             int minX = source % map.width(), maxX = minX, minZ = source / map.width(), maxZ = minZ;
             int count = 0;
             while (!queue.isEmpty() && count++ < 2048) {
                 int i = queue.removeFirst(), x = i % map.width(), z = i / map.width();
-                minX = Math.min(minX, x); maxX = Math.max(maxX, x); minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
+                minX = Math.min(minX, x);
+                maxX = Math.max(maxX, x);
+                minZ = Math.min(minZ, z);
+                maxZ = Math.max(maxZ, z);
                 for (int next : new int[]{x > 0 ? i - 1 : -1, x + 1 < map.width() ? i + 1 : -1,
                         z > 0 ? i - map.width() : -1, z + 1 < map.height() ? i + map.width() : -1}) {
                     if (next >= 0 && !selected[next] && map.cells()[next] != null && shape.equals(map.cells()[next].id())) {
-                        selected[next] = true; queue.add(next);
+                        selected[next] = true;
+                        queue.add(next);
                     }
                 }
             }

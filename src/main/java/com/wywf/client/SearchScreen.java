@@ -45,6 +45,9 @@ public final class SearchScreen extends Screen {
     private boolean exhausted;
     private String exhaustedReason="";
     private SearchFailure failure;
+    private List<SearchResult> priorCandidates = List.of();
+    private CandidateReview priorReview;
+    private java.util.Set<String> priorLayers;
     private volatile long batchGeneration;
     public boolean exhausted(){
         return exhausted;
@@ -62,35 +65,64 @@ public final class SearchScreen extends Screen {
         return activeSearcher==null?MapTexts.text("finalizing_incomplete"):activeSearcher.stopReason();
     }
     public void noResults(String reason){
-        exhausted=true;finishing=true;rawDone=true;exhaustedReason=reason==null?"":reason;
-        if(Minecraft.getInstance().gui.screen()==this)rebuildWidgets();
+        exhausted=true;
+        finishing=true;
+        rawDone=true;
+        exhaustedReason=reason==null?"":reason;
+        if(ClientPlatform.screen(Minecraft.getInstance())==this)rebuildWidgets();
     }
     private java.util.concurrent.CompletableFuture<SearchResult> denseCheck;
-    private static final java.util.concurrent.ExecutorService DENSE=java.util.concurrent.Executors.newSingleThreadExecutor(r->{
-        var t=new Thread(r,"WyWF-Live-Dense");t.setDaemon(true);t.setPriority(Thread.MIN_PRIORITY);return t;
-    });
+    private SearchResult denseCandidate;
     SearchDiagnostics diagnostics(){
         return activeSearcher==null ? new SearchDiagnostics() : activeSearcher.diagnostics();
     }
     private boolean historyChecked, reuseHistory;
     private String historyKey;
+    private CandidateReview historyReview = new CandidateReview(List.of(), null, false);
     private List<SearchResult> history = List.of();
+    boolean verifiesHistory() { return config.serverVerification(); }
+
     void reuseHistory(boolean value) {
         reuseHistory = value;
     }
     public SearchScreen fresh() {
-        historyChecked = true; return this;
+        historyChecked = true;
+        return this;
+    }
+
+    SearchScreen appendTo(List<SearchResult> candidates) {
+        priorCandidates = List.copyOf(candidates);
+        if (parsedQuery.place() == null) run.exclude(candidates.stream().map(candidate -> candidate.seed).toList());
+        return this;
+    }
+
+    SearchScreen appendTo(CandidateReview review) {
+        priorReview = review;
+        return appendTo(review.candidates());
+    }
+
+    SearchScreen withLayers(java.util.Set<String> layers) {
+        priorLayers = layers;
+        return this;
     }
 
     private FtpScreen placeSearch;
     private com.wywf.verify.PlaceSurvey.Area placeArea;
     SearchScreen forPlace(FtpScreen screen) { return forPlace(screen, null); }
     SearchScreen forPlace(FtpScreen screen, com.wywf.verify.PlaceSurvey.Area area) {
-        placeSearch = screen; placeArea = area; return this;
+        placeSearch = screen;
+        placeArea = area;
+        return this;
     }
 
     private void closeVerificationWorlds() {
-        com.wywf.verify.PreviewWorld.shutdownExcept(placeSearch == null ? List.of() : placeSearch.preserved());
+        var preserved = new java.util.ArrayList<com.wywf.verify.PreviewWorld.Session>();
+        if (placeSearch != null) preserved.addAll(placeSearch.preserved());
+        for (var candidate : priorCandidates) {
+            var preview = com.wywf.verify.PreviewWorld.find(candidate, parsedQuery, config);
+            if (preview != null) preserved.add(preview);
+        }
+        com.wywf.verify.PreviewWorld.shutdownExcept(preserved);
     }
 
     public SearchScreen(CreateWorldScreen parentScreen, String queryText, ParsedQuery parsedQuery, SearchConfig config) {
@@ -104,7 +136,8 @@ public final class SearchScreen extends Screen {
         this.parsedQuery = parsedQuery;
         this.config = config.copy();
         if(parsedQuery.place()!=null)this.config.searchCenter(SearchConfig.SearchCenter.ORIGIN);
-        this.run = run;conflict=QueryConflicts.find(parsedQuery,this.config);
+        this.run = run;
+        conflict=QueryConflicts.find(parsedQuery,this.config);
     }
 
     @Override
@@ -112,7 +145,7 @@ public final class SearchScreen extends Screen {
         descriptionLines=font.split(understoodDescription(),width-24);
         descriptionRows=Math.min(descriptionLines.size(),Math.max(1,Math.min(4,(height-160)/font.lineHeight)));
         descriptionOffset=Math.max(0,Math.min(descriptionOffset,descriptionLines.size()-descriptionRows));
-        showReady=addRenderableWidget(Button.builder(MapTexts.label("show_ready"),b->{
+        showReady=addRenderableWidget(MenuButton.builder(MapTexts.label("show_ready"),b->{
             if(exhausted){
                 cancelSearch();
                 Minecraft.getInstance().setScreenAndShow(new SearchScreen(parentScreen,queryText,parsedQuery,config).fresh().forPlace(placeSearch, placeArea));
@@ -126,15 +159,19 @@ public final class SearchScreen extends Screen {
             finalizer.showReady();
         }).bounds(width/2-153,height-55,306,20).build());
         showReady.active=exhausted||finalizer!=null&&finalizer.ready()>0;
-        if(exhausted){showReady.setMessage(MapTexts.label("search_again"));showReady.setWidth(150);}
-        editQuery=addRenderableWidget(Button.builder(MapTexts.label("edit_query"),b->{
+        if(exhausted){
+            showReady.setMessage(MapTexts.label("search_again"));
+            showReady.setWidth(150);
+        }
+        editQuery=addRenderableWidget(MenuButton.builder(MapTexts.label("edit_query"),b->{
             cancelSearch();
             Minecraft.getInstance().setScreenAndShow(placeSearch == null ? new SearchQueryEditScreen(parentScreen,queryText,config) : placeSearch);
         })
-                .bounds(width/2+3,height-55,150,20).build());editQuery.visible=exhausted;
-        exitButton=addRenderableWidget(Button.builder(ResultTexts.label(exhausted?"back":"cancel"), b -> onClose())
+                .bounds(width/2+3,height-55,150,20).build());
+                editQuery.visible=exhausted;
+        exitButton=addRenderableWidget(MenuButton.builder(ResultTexts.label(exhausted?"back":"cancel"), b -> onClose())
                 .bounds(width / 2 - 153, height - 30, 150, 20).build());
-        addRenderableWidget(Button.builder(MapTexts.label("simplify"), b -> {
+        addRenderableWidget(MenuButton.builder(MapTexts.label("simplify"), b -> {
             cancelSearch();
             Minecraft.getInstance().setScreenAndShow(
                     new SearchAdviceScreen(parentScreen,queryText,parsedQuery,config,diagnostics().snapshot()).forPlace(placeSearch));
@@ -144,8 +181,12 @@ public final class SearchScreen extends Screen {
         if (session.start()) {
             if (reuseHistory) {
                 closeVerificationWorlds();
-                finalizer = new FinalSearchTask(this, parentScreen, parsedQuery, config,
-                        new CandidateReview(history, null, config.sortCandidatesByDistance()), null);
+                var shortlist = new CandidateReview(history, null, config.sortCandidatesByDistance());
+                for (var result : history) {
+                    var summary = historyReview.verification(result);
+                    if (summary != null) shortlist.recordVerification(result, summary);
+                }
+                finalizer = new FinalSearchTask(this, parentScreen, parsedQuery, config, shortlist, null);
             } else startSearch();
         }
     }
@@ -158,18 +199,19 @@ public final class SearchScreen extends Screen {
         var client = Minecraft.getInstance();
         if (!historyChecked) {
             historyChecked = true;
-            if (config.serverVerification() && config.offerSearchHistory()
+            if (config.offerSearchHistory()
                     && parsedQuery.error() == null && parsedQuery.ignoredWords().isEmpty()) {
                 try {
                     historyKey = SearchHistoryContext.key(parentScreen, parsedQuery, config);
-                    history = SearchHistoryContext.store().find(historyKey, parsedQuery);
+                    historyReview = SearchHistoryContext.store().findReview(historyKey, parsedQuery);
+                    history = historyReview.candidates();
                     if (placeArea != null) history = history.stream()
                             .filter(result -> placeArea.contains(result.centerX, result.centerZ)).toList();
                 } catch (RuntimeException unavailable) { history = List.of(); }
             }
         }
-        if (!history.isEmpty() && client.gui.screen() != null) {
-            SearchHistoryPrompt.show(client.gui.screen(), this, history.size(), beforeSearch);
+        if (!history.isEmpty() && ClientPlatform.screen(client) != null) {
+            SearchHistoryPrompt.show(ClientPlatform.screen(client), this, history.size(), beforeSearch);
             return;
         }
         beforeSearch.run();
@@ -179,16 +221,18 @@ public final class SearchScreen extends Screen {
     void retrySearch() { startSearch(true); }
 
     void finishSearch(CandidateReview review, String reason) {
+        if (priorReview != null) review = review.prepend(priorReview);
+        else if (!priorCandidates.isEmpty()) review = review.prepend(priorCandidates);
         if(review.candidates().isEmpty()){
             noResults(reason);
             return;
         }
         if (!session.finish())
             return;
-        if (config.serverVerification()) {
+        if (parsedQuery.error() == null && parsedQuery.ignoredWords().isEmpty()) {
             try {
                 if (historyKey == null) historyKey = SearchHistoryContext.key(parentScreen, parsedQuery, config);
-                SearchHistoryContext.store().remember(historyKey, review.candidates());
+                SearchHistoryContext.store().remember(historyKey, review);
             } catch (Exception error) {
                 org.slf4j.LoggerFactory.getLogger("wywf-search").warn("Could not save search history", error);
             }
@@ -196,16 +240,27 @@ public final class SearchScreen extends Screen {
         if (placeSearch != null) {
             placeSearch.showSearchResults(review, parsedQuery, config);
             closeVerificationWorlds();
-        } else Minecraft.getInstance().setScreenAndShow(new CandidateReviewScreen(parentScreen, queryText, parsedQuery, config, review, reason));
+        } else {
+            var screen = new CandidateReviewScreen(parentScreen, queryText, parsedQuery, config, review, reason);
+            if (priorLayers != null) screen.rememberLayers(priorLayers);
+            Minecraft.getInstance().setScreenAndShow(screen);
+        }
     }
 
     private void startSearch(){startSearch(false);}
     private void startSearch(boolean continuation) {
-        rawDone=false;batchRecorded=false;finishing=false;exhausted=false;denseCheck=null;
+        rawDone=false;
+        batchRecorded=false;
+        finishing=false;
+        exhausted=false;
+        if (denseCheck != null) denseCheck.cancel(false);
+        denseCheck = null;
+        denseCandidate = null;
         long generation=++batchGeneration;
         if (parsedQuery.error() != null) {
             session.finish();
-            Minecraft.getInstance().setScreenAndShow(new QuerySyntaxScreen(parentScreen, parsedQuery, config)); return;
+            Minecraft.getInstance().setScreenAndShow(new QuerySyntaxScreen(parentScreen, parsedQuery, config));
+            return;
         }
         if(conflict.isPresent()){noResults("");return;}
         var lootIssues = com.wywf.verify.LootCatalog.inspect(parentScreen, parsedQuery);
@@ -225,14 +280,16 @@ public final class SearchScreen extends Screen {
                 FinalSearchTask(
                         this,parentScreen,parsedQuery,config,new CandidateReview(List.of(),null,false),run);
         finalizer.streaming();
-        lastUpdateTime=System.currentTimeMillis();lastCheckedSeeds=0;lastUpdateSpeed=0;
+        lastUpdateTime=System.currentTimeMillis();
+        lastCheckedSeeds=0;
+        lastUpdateSpeed=0;
         var batchConfig=config.copy();
         int remaining=finalizer.remainingTarget();
         batchConfig.candidatesToCollect(remaining).minCandidates(Math.min(config.minCandidates(),remaining));
         searcher.startStreaming(parsedQuery,batchConfig,run,result -> {
             String reason = result != null && result.stopReason != null ? result.stopReason : searcher.stopReason();
             Minecraft.getInstance().execute(() -> {
-                if (generation!=batchGeneration||Minecraft.getInstance().gui.screen()!=this||session.phase()!=SearchSession.Phase.RUNNING||finishing)
+                if (generation!=batchGeneration||ClientPlatform.screen(Minecraft.getInstance())!=this||session.phase()!=SearchSession.Phase.RUNNING||finishing)
                     return;
                 var snapshot=searcher.progress().snapshot();
                 run.batch(searcher.batchSeeds(),snapshot.checkedSeeds(),snapshot.discardedSeeds(),reason);
@@ -243,7 +300,9 @@ public final class SearchScreen extends Screen {
     }
 
     void stopInputForDeadline(){
-        finishing=true;rawDone=true;batchGeneration++;
+        finishing=true;
+        rawDone=true;
+        batchGeneration++;
         if(activeSearcher!=null)activeSearcher.cancel();if(denseCheck!=null)denseCheck.cancel(true);
     }
 
@@ -271,42 +330,46 @@ public final class SearchScreen extends Screen {
     public void tick() {
         super.tick();
         if(finalizer!=null&&activeSearcher!=null&&!finishing){
-            if(denseCheck!=null&&denseCheck.isDone()){
-                try{var result=denseCheck.join();
-                    if(result!=null)
-                        finalizer.offer(List.of(result));
-                    else if(run.remainingTimeMs(config)>0)
-                        statistics.deepRejected();
+            if (denseCheck != null && denseCheck.isDone()) {
+                boolean retry = false;
+                try {
+                    var result = denseCheck.join();
+                    if (result != null) finalizer.offer(List.of(result));
+                    else if (run.remainingTimeMs(config) > 0) statistics.deepRejected();
+                } catch (java.util.concurrent.CompletionException failure) {
+                    retry = failure.getCause() instanceof java.util.concurrent.RejectedExecutionException;
+                    if (!retry) WYWFClient.LOGGER.warn("Candidate verification failed", failure.getCause());
+                } catch (java.util.concurrent.CancellationException ignored) {
                 }
-                catch(java.util.concurrent.CompletionException|java.util.concurrent.CancellationException ignored){}
-                denseCheck=null;
+                denseCheck = null;
+                if (!retry) denseCandidate = null;
             }
-            if(denseCheck==null&&finalizer.canAccept()){
-                SearchResult next=activeSearcher.pollCandidate();
-                if(next!=null && (placeArea == null || placeArea.contains(next.centerX, next.centerZ))){
-                    var candidate=next;
-                    var searcher=activeSearcher;
-                    long generation=batchGeneration;
-                    denseCheck=java.util.concurrent.CompletableFuture.supplyAsync(
-                            ()->searcher.verifyCandidate(parsedQuery,config,candidate,
-                            ()->generation!=batchGeneration||session.phase()!=SearchSession.Phase.RUNNING||finishing||run.remainingTimeMs(config)==0)
-                                    ?candidate:null,DENSE);
-                }
-                else if(rawDone&&activeSearcher.queuedCandidates()==0)finalizer.inputDone();
+            if (denseCheck == null && finalizer.canAccept()) {
+                SearchResult next = denseCandidate == null ? activeSearcher.pollCandidate() : denseCandidate;
+                if (next != null && (placeArea == null || placeArea.contains(next.centerX, next.centerZ))) {
+                    denseCandidate = next;
+                    var searcher = activeSearcher;
+                    long generation = batchGeneration;
+                    denseCheck = MapBackground.cpuResult(() -> searcher.verifyCandidate(parsedQuery, config, next,
+                            () -> generation != batchGeneration || session.phase() != SearchSession.Phase.RUNNING
+                                    || finishing || run.remainingTimeMs(config) == 0) ? next : null);
+                } else if (rawDone && activeSearcher.queuedCandidates() == 0) finalizer.inputDone();
             }
         }
         if (finalizer != null) {
-            if (activeSearcher != null && config.serverVerification()) {
-                activeSearcher.verificationLoad(finalizer.verifying() || finalizer.queued() > 0,
-                        finalizer.queued() >= SearchScheduling.of(config).verificationCapacity());
+            if (activeSearcher != null) {
+                boolean server = config.serverVerification();
+                activeSearcher.verificationLoad(server && (finalizer.verifying() || finalizer.queued() > 0),
+                        server && finalizer.queued() >= SearchScheduling.of(config).verificationCapacity());
             }
             finalizer.tick();
             if (showReady != null) showReady.active = exhausted || finalizer.ready() > 0 && !finishing;
         }
         if (activeSearcher == null) return;
         lastSnapshot = activeSearcher.progress().snapshot();
-        synchronized (activeSearcher.candidates()) {
-            lastCandidates = List.copyOf(activeSearcher.candidates());
+        var candidates = activeSearcher.candidates();
+        synchronized (candidates) {
+            lastCandidates = List.copyOf(candidates);
         }
         long now = System.currentTimeMillis();
         if (now - lastUpdateTime >= 500) {
@@ -352,7 +415,8 @@ public final class SearchScreen extends Screen {
         int extra=Math.max(0,descriptionRows-1)*font.lineHeight;
         if(descriptionLines.size()>descriptionRows)g.text(font,net.minecraft.network.chat.Component.literal("↕"),width-10,31,0xFFB9CBBF);
         if(exhausted){
-            drawFailure(g,63+extra);return;
+            drawFailure(g,63+extra);
+            return;
         }
         if (lastSnapshot == null) {
             centered(g, reuseHistory ? MapTexts.text("history_checking")
@@ -374,7 +438,7 @@ public final class SearchScreen extends Screen {
             else if (activeSearcher.waitingForVerification()) state = MapTexts.text("pipeline_waiting");
             else if (finalizer != null && finalizer.verifying()) state = MapTexts.text("search_pipeline");
         }
-        g.centeredText(font,MenuAccent.text(state,0xFFC3EACD,0xFFE9D69F),width/2,72+extra,0xFFFFFFFF);
+        g.centeredText(font,MenuAccent.versionText(state,0xFFC3EACD,0xFFE9D69F),width/2,72+extra,0xFFFFFFFF);
         int panelWidth = Math.min(400, width - 32);
         int left = (width - panelWidth) / 2;
         int right = left + panelWidth / 2 + 6;

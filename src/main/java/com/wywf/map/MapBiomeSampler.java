@@ -5,6 +5,7 @@ import net.minecraft.core.Holder;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.BiomeManager;
+import net.minecraft.world.level.biome.Biomes;
 import java.util.*;
 
 final class MapBiomeSampler {
@@ -40,6 +41,12 @@ final class MapBiomeSampler {
         }
         return new BiomeMapSnapshot.Cell(id(current),current.value().getBaseTemperature(),id(upper),upper.value().getBaseTemperature());
     }
+    int riverAtQuart(int x, int y, int z) {
+        var sample = noise(x, y, z);
+        if (sample.is(Biomes.RIVER)) return RiverLinks.RIVER;
+        return sample.is(Biomes.FROZEN_RIVER) ? RiverLinks.FROZEN_RIVER : 0;
+    }
+
     float climate(int x, int y, int z) {
         return climates.computeIfAbsent(BlockPos.asLong(x >> 2,y >> 2,z >> 2), key ->
                 net.minecraft.world.level.biome.Climate.unquantizeCoord(context.sampler().sample(x >> 2,y >> 2,z >> 2).temperature()));

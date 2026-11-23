@@ -107,8 +107,8 @@ public final class OnlineSearchBenchmark {
             return;
         }
         if (creator == null) {
-            if (client.gui.screen() instanceof CreateWorldScreen screen) creator = screen;
-            else if (!opening && client.gui.screen() instanceof TitleScreen) {
+            if (ClientPlatform.screen(client) instanceof CreateWorldScreen screen) creator = screen;
+            else if (!opening && ClientPlatform.screen(client) instanceof TitleScreen) {
                 opening = true;
                 CreateWorldScreen.openFresh(client, client::stop);
             }
@@ -135,7 +135,7 @@ public final class OnlineSearchBenchmark {
     }
 
     private boolean previewVerified(Minecraft client) {
-        if (!(client.gui.screen() instanceof CandidateReviewScreen) || !firstPassSession.parked() && previewStarted == 0)
+        if (!(ClientPlatform.screen(client) instanceof CandidateReviewScreen) || !firstPassSession.parked() && previewStarted == 0)
             return false;
         if (previewStarted == 0) {
             previewStarted = System.nanoTime();

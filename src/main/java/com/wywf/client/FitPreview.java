@@ -8,13 +8,7 @@ import java.util.concurrent.*;
 
 final class FitPreview implements AutoCloseable {
     record Result(BiomeMapSnapshot map,int[] pixels){}
-    private static final ExecutorService WORKER=Executors.newSingleThreadExecutor(r->{
-        var t=new Thread(r,"WyWF-ConditionCoverage");
-        t.setDaemon(true);
-        t.setPriority(Thread.MIN_PRIORITY);
-        return t;
-    });
-    private volatile long revision;
+    private final MapBackground.Revision revision = new MapBackground.Revision();
     private volatile Result result;
     private BiomeMapSnapshot last;
     private List<VerifiedAnchor> lastAnchors=List.of();
@@ -25,16 +19,28 @@ final class FitPreview implements AutoCloseable {
     synchronized void request(BiomeMapSnapshot map,ParsedQuery query,SearchConfig config,List<VerifiedAnchor> anchors){
         if(map==null||!map.complete()||map==last&&anchors.equals(lastAnchors))
             return;
-        last=map;lastAnchors=List.copyOf(anchors);
-        long version=++revision;if(job!=null)job.cancel(false);
-        job=WORKER.submit(()->{
-            int[] pixels=LocalFit.overview(map,query,config,anchors,()->revision!=version);
-            if(pixels!=null&&revision==version)
-                result=new Result(map,pixels);
+        last=map;
+        var snapshot = List.copyOf(anchors);
+        lastAnchors = snapshot;
+        var settings = config.copy();
+        long version = revision.advance();
+        result = null;
+        if (job != null) job.cancel(false);
+        var submitted = MapBackground.cpu(() -> {
+            int[] pixels = LocalFit.overview(map, query, settings, snapshot, () -> !revision.isCurrent(version));
+            if (pixels != null) revision.publish(version, () -> result = new Result(map, pixels));
+        });
+        job = submitted;
+        submitted.whenComplete((ignored, error) -> {
+            if (error != null) {
+                synchronized (this) {
+                    if (revision.isCurrent(version)) last = null;
+                }
+            }
         });
     }
     public synchronized void close(){
-        revision++;
+        revision.advance();
         if(job!=null)job.cancel(false);
         job=null;
         last=null;

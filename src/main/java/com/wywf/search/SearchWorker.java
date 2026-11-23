@@ -467,7 +467,11 @@ public final class SearchWorker implements Runnable {
 
     // Per-base gate for DEFAULT/NEAR/IN terms (no rings); a miss means validate() can't hit either
     private void buildPlacementGateCache(WorldContext pfCtx) {
-        if (query.hasAlternatives()) { placementGateCache = null; placementGateLimit = null; return; }
+        if (query.hasAlternatives()) {
+            placementGateCache = null;
+            placementGateLimit = null;
+            return;
+        }
         placementGateCache = new HashMap<>();
         placementGateLimit = new HashMap<>();
         int driftChunks = (SeedValidator.SPAWN_DRIFT_BLOCKS + 15) / 16;

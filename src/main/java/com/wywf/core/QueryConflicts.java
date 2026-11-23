@@ -11,18 +11,21 @@ public final class QueryConflicts {
         if(query.hasLogic()&&!QueryLogic.conjunction(query.logic()))return impossibleBoolean(query);
         var terms=query.terms();
         for(int i=0;i<terms.size();i++)for(int j=i+1;j<terms.size();j++){
-            var a=terms.get(i);var b=terms.get(j);
+            var a=terms.get(i);
+            var b=terms.get(j);
             if(a.category==KeywordDictionary.Category.SPAWN&&b.category==a.category&&a.modifier==Modifier.DEFAULT&&b.modifier==Modifier.DEFAULT
                     &&!a.canonical.equals(b.canonical)&&!a.canonical.equals("any_solid")&&!b.canonical.equals("any_solid"))return conflict(Reason.SPAWN,a,b);
             if(a.category!=b.category||!a.canonical.equals(b.canonical))continue;
             if(a.category!=KeywordDictionary.Category.STRUCTURE&&a.category!=KeywordDictionary.Category.BIOME)continue;
-            var ai=distance(a,config);var bi=distance(b,config);
+            var ai=distance(a,config);
+            var bi=distance(b,config);
             if(a.modifier==Modifier.NEVER&&bi!=null&&bi.max<=radius(a,config)&&subset(b,a)
                     ||b.modifier==Modifier.NEVER&&ai!=null&&ai.max<=radius(b,config)&&subset(a,b))return conflict(Reason.ABSENCE,a,b);
             if(!Objects.equals(a.loot,b.loot)||!a.tags.equals(b.tags))continue;
             if(ai!=null&&bi!=null&&Math.max(ai.min,bi.min)>Math.min(ai.max,bi.max))return conflict(Reason.DISTANCE,a,b);
             if(a.category==KeywordDictionary.Category.STRUCTURE&&a.modifier.counted()&&b.modifier.counted()&&radius(a,config)==radius(b,config)){
-                var ac=count(a);var bc=count(b);if(Math.max(ac.min,bc.min)>Math.min(ac.max,bc.max))return conflict(Reason.COUNT,a,b);
+                var ac=count(a);
+                var bc=count(b);if(Math.max(ac.min,bc.min)>Math.min(ac.max,bc.max))return conflict(Reason.COUNT,a,b);
             }
         }
         return Optional.empty();

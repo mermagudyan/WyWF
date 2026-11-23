@@ -30,6 +30,10 @@ public interface WorldMapSource {
             ReliefRequest request, java.util.function.Consumer<List<ReliefTile>> partial) {
         return reliefPage(request);
     }
+    default java.util.concurrent.CompletableFuture<List<ReliefTile>> reliefPage(
+            ReliefRequest request, java.util.Set<Long> existing, java.util.function.Consumer<List<ReliefTile>> partial) {
+        return reliefPage(request, partial);
+    }
     default void tickMap(){}
     default void closeMap(){}
     List<LootWitness> loot();

@@ -78,7 +78,8 @@ public final class DeepVerifier {
     public static List<SearchResult> survivors(WorldContextFactory factory, StructureChecker checker, ParsedQuery query,
                                                SearchConfig config, List<SearchResult> input, int radius,
                                                java.util.function.BooleanSupplier cancelled) {
-        VanillaBiomeChecker dense = new VanillaBiomeChecker(); dense.stepChunks(1);
+        VanillaBiomeChecker dense = new VanillaBiomeChecker();
+        dense.stepChunks(1);
         List<SearchResult> result = new java.util.ArrayList<>();
         try(var scope=com.wywf.core.SearchCancellation.bind(cancelled)){
             for(var candidate:input){
@@ -160,9 +161,11 @@ public final class DeepVerifier {
     private static Verdict estimateStructure(StructureChecker sc,WorldContext ctx,ParsedQuery.Term term,int cx,int cz,int radius){
         if(com.wywf.core.TargetDistance.deferred(term))return ok(0);
         int limit=com.wywf.core.TargetDistance.radius(term,radius*16)+com.wywf.core.TargetDistance.PLACEMENT_MARGIN;
-        var positions=sc.positions(ctx,cx,cz,(limit+15)/16,term.canonical);
-        int needed=term.modifier==Modifier.SOME||term.modifier.counted() ? term.someCount : 1;
-        return positions.size()>=needed ? ok(0) : fail("No placement within conservative footprint search");
+        int chunks = (limit + 15) / 16;
+        int needed = term.modifier == Modifier.SOME || term.modifier.counted() ? term.someCount : 1;
+        if (sc.positions(ctx, cx, cz, chunks, term.canonical).size() >= needed
+                || sc.positionsPlacementOnly(ctx, cx, cz, chunks, term.canonical).size() >= needed) return ok(0);
+        return fail("No placement within conservative footprint search");
     }
     private static Verdict checkStructure(StructureChecker sc, WorldContext ctx,
                                           ParsedQuery.Term term, int cx, int cz,

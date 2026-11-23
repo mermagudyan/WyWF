@@ -5,6 +5,7 @@ import com.wywf.map.BiomeMapSnapshot;
 import com.wywf.map.BiomePalette;
 import com.wywf.verify.ReliefShapes;
 import com.wywf.verify.ReliefTile;
+import com.wywf.verify.VerifiedAnchor;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import java.util.Arrays;
@@ -47,12 +48,19 @@ final class ReliefRaster {
         private float[] overlayDepth;
         private int[] opaque;
         private int[] probes;
+        private int[] outlinePixels;
 
-        private int[] prepareProbes(int size) {
-            if (!com.wywf.core.WyWFDebug.ENABLED) return null;
+        private void prepareProbes(int size, boolean outline) {
+            if (!com.wywf.core.WyWFDebug.ENABLED && !outline) {
+                probes = null;
+                return;
+            }
             if (probes == null || probes.length != size) probes = new int[size];
             Arrays.fill(probes, -1);
-            return probes;
+        }
+
+        int[] outlinePixels() {
+            return outlinePixels;
         }
 
         int[] copyProbes(int[] destination) {
@@ -89,12 +97,13 @@ final class ReliefRaster {
     private int currentFace = -1;
     private float[] overlayDepth;
     private int[] opaquePixels;
+    private boolean clipPlantsToTerrain;
     private final int width, firstRow, lastRow, background;
     private final float scale, halfSide, heightCenter, screenX, screenY;
     private final Axis east, up, south;
     private final Quad[] faceShapes;
     private Int2ObjectOpenHashMap<ProjectedShape> projectedShapes;
-    private PlacedQuad[] crossedPlant;
+    private PlacedQuad[] crossedPlant, crystalFaces;
     private final int visibleFaces;
     private final long[] lightingKeys = new long[2048];
     private final int[] lightingColors = new int[2048];
@@ -156,8 +165,16 @@ final class ReliefRaster {
                       DimensionSpace dimension, boolean underRoof, int fogColor, float centerY, int span,
                       int originX, int originZ, BiomeMapSnapshot overview, double panX, double panY,
                       Buffers buffers, int workerLimit, java.util.function.BooleanSupplier cancelled) {
+        return draw(mesh, width, height, yaw, pitch, zoom, dimension, underRoof, fogColor, centerY, span,
+                originX, originZ, overview, panX, panY, buffers, workerLimit, null, cancelled);
+    }
+
+    static int[] draw(ReliefMesh mesh, int width, int height, double yaw, double pitch, double zoom,
+                      DimensionSpace dimension, boolean underRoof, int fogColor, float centerY, int span,
+                      int originX, int originZ, BiomeMapSnapshot overview, double panX, double panY,
+                      Buffers buffers, int workerLimit, Outline outline, java.util.function.BooleanSupplier cancelled) {
         buffers.resize(width * height);
-        buffers.prepareProbes(width * height);
+        buffers.prepareProbes(width * height, outline != null);
         Arrays.fill(buffers.terrainDepth, Float.NEGATIVE_INFINITY);
         Arrays.fill(buffers.colors, fogColor);
         int bands = Math.clamp(workerLimit, 1, Math.min(MAX_WORKERS, height));
@@ -178,7 +195,92 @@ final class ReliefRaster {
                             fogColor, underRoof ? NETHER_SLICE_HEIGHT_SCALE : 1f, panX, panY, buffers, rows[band], rows[band + 1])
                             .drawBand(mesh, dimension, underRoof, originX, originZ, overview, buffers, cancelled))).join();
         }
+        if (outline == null) buffers.outlinePixels = null;
+        else outline.draw(mesh, originX, originZ, width, height, buffers, cancelled);
         return buffers.colors;
+    }
+
+    static final class Outline {
+        private final VerifiedAnchor anchor;
+        private final int y;
+        private final it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap<java.util.List<VerifiedAnchor.Bounds>> chunks
+                = new it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap<>();
+
+        private final java.util.List<VerifiedAnchor.Bounds> broad = new java.util.ArrayList<>();
+        private byte[] classified;
+        private boolean[] selected;
+
+        Outline(VerifiedAnchor anchor, int y) {
+            this.anchor = anchor;
+            this.y = y;
+            for (var part : anchor.bounds()) {
+                int minX = part.minX() >> 4, minZ = part.minZ() >> 4;
+                int maxX = part.maxX() >> 4, maxZ = part.maxZ() >> 4;
+                if ((maxX - minX + 1L) * (maxZ - minZ + 1L) > 1024) {
+                    broad.add(part);
+                    continue;
+                }
+                for (int z = minZ; z <= maxZ; z++)
+                    for (int x = minX; x <= maxX; x++)
+                        chunks.computeIfAbsent(chunkKey(x, z), ignored -> new java.util.ArrayList<>()).add(part);
+            }
+        }
+
+        private static long chunkKey(int x, int z) {
+            return (long)x << 32 | (z & 0xFFFFFFFFL);
+        }
+
+        private boolean covers(int x, int y, int z) {
+            if (x < anchor.minX() || x > anchor.maxX() || z < anchor.minZ() || z > anchor.maxZ()) return false;
+            if (anchor.bounds().isEmpty()) return y >= this.y - 4 && y <= this.y + 32;
+            var bounds = chunks.get(chunkKey(x >> 4, z >> 4));
+            if (bounds != null)
+                for (var part : bounds) if (part.contains(x, y, z)) return true;
+            for (var part : broad) if (part.contains(x, y, z)) return true;
+            return false;
+        }
+
+        private void draw(ReliefMesh mesh, int originX, int originZ, int width, int height, Buffers frame,
+                          java.util.function.BooleanSupplier cancelled) {
+            int[] faces = mesh.faces();
+            int faceCount = faces.length / 3, size = frame.probes.length;
+            if (classified == null || classified.length != faceCount) classified = new byte[faceCount];
+            else Arrays.fill(classified, (byte)0);
+            if (selected == null || selected.length != size) selected = new boolean[size];
+            if (frame.outlinePixels == null || frame.outlinePixels.length != size) frame.outlinePixels = new int[size];
+            else Arrays.fill(frame.outlinePixels, 0);
+            for (int px = 0; px < selected.length; px++) {
+                if ((px & 16383) == 0 && cancelled.getAsBoolean())
+                    throw new java.util.concurrent.CancellationException();
+                int index = frame.probes[px];
+                if (index < 0) {
+                    selected[px] = false;
+                    continue;
+                }
+                int face = index / 3;
+                if (classified[face] == 0) {
+                    int cell = faces[index] / 6, wx = originX + cell % mesh.side(), wz = originZ + cell / mesh.side();
+                    int color = faces[index + 2], material = color & ReliefTile.FACE_TYPE;
+                    boolean solid = material != ReliefTile.WATER_FACE && !ReliefTile.plant(material)
+                            && color != ReliefTile.CAVE_SHADOW && material != ReliefTile.ICE_WATER_SHADOW;
+                    classified[face] = (byte)(solid && covers(wx, faces[index + 1], wz) ? 2 : 1);
+                }
+                selected[px] = classified[face] == 2;
+            }
+
+            for (int y = 1; y < height - 1; y++) {
+                for (int x = 1; x < width - 1; x++) {
+                    int i = y * width + x;
+                    if (selected[i]) continue;
+                    float front = frame.terrainDepth[i] - .15f;
+                    if (selected[i - 1] && frame.terrainDepth[i - 1] >= front
+                            || selected[i + 1] && frame.terrainDepth[i + 1] >= front
+                            || selected[i - width] && frame.terrainDepth[i - width] >= front
+                            || selected[i + width] && frame.terrainDepth[i + width] >= front)
+                        frame.outlinePixels[i] = 0xFFFFE391;
+                }
+            }
+        }
     }
 
     private void balanceRows(ReliefMesh mesh, int[] rows) {
@@ -221,6 +323,7 @@ final class ReliefRaster {
     private void drawBand(ReliefMesh mesh, DimensionSpace dimension, boolean underRoof, int originX, int originZ, BiomeMapSnapshot overview,
                           Buffers buffers, java.util.function.BooleanSupplier cancelled) {
         int side = mesh.side(), fogColor = background;
+        clipPlantsToTerrain = dimension == DimensionSpace.OVERWORLD && mesh.sunlight() != null;
         if (overview != null) drawOverview(overview, originX, originZ, side);
         boolean squareFog = dimension == DimensionSpace.NETHER
                 || (dimension == DimensionSpace.OVERWORLD && overview == null);
@@ -272,8 +375,10 @@ final class ReliefRaster {
                     eligible &= eligible - 1;
                 }
                 cursor = i + 3;
-                int face = faces[i] % 6;
-                if (!visible(face)) continue;
+                int face = faces[i] % 6, color = faces[i + 2];
+                int material = color & ReliefTile.FACE_TYPE;
+                boolean crystal = material == ReliefTile.END_CRYSTAL;
+                if (!crystal && !visible(face)) continue;
                 int cell = faces[i] / 6;
                 if (cell != lastCell) {
                     lastCell = cell;
@@ -286,8 +391,12 @@ final class ReliefRaster {
                         haze = edge * edge;
                     }
                 }
-                int y = faces[i + 1], color = faces[i + 2];
-                int material = color & ReliefTile.FACE_TYPE;
+                int y = faces[i + 1];
+                if (crystal) {
+                    currentFace = i;
+                    drawCrystal(x, y, z, face, color);
+                    continue;
+                }
                 if (haze >= 1) {
                     currentFace = PROBE_EDGE_FOG;
                     face(x, y, z, face, fogColor, 1, 0);
@@ -330,9 +439,10 @@ final class ReliefRaster {
                 float haze = Float.intBitsToFloat(overlays.getInt(index + 1));
                 int color = faces[i + 2], x = cell % side, y = faces[i + 1], z = cell / side;
                 if (ReliefTile.plant(color & ReliefTile.FACE_TYPE))
-                    drawPlant(x, y, z, color, haze);
-                else
-                    face(x, y, z, faces[i] % 6, color, haze, 0);
+                    drawPlant(x, y, z, color, haze, shadow(mesh, cell, y));
+                else {
+                    face(x, y, z, faces[i] % 6, color, haze, 0, mesh.iceWaterFog());
+                }
             }
         }
         if (netherSlice && mesh.fogRim() != null) drawFogRim(mesh.fogRim(), side, mesh.minimum(), true);
@@ -419,8 +529,33 @@ final class ReliefRaster {
     }
 
     private void face(int x, int y, int z, int direction, int color, float haze, float shadow) {
+        face(x, y, z, direction, color, haze, shadow, null);
+    }
+
+    private void face(int x, int y, int z, int direction, int color, float haze, float shadow, IceWaterFog iceFog) {
+        int lighting = (color & ReliefTile.FACE_TYPE) == ReliefTile.ICE_WATER_SHADOW ? -1 : direction;
         quad(x + (direction == ReliefMesh.EAST ? 1 : 0), y + (direction == ReliefMesh.TOP ? 1 : 0),
-                z + (direction == ReliefMesh.SOUTH ? 1 : 0), faceShapes[direction], color, haze, direction, shadow);
+                z + (direction == ReliefMesh.SOUTH ? 1 : 0), faceShapes[direction], color, haze, lighting, shadow, 0, iceFog);
+    }
+
+    private void drawCrystal(int x, int y, int z, int direction, int color) {
+        if (crystalFaces == null) {
+            // the body diagonal spans one block, matching the GPU vertex transform
+            float across = .4082483f, rise = 1f / 3, along = .23570226f;
+            Axis a = east.times(across).plus(up.times(rise)).plus(south.times(-along));
+            Axis b = east.times(-across).plus(up.times(rise)).plus(south.times(-along));
+            Axis c = up.times(rise).plus(south.times(2 * along));
+            crystalFaces = new PlacedQuad[]{
+                    new PlacedQuad(.5f - across, rise, .5f - along, Quad.of(a, c, 1), ReliefMesh.TOP),
+                    new PlacedQuad(.5f, 0, .5f, Quad.of(b, c, 1), ReliefMesh.WEST),
+                    new PlacedQuad(.5f + across, rise, .5f - along, Quad.of(b, c, 1), ReliefMesh.EAST),
+                    new PlacedQuad(.5f, 0, .5f, Quad.of(a, b, 1), ReliefMesh.NORTH),
+                    new PlacedQuad(.5f, rise, .5f + 2 * along, Quad.of(a, b, 1), ReliefMesh.SOUTH),
+                    new PlacedQuad(.5f, 0, .5f, Quad.of(a, c, 1), ReliefMesh.BOTTOM)
+            };
+        }
+        var part = crystalFaces[direction];
+        quad(x + part.x, y + part.y, z + part.z, part.shape, color, 0, -1, 0, 0);
     }
 
     private void drawShape(int x, int y, int z, int id, float haze, float shadow) {
@@ -439,7 +574,7 @@ final class ReliefRaster {
         drawParts(x, y, z, projected.parts, projected.color, haze, shadow);
     }
 
-    private void drawPlant(int x, int y, int z, int color, float haze) {
+    private void drawPlant(int x, int y, int z, int color, float haze, float shadow) {
         if (crossedPlant == null) {
             if (scale < 2.5f || Math.abs(up.y) < .02f * scale) {
                 float size = scale < 2.5f ? .75f : .25f;
@@ -455,7 +590,7 @@ final class ReliefRaster {
                 };
             }
         }
-        drawParts(x, y, z, crossedPlant, color, haze, 0);
+        drawParts(x, y, z, crossedPlant, color, haze, shadow);
     }
 
     private void drawParts(int x, int y, int z, PlacedQuad[] parts, int color, float haze, float shadow) {
@@ -517,6 +652,11 @@ final class ReliefRaster {
     }
 
     private void quad(float x, float y, float z, Quad shape, int color, float haze, int direction, float shadow, float fogHeight) {
+        quad(x, y, z, shape, color, haze, direction, shadow, fogHeight, null);
+    }
+
+    private void quad(float x, float y, float z, Quad shape, int color, float haze, int direction, float shadow,
+                      float fogHeight, IceWaterFog iceFog) {
         if (!shape.visible) return;
         float dx = x - halfSide, dz = z - halfSide, dy = y - heightCenter;
         float sx = screenX + east.x * dx + south.x * dz;
@@ -539,9 +679,17 @@ final class ReliefRaster {
         int material = color & ReliefTile.FACE_TYPE;
         boolean water = material == ReliefTile.WATER_FACE;
         boolean plant = ReliefTile.plant(material);
-        if (direction >= 0) color = light(color, direction, shadow);
+        if (direction >= 0 && !water) color = light(color, direction, shadow);
         int fill = haze == 0 ? 0xFF000000 | color : MenuAccent.mix(0xFF000000 | color, background, haze);
-        int waterTint = water && haze != 0 ? MenuAccent.mix(0xFF1B464E, background, haze) : 0xFF1B464E;
+        int waterTint = 0;
+        if (water) {
+            int tint = (color & 0xFFFFFF) == 0 ? 0xFF1B464E : 0xFF000000 | color;
+            waterTint = haze == 0 ? tint : MenuAccent.mix(tint, background, haze);
+        }
+        boolean underIce = iceFog != null && iceFog.maySee(x, z, east.depth, south.depth);
+        int iceTint = underIce ? MenuAccent.mix(IceWaterFog.shadow(color), background, haze) : 0;
+        boolean xWall = direction == ReliefMesh.WEST || direction == ReliefMesh.EAST;
+        boolean zWall = direction == ReliefMesh.NORTH || direction == ReliefMesh.SOUTH;
         boolean plantDetail = plant && scale >= 8 && shape.vDepth == up.depth;
         int berry = plantDetail && material == ReliefTile.BERRY_FACE ? MenuAccent.mix(0xFFBF4940, background, haze) : 0;
         for (int row = top; row <= bottom; row++) {
@@ -553,7 +701,8 @@ final class ReliefRaster {
                 float d = baseDepth + u * uDepth + v * vDepth;
                 if (d <= depth[i]) continue;
                 if (water || plant) {
-                    if (d <= overlayDepth[i]) continue;
+                    if (d <= overlayDepth[i]
+                            || plant && clipPlantsToTerrain && depth[i] == Float.NEGATIVE_INFINITY) continue;
                     if (plantDetail && (v > .80f && (u < .16f || u > .87f) || v > .94f && (u < .35f || u > .64f)))
                         continue;
                     overlayDepth[i] = d;
@@ -568,6 +717,15 @@ final class ReliefRaster {
                         float distance = Math.clamp((d - depth[i]) * up.depth, 0, 36);
                         float opacity = 1 - .71f / (1 + distance * .42f);
                         pixels[i] = MenuAccent.mix(opaquePixels[i], waterTint, opacity);
+                        if (underIce && distance > 0) {
+                            // sample the submerged surface along the ray, below the water face
+                            float ray = d - depth[i];
+                            float worldX = x + (xWall ? 0 : u) - ray * east.depth;
+                            float worldY = y + (xWall ? u : zWall ? v : 0) - ray * up.depth;
+                            float worldZ = z + (zWall ? 0 : v) - ray * south.depth;
+                            float fade = iceFog.strength(worldX, worldY, worldZ) * Math.min(1, distance);
+                            if (fade > 0) pixels[i] = MenuAccent.mix(pixels[i], iceTint, fade * fade * (3 - 2 * fade));
+                        }
                     }
                 } else {
                     depth[i] = d;

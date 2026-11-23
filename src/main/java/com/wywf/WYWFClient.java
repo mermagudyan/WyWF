@@ -37,7 +37,7 @@ public final class WYWFClient implements ClientModInitializer {
                 (client, screen, width, height) -> com.wywf.client.PauseMapButton.add(client, screen));
         net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents.END_CLIENT_TICK.register(client -> {
             com.wywf.client.PlayerAtlas.tick(client);
-            while (openMap.consumeClick()) if (client.gui.screen() == null)
+            while (openMap.consumeClick()) if (com.wywf.client.ClientPlatform.screen(client) == null)
                 com.wywf.client.PauseMapButton.openMap(null);
         });
 

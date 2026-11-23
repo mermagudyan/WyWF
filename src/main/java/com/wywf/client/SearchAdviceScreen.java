@@ -7,6 +7,7 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
+import net.minecraft.network.chat.Component;
 import java.util.List;
 
 public final class SearchAdviceScreen extends Screen {
@@ -15,6 +16,7 @@ public final class SearchAdviceScreen extends Screen {
     private final ParsedQuery query;
     private final SearchConfig config;
     private final QueryAdvisor.Report report;
+    private final Component heading = MenuAccent.heading(title.getString());
     private String measured="";
     private int page;
     private final BlockMenuSkin skin = BlockMenuSkin.random();
@@ -26,7 +28,10 @@ public final class SearchAdviceScreen extends Screen {
     }
     public SearchAdviceScreen(CreateWorldScreen parent,String original,ParsedQuery query,SearchConfig config,List<SearchDiagnostics.Count> diagnostics){
         super(MapTexts.label("advice_title"));
-        this.parent = parent; this.original = original; this.query = query; this.config = config.copy();
+        this.parent = parent;
+        this.original = original;
+        this.query = query;
+        this.config = config.copy();
         diagnostics.stream().filter(d->d.failed()>=8).findFirst().ifPresent(d->{
             query.terms().stream().filter(t->t.toString().equals(d.condition())).findFirst().ifPresent(t->
                 measured=MapTexts.text("obstacle",ResultTexts.name(t.canonical),d.failed(),d.total())+(t.pinned?" "+MapTexts.text("obstacle_pinned"):""));
@@ -53,21 +58,27 @@ public final class SearchAdviceScreen extends Screen {
                     ? MapTexts.text(choice.before().startsWith("never ") ? "advice_remove_exclusion" : "advice_remove_requirement",
                             ResultTexts.name(choice.target()))
                     : MapTexts.text("advice_" + choice.kind().name().toLowerCase(java.util.Locale.ROOT), ResultTexts.name(choice.target()));
-            Button use = Button.builder(net.minecraft.network.chat.Component.literal(label), b -> start(choice.query()))
+            Button use = MenuButton.builder(net.minecraft.network.chat.Component.literal(label), b -> start(choice.query()))
                     .bounds(12, contentTop() + (i % count) * 40, width - 24, 20).build();
             use.setTooltip(Tooltip.create(net.minecraft.network.chat.Component.literal(
                     choice.before() + " → " + (choice.after().isEmpty() ? MapTexts.text("removed") : choice.after())
                     + "\n" + choice.query())));
             addRenderableWidget(use);
         }
-        addRenderableWidget(Button.builder(net.minecraft.network.chat.Component.literal("<"), b -> { page = Math.max(0, page - 1); rebuildWidgets(); })
+        addRenderableWidget(MenuButton.builder(net.minecraft.network.chat.Component.literal("<"), b -> {
+            page = Math.max(0, page - 1);
+            rebuildWidgets();
+        })
                 .bounds(12, height - 55, 30, 20).build()).active = page > 0;
-        addRenderableWidget(Button.builder(net.minecraft.network.chat.Component.literal(">"), b -> { page++; rebuildWidgets(); })
+        addRenderableWidget(MenuButton.builder(net.minecraft.network.chat.Component.literal(">"), b -> {
+            page++;
+            rebuildWidgets();
+        })
                 .bounds(48, height - 55, 30, 20).build()).active = page + 1 < pages;
         int w = Math.min(180, (width - 30) / 2);
-        addRenderableWidget(Button.builder(MapTexts.label("as_is"), b -> start(original))
+        addRenderableWidget(MenuButton.builder(MapTexts.label("as_is"), b -> start(original))
                 .bounds(12, height - 29, w, 20).build());
-        addRenderableWidget(Button.builder(ResultTexts.label("back"), b -> onClose())
+        addRenderableWidget(MenuButton.builder(ResultTexts.label("back"), b -> onClose())
                 .bounds(width - w - 12, height - 29, w, 20).build());
     }
 
@@ -86,10 +97,11 @@ public final class SearchAdviceScreen extends Screen {
 
     @Override public void extractRenderState(GuiGraphicsExtractor g, int mx, int my, float tick) {
         BlockMenuSkin.panel(g, skin, 8, 4, width - 16, height - 8, 0xFF9FBF91, 0xFFD9BA86);
-        g.centeredText(font, title, width / 2, 10, 0xFFFFFFFF);
+        g.centeredText(font, heading, width / 2, 10, 0xFFFFFFFF);
         int y = 27;
         for (var line : font.split(header(), width - 24)) {
-            g.centeredText(font, line, width / 2, y, 0xFFE5CD94); y += 11;
+            g.centeredText(font, line, width / 2, y, 0xFFE5CD94);
+            y += 11;
         }
         int count = capacity();
         for (int i = page * count; i < Math.min(report.advice().size(), (page + 1) * count); i++) {

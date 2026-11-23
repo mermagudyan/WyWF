@@ -47,8 +47,8 @@
   "wywf.config.candidates.ramp": "Wait before lowering result target",
   "wywf.config.search.candidates.server_verification": "Verify candidates on the local server",
   "wywf.config.search.candidates.server_verification.desc": "Generate each candidate in vanilla to confirm its conditions. When off, the search returns unverified candidates after local filters.",
-  "wywf.config.search.candidates.offer_history": "Offer previously verified seeds",
-  "wywf.config.search.candidates.offer_history.desc": "Offer to recheck results from history before starting a fresh verified search.",
+  "wywf.config.search.candidates.offer_history": "Offer previous search results",
+  "wywf.config.search.candidates.offer_history.desc": "Offer matching history before a new search. Server mode rechecks saved seeds.",
   "wywf.config.map.gpu_relief": "GPU rendering in the End (experimental)",
   "wywf.config.map.gpu_relief.desc": "Use the GPU for opaque 3D scenes in the End. Applies the next time you open 3D relief. Debug probes use CPU rendering.",
   "wywf.config.map.category": "Map and example",
@@ -59,5 +59,6 @@
   "wywf.config.map.pause.desc": "Pause map and example calculations while the Minecraft window is inactive.",
   "wywf.config.map.fit.desc": "Time allowed to find an example seed matching the placed biomes. The sketch is illustrative when no example matches.",
   "wywf.config.candidates.minimum.desc": "After waiting, allow fewer final results so rare queries can finish sooner.",
-  "wywf.config.candidates.ramp.desc": "Seconds before the search may reduce its target to the minimum result count."
+  "wywf.config.candidates.ramp.desc": "Seconds before the search may reduce its target to the minimum result count.",
+  "wywf.config.constructor.performance": "Performance and search engine"
 }

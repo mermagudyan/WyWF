@@ -130,21 +130,22 @@ public final class FtpScreen extends Screen {
         map.bounds(mapX, mapY, Math.max(1, width - mapX - inset), mapBottom - mapY);
         int mapWidth = width - mapX - inset;
         int firstWidth = (mapWidth - 2 * gap) / 3, secondWidth = firstWidth;
-        addRenderableWidget(Button.builder(scopeLabel(), b -> {
+        addRenderableWidget(MenuButton.builder(scopeLabel(), b -> {
             localArea = !localArea;
             selection = null;
             chooseArea = false;
             b.setMessage(scopeLabel());
         }).bounds(mapX, 43, firstWidth, 20).build()).active = creator != null;
-        var areaButton = addRenderableWidget(Button.builder(MapTexts.label(chooseArea ? "ftp_stop_selecting" : "ftp_select_area"), b -> {
+        var areaButton = addRenderableWidget(MenuButton.builder(MapTexts.label(chooseArea ? "ftp_stop_selecting" : "ftp_select_area"), b -> {
             chooseArea = !chooseArea;
             if (chooseArea) localArea = true;
             rebuildWidgets();
         }).bounds(mapX + firstWidth + gap, 43, secondWidth, 20).build());
         areaButton.setTooltip(Tooltip.create(MapTexts.label("ftp_area_help")));
-        addRenderableWidget(Button.builder(MapTexts.label("reset"), b -> {
+        addRenderableWidget(MenuButton.builder(MapTexts.label("reset"), b -> {
             viewport.reset(initialX, initialZ, 4);
-            centerX = initialX; centerZ = initialZ;
+            centerX = initialX;
+            centerZ = initialZ;
             selection = null;
             map.dirty();
         }).bounds(mapX + firstWidth + secondWidth + 2 * gap, 43, mapWidth - firstWidth - secondWidth - 2 * gap, 20).build());
@@ -157,10 +158,14 @@ public final class FtpScreen extends Screen {
         if (!availableModes.contains(mode)) mode = availableModes.getFirst();
         modeList = drop(46, "ftp_search_type", availableModes.stream().map(index -> MapTexts.text("ftp_" + modes.get(index)))
                 .toList(), availableModes.indexOf(mode), index -> {
-            mode = availableModes.get(index); firstIndex = secondIndex = selected = 0;
-            report = null; queryMarkers = List.of();
+            mode = availableModes.get(index);
+            firstIndex = secondIndex = selected = 0;
+            report = null;
+            queryMarkers = List.of();
             if (map != null) map.structures.enabled.clear();
-            error = ""; message = ""; rebuildWidgets();
+            error = "";
+            message = "";
+            rebuildWidgets();
         });
         conditions = count = distance = null;
         firstList = secondList = null;
@@ -194,17 +199,17 @@ public final class FtpScreen extends Screen {
 
         int actionWidth = Math.min(150, (width - 36) / 2);
         int left = (width - actionWidth * 2 - 8) / 2, actionY = footer + (height - footer - 20) / 2;
-        find = addRenderableWidget(Button.builder(MapTexts.label(running() ? "ftp_cancel_scan" : "ftp_find"), b -> {
+        find = addRenderableWidget(MenuButton.builder(MapTexts.label(running() ? "ftp_cancel_scan" : "ftp_find"), b -> {
             if (running()) cancelSurvey(); else start();
         }).bounds(left, actionY, actionWidth, 20).build());
-        addRenderableWidget(Button.builder(ResultTexts.label("back"), b -> onClose())
+        addRenderableWidget(MenuButton.builder(ResultTexts.label("back"), b -> onClose())
                 .bounds(left + actionWidth + 8, actionY, actionWidth, 20).build());
         int resultY = footer - 28;
-        previous = addRenderableWidget(Button.builder(Component.literal("<"), b -> focus(selected - 1))
+        previous = addRenderableWidget(MenuButton.builder(Component.literal("<"), b -> focus(selected - 1))
                 .bounds(inset, resultY, 20, 20).build());
-        next = addRenderableWidget(Button.builder(Component.literal(">"), b -> focus(selected + 1))
+        next = addRenderableWidget(MenuButton.builder(Component.literal(">"), b -> focus(selected + 1))
                 .bounds(inset + 24, resultY, 20, 20).build());
-        copy = addRenderableWidget(Button.builder(MapTexts.label("ftp_copy_coords"), b -> copy())
+        copy = addRenderableWidget(MenuButton.builder(MapTexts.label("ftp_copy_coords"), b -> copy())
                 .bounds(inset + 50, resultY, panelWidth - 50, 20).build());
         updateButtons();
     }
@@ -215,7 +220,7 @@ public final class FtpScreen extends Screen {
                 value -> { pick.accept(value); updateButtons(); }, d -> {
                     if (openDrop != null && openDrop != d) openDrop.close();
                     openDrop = d;
-                }));
+                }).popupLimits(36, footer - 4));
     }
 
     private static List<String> spawnerTypes() {
@@ -288,7 +293,8 @@ public final class FtpScreen extends Screen {
     private static int block(double coordinate) { return Math.clamp((int)Math.floor(coordinate), -PlaceSearch.WORLD_EDGE, PlaceSearch.WORLD_EDGE); }
 
     private void start() {
-        error = ""; message = "";
+        error = "";
+        message = "";
         cancelled = false;
         boolean wholeSeed = creator != null && !localArea;
         var area = wholeSeed ? new Area(centerX, centerZ, centerX, centerZ) : area();
@@ -301,13 +307,19 @@ public final class FtpScreen extends Screen {
             return;
         }
         if (mode == 0) {
-            if (dimension != DimensionSpace.OVERWORLD) { error = MapTexts.text("ftp_query_overworld"); return; }
+            if (dimension != DimensionSpace.OVERWORLD) {
+                error = MapTexts.text("ftp_query_overworld");
+                return;
+            }
             int x = area.minX() + areaWidth / 2, z = area.minZ() + areaHeight / 2;
             int radius = Math.max(64, (int)Math.ceil(Math.hypot(areaWidth, areaHeight) / 2));
             var place = wholeSeed ? PlaceSearch.wholeSeed(source.seed, x, z, 64) : new PlaceSearch(source.seed, x, z, radius, 64);
             var query = WYWFClient.parser().parse(place.prefix() + queryText);
             if (query.error() != null) { error = query.error(); return; }
-            if (query.isEmpty() || !query.ignoredWords().isEmpty()) { error = MapTexts.text(query.isEmpty() ? "ftp_conditions_required" : "ftp_unknown"); return; }
+            if (query.isEmpty() || !query.ignoredWords().isEmpty()) {
+                error = MapTexts.text(query.isEmpty() ? "ftp_conditions_required" : "ftp_unknown");
+                return;
+            }
             new SearchScreen(creator, query.normalized(), query, config).forPlace(this, wholeSeed ? null : area).open(() -> {
                 report = null;
                 queryMarkers = List.of();
@@ -316,12 +328,17 @@ public final class FtpScreen extends Screen {
         }
         int needed = mode == 1 || mode == 4 ? number(mode == 4 ? spawnerCount : villageCount, 2, 8) : 2;
         int gap = mode == 1 || mode == 4 ? number(mode == 4 ? spawnerGap : villageGap, 1, mode == 4 ? 256 : 2048) : 1;
-        if (needed < 0 || gap < 0) { error = MapTexts.text("ftp_bad_group", mode == 4 ? 256 : 2048); return; }
+        if (needed < 0 || gap < 0) {
+            error = MapTexts.text("ftp_bad_group", mode == 4 ? 256 : 2048);
+            return;
+        }
         if (mode == 2 && (targets.size() < 2 || firstIndex == secondIndex)) {
-            error = MapTexts.text("ftp_choose_biomes"); return;
+            error = MapTexts.text("ftp_choose_biomes");
+            return;
         }
         if (dimension != DimensionSpace.OVERWORLD && kind.overworldOnly()) {
-            error = MapTexts.text("ftp_overworld"); return;
+            error = MapTexts.text("ftp_overworld");
+            return;
         }
         String first = kind == Kind.BIOME_BORDER || kind.hasMobFilter() ? targets.get(firstIndex) : "";
         String second = mode == 2 || mode == 4 ? targets.get(secondIndex) : "";
@@ -340,7 +357,9 @@ public final class FtpScreen extends Screen {
         searchOriginX = Math.clamp((searchOriginX >> 4) << 4, -PlaceSearch.WORLD_EDGE, PlaceSearch.WORLD_EDGE);
         searchOriginZ = Math.clamp((searchOriginZ >> 4) << 4, -PlaceSearch.WORLD_EDGE, PlaceSearch.WORLD_EDGE);
         surveyGrid = wholeSeed ? PlaceSearch.wholeSeed(source.seed, searchOriginX, searchOriginZ, step) : null;
-        report = null; queryMarkers = List.of(); map.structures.enabled.clear();
+        report = null;
+        queryMarkers = List.of();
+        map.structures.enabled.clear();
         var request = new Request(kind, dimension, area, needed, gap, first, second);
         pending = wholeSeed ? nextSurvey(request) : request;
         cancelled = false;
@@ -493,19 +512,22 @@ public final class FtpScreen extends Screen {
                 return true;
             }
             if (openDrop.handlePopupClick((float)e.x(), (float)e.y(), space)) return true;
+            openDrop.close();
             openDrop = null;
         }
         if (!map.contains(e.x(), e.y())) return super.mouseClicked(e, keyboard);
         if (e.button() == InputConstants.MOUSE_BUTTON_RIGHT) {
             panning = true;
             moved = false;
-            pressX = e.x(); pressY = e.y();
+            pressX = e.x();
+            pressY = e.y();
             return true;
         }
         if (e.button() == InputConstants.MOUSE_BUTTON_LEFT) {
             if (chooseArea) {
                 selecting = true;
-                pressX = dragX = e.x(); pressY = dragY = e.y();
+                pressX = dragX = e.x();
+                pressY = dragY = e.y();
             } else leftClick = true;
             return true;
         }
@@ -517,7 +539,11 @@ public final class FtpScreen extends Screen {
             openDrop.dragPopupTo((float)e.y(), popupHeight());
             return true;
         }
-        if (selecting && e.button() == InputConstants.MOUSE_BUTTON_LEFT) { dragX = e.x(); dragY = e.y(); return true; }
+        if (selecting && e.button() == InputConstants.MOUSE_BUTTON_LEFT) {
+            dragX = e.x();
+            dragY = e.y();
+            return true;
+        }
         if (panning && e.button() == InputConstants.MOUSE_BUTTON_RIGHT) {
             if (!moved && Math.hypot(e.x() - pressX, e.y() - pressY) < 3) return true;
             if (!moved) { dx = e.x() - pressX; dy = e.y() - pressY; }
@@ -525,7 +551,10 @@ public final class FtpScreen extends Screen {
             map.pan(dx, dy);
             return true;
         }
-        if (leftClick && e.button() == InputConstants.MOUSE_BUTTON_LEFT) { leftClick = false; return true; }
+        if (leftClick && e.button() == InputConstants.MOUSE_BUTTON_LEFT) {
+            leftClick = false;
+            return true;
+        }
         return super.mouseDragged(e, dx, dy);
     }
 
@@ -535,7 +564,8 @@ public final class FtpScreen extends Screen {
             return true;
         }
         if (selecting && e.button() == InputConstants.MOUSE_BUTTON_LEFT) {
-            selecting = false; chooseArea = false;
+            selecting = false;
+            chooseArea = false;
             int ax = block(viewport.worldX(pressX - mapX)), az = block(viewport.worldZ(pressY - mapY));
             int bx = block(viewport.worldX(Math.clamp(e.x() - mapX, 0, viewport.width() - 1)));
             int bz = block(viewport.worldZ(Math.clamp(e.y() - mapY, 0, viewport.height() - 1)));
@@ -559,7 +589,8 @@ public final class FtpScreen extends Screen {
                     rebuildWidgets();
                 } else {
                     rightClickAt = now;
-                    rightClickX = e.x(); rightClickY = e.y();
+                    rightClickX = e.x();
+                    rightClickY = e.y();
                 }
             }
             return true;
@@ -570,7 +601,8 @@ public final class FtpScreen extends Screen {
             if (report != null) for (int i = 0; i < report.findings().size(); i++) {
                 var hit = report.findings().get(i).center();
                 if (Math.hypot(e.x() - mapX - viewport.pixelX(hit.x()), e.y() - mapY - viewport.pixelZ(hit.z())) <= 7) {
-                    focus(i); return true;
+                    focus(i);
+                    return true;
                 }
             }
             centerX = block(viewport.worldX(e.x() - mapX));
@@ -581,7 +613,8 @@ public final class FtpScreen extends Screen {
 
     @Override public boolean mouseScrolled(double x, double y, double horizontal, double vertical) {
         if (openDrop != null && openDrop.isOpen() && openDrop.popupHit((float)x, (float)y, popupHeight())) {
-            openDrop.scrollPopup((float)vertical, popupHeight()); return true;
+            openDrop.scrollPopup((float)vertical, popupHeight());
+            return true;
         }
         if (!map.contains(x, y)) return super.mouseScrolled(x, y, horizontal, vertical);
         map.zoom(vertical, x, y);
@@ -604,7 +637,10 @@ public final class FtpScreen extends Screen {
             map.drawCrossAt(g, mapX + p.x(), mapY + p.y(), null);
         }
         if (conditions != null) caption(g, conditions, "ftp_conditions");
-        if (count != null) { caption(g, count, "ftp_count"); caption(g, distance, "ftp_distance"); }
+        if (count != null) {
+            caption(g, count, "ftp_count");
+            caption(g, distance, "ftp_distance");
+        }
         int infoY = distance != null ? distance.getY() + 25 : secondList != null ? secondList.getY() + 26 : firstList != null ? firstList.getY() + 26 : 120;
         String status = !error.isEmpty() ? error : running()
                 ? surveyGrid == null ? MapTexts.text("ftp_scanning") : MapTexts.text("ftp_regions", regionsScanned, partialRegions)
@@ -667,7 +703,7 @@ public final class FtpScreen extends Screen {
         int statusX = mapX + viewport.width() / 2;
         int mapInfoY = mapBottom + 2;
         if (hit != null && !findingFitsSidebar) {
-            g.centeredText(font, font.plainSubstrByWidth(selectedText, viewport.width()), statusX, mapInfoY, 0xFFFFE1A0);
+            g.centeredText(font, font.plainSubstrByWidth(selectedText, viewport.width()), statusX, mapInfoY, MapTexts.EMPHASIS);
             mapInfoY += line;
         }
         g.centeredText(font, font.plainSubstrByWidth(hover, viewport.width()), statusX, mapInfoY, 0xFFFFFFFF);
@@ -675,11 +711,15 @@ public final class FtpScreen extends Screen {
             g.centeredText(font, font.plainSubstrByWidth(MapTexts.text("ftp_map_status", mapStatus), viewport.width()),
                     statusX, mapInfoY + line, 0xFFBBD0D8);
         super.extractRenderState(g,mx,my,tick);
+        for (var child : children()) {
+            if (child instanceof ConstructorDropList list && list != openDrop)
+                list.drawPopup(g, mx, my, Math.max(0, footer - list.getBottom() - 4), 1);
+        }
         if (openDrop != null) openDrop.drawPopup(g, mx, my, popupHeight(), 1);
     }
 
     private static Component accent(String text) {
-        return MenuAccent.text(text, 0xFFC3EACD, 0xFFE9D69F);
+        return MenuAccent.text(text, 0xFFF0F0F0, 0xFFBDBDBD);
     }
 
     private void caption(GuiGraphicsExtractor g, EditBox field, String label) {
@@ -739,7 +779,7 @@ public final class FtpScreen extends Screen {
         var result = new SearchResult(server.overworld().getSeed(), x, z, x, z, "", List.of(), List.of(), "");
         var source = new SavedWorldMap(java.util.UUID.randomUUID().toString(), net.minecraft.SharedConstants.getCurrentVersion().id(),
                 result, new ParsedQuery("", List.of()), ConfigStore.load(), null, null, List.of(), List.of());
-        client.setScreenAndShow(new FtpScreen(null, client.gui.screen(), source, x, z, List.of(), dimension, null));
+        client.setScreenAndShow(new FtpScreen(null, ClientPlatform.screen(client), source, x, z, List.of(), dimension, null));
     }
 
     @Override public boolean isPauseScreen() { return creator != null; }

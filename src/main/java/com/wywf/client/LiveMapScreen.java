@@ -9,9 +9,9 @@ import com.wywf.map.*;
 import com.wywf.verify.*;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.tabs.TabNavigationBar;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.Tooltip;
-import net.minecraft.client.gui.components.tabs.MenuTabBar;
 import net.minecraft.client.gui.components.tabs.Tab;
 import net.minecraft.client.gui.components.tabs.TabManager;
 import net.minecraft.client.gui.layouts.FrameLayout;
@@ -43,10 +43,11 @@ final class LiveMapScreen extends Screen {
     private final MapImage coverage = new MapImage();
     private final Map<Long, MapImage> images = new LinkedHashMap<>();
     private final CompletableFuture<Optional<SavedWorldMap>> saved;
+    private CompletableFuture<Optional<SavedWorldMaps.Discoveries>> savedDiscoveries;
     private SavedWorldMap metadata;
     private FitPreview.Result fitted;
     private Map<Long, SurfaceSnapshot> visible = Map.of();
-    private MenuTabBar navigation;
+    private TabNavigationBar navigation;
     private View view = View.GENERAL;
     private int terrain, x, y, mapWidth, mapHeight, footer, ticks;
     private long revision = -1;
@@ -57,7 +58,7 @@ final class LiveMapScreen extends Screen {
         @Override public Component getTabExtraNarration() {
             return Component.empty();
         }
-        @Override public Layout getLayout() {
+        public Layout getLayout() {
             return new FrameLayout();
         }
         @Override public void visitChildren(java.util.function.Consumer<net.minecraft.client.gui.components.AbstractWidget> visitor) {}
@@ -77,21 +78,32 @@ final class LiveMapScreen extends Screen {
         super(MapTexts.label("live_map"));
         this.parent = parent;
         this.atlas = atlas;
-        playerX = client.player.getBlockX(); playerZ = client.player.getBlockZ();
+        playerX = client.player.getBlockX();
+        playerZ = client.player.getBlockZ();
         var id = client.level.dimension().identifier().toString();
         dimension = Arrays.stream(DimensionSpace.values()).filter(d -> d.id.equals(id)).findFirst().orElse(null);
         var server = client.getSingleplayerServer();
-        full = server != null && server.getWorldData().isAllowCommands() && dimension != null;
+        full = server != null && dimension != null;
         viewport = new MapViewport(playerX + .5, playerZ + .5, full ? 2 : 0.5);
         if (full) {
             long seed = server.overworld().getSeed();
             var source = new SearchResult(seed, playerX, playerZ, playerX, playerZ, "", List.of(), List.of(), "");
             structures = new StructureLayers(source);
             var directory = server.getWorldPath(LevelResource.ROOT);
-            structures.preferences(directory.resolve("wywf/live-layers.json"));
+            structures.worldPreferences(directory);
+            var level = server.getLevel(client.level.dimension());
+            if (level != null) structures.confirmation(markers -> com.wywf.verify.MapDiscovery.confirmLive(server, level, markers));
             overview = new BiomeMapCanvas(source, 512, viewport, structures);
             overview.settings(ConfigStore.load());
             overview.dimension(dimension);
+            savedDiscoveries = CompletableFuture.supplyAsync(() -> {
+                try {
+                    return SavedWorldMaps.readDiscoveries(directory, seed, net.minecraft.SharedConstants.getCurrentVersion().id());
+                } catch (java.io.IOException error) {
+                    WYWFClient.LOGGER.warn("Could not read saved map discoveries", error);
+                    return Optional.empty();
+                }
+            });
             saved = CompletableFuture.supplyAsync(() -> {
                 try {
                     return SavedWorldMaps.read(directory, WYWFClient.parser(), net.minecraft.SharedConstants.getCurrentVersion().id());
@@ -120,11 +132,9 @@ final class LiveMapScreen extends Screen {
                 new MapTab(View.SURFACE, MapTexts.label("layer_surface"))));
         if (dimension != DimensionSpace.NETHER && dimension != DimensionSpace.END)
             tabs.add(new MapTab(View.TERRAIN, MapTexts.label("live_terrain")));
-        navigation = addRenderableWidget(MenuTabBar.builder(manager, width)
-                .addTabs(tabs.toArray(MapTab[]::new)).build());
-        navigation.arrangeElements(width);
+        navigation = addRenderableWidget(ClientPlatform.navigation(manager, width, tabs.toArray(MapTab[]::new)));
         navigation.selectTab(view.ordinal(), false);
-        y = navigation.getHeight() + 5;
+        y = navigation.getRectangle().height() + 5;
         footer = height - 38;
         x = INSET;
         mapWidth = Math.max(1, width - x - INSET);
@@ -138,41 +148,42 @@ final class LiveMapScreen extends Screen {
         if (view == View.GENERAL) initGeneral();
         if (view == View.TERRAIN) {
             int w = Math.min(142, width / 3);
-            addRenderableWidget(Button.builder(layerName(), b -> {
+            addRenderableWidget(MenuButton.builder(layerName(), b -> {
                 terrain = (terrain + 1) % terrainCount();
                 b.setMessage(layerName());
                 invalidate();
             }).bounds(INSET, footer + 9, w, 20).build());
         }
         int doneWidth = Math.min(150, width / 3);
-        addRenderableWidget(Button.builder(
+        addRenderableWidget(MenuButton.builder(
                 net.minecraft.network.chat.CommonComponents.GUI_DONE, b -> onClose())
                 .bounds((width - doneWidth) / 2, footer + 9, doneWidth, 20).build());
         invalidate();
     }
 
+    private MapContextMenu context;
+
     private void initGeneral() {
-        int row = footer - 23, w = Math.min(106, (width - 32) / 5);
+        int row = footer - 23, count = !full ? 2 : metadata == null ? 3 : 4;
+        int w = Math.max(1, Math.min(106, (width - 32) / count));
         int center = (width - w) / 2, step = w + 4;
-        addRenderableWidget(Button.builder(borderLabel(), b -> {
+        addRenderableWidget(MenuButton.builder(borderLabel(), b -> {
             borders = !borders;
             b.setMessage(borderLabel());
             if (overview != null) overview.borders(borders);
             invalidate();
-        }).bounds(center - (full ? 2 * step : step / 2), row, w, 20).build());
-        addRenderableWidget(Button.builder(MapTexts.label("reset"), b -> {
+        }).bounds(center - (count - 1) * step / 2, row, w, 20).build());
+        addRenderableWidget(MenuButton.builder(MapTexts.label("reset"), b -> {
             viewport.reset(playerX + .5, playerZ + .5, full ? 2 : .5);
             if (overview != null) overview.dirty();
-        }).bounds(center + (full ? -step : step / 2), row, w, 20).build());
+        }).bounds(center - (count - 3) * step / 2, row, w, 20).build());
         if (!full) return;
-        addRenderableWidget(Button.builder(MapTexts.label("structures_short"), b ->
+        addRenderableWidget(MenuButton.builder(MapTexts.label("structures_short"), b ->
                 minecraft.setScreenAndShow(new StructureLayersScreen(this, structures)))
-                .bounds(center, row, w, 20).build());
-        addRenderableWidget(Button.builder(MapTexts.label("ftp_find"), b -> FtpScreen.openLive(minecraft))
-                .bounds(center + step, row, w, 20).tooltip(Tooltip.create(MapTexts.label("ftp_loaded_help"))).build());
-        if (metadata != null) addRenderableWidget(Button.builder(ResultTexts.label("details"), b ->
+                .bounds(center + (5 - count) * step / 2, row, w, 20).build());
+        if (metadata != null) addRenderableWidget(MenuButton.builder(ResultTexts.label("details"), b ->
                 minecraft.setScreenAndShow(new CandidateDetailsScreen(this, metadata)))
-                .bounds(center + 2 * step, row, w, 20).build());
+                .bounds(center + 3 * step / 2, row, w, 20).build());
     }
 
     private Component borderLabel() {
@@ -193,13 +204,23 @@ final class LiveMapScreen extends Screen {
     }
 
     private void invalidate() {
-        closeImages(); revision = -1;
+        closeImages();
+        revision = -1;
     }
 
     @Override public void tick() {
+        if (savedDiscoveries != null && savedDiscoveries.isDone()) {
+            savedDiscoveries.getNow(Optional.empty()).ifPresent(discoveries -> {
+                discoveries.anchors().forEach(a -> structures.verified(a.structureId(), a.x(), a.z(),
+                        a.minX(), a.minZ(), a.maxX(), a.maxZ()));
+                discoveries.features().forEach(structures::feature);
+            });
+            savedDiscoveries = null;
+        }
         if (full && metadata == null && saved.isDone() && !saved.isCompletedExceptionally()) {
             metadata = saved.getNow(Optional.empty()).orElse(null);
             if (metadata != null) {
+                structures.includeSearchResult(metadata.result());
                 structures.distanceTerms(metadata.query());
                 metadata.anchors().forEach(structures::matched);
                 if (view == View.GENERAL) rebuildWidgets();
@@ -252,10 +273,7 @@ final class LiveMapScreen extends Screen {
 
     private void refreshTiles() {
         revision = atlas.revision();
-        if (full && layer() != SurfaceColors.Layer.SURFACE) { visible = Map.of();
-            return;
-        }
-        visible = atlas.visible(((int)Math.floor(viewport.worldX(0))) & ~15,
+        visible = atlas.visible(full, ((int)Math.floor(viewport.worldX(0))) & ~15,
                 ((int)Math.floor(viewport.worldZ(0))) & ~15, (int)Math.ceil(viewport.worldX(mapWidth)),
                 (int)Math.ceil(viewport.worldZ(mapHeight)), viewport.x(), viewport.z());
         images.entrySet().removeIf(entry -> {
@@ -277,7 +295,7 @@ final class LiveMapScreen extends Screen {
     }
 
     @Override public void extractRenderState(GuiGraphicsExtractor g, int mx, int my, float tick) {
-        int header = navigation.getHeight();
+        int header = navigation.getRectangle().height();
         g.blit(RenderPipelines.GUI_TEXTURED, CreateWorldScreen.TAB_HEADER_BACKGROUND,
                 0, 0, 0, 0, width, header, 16, 16);
         g.blit(RenderPipelines.GUI_TEXTURED, Screen.FOOTER_SEPARATOR, 0, footer, 0, 0, width, 2, 32, 2);
@@ -303,27 +321,28 @@ final class LiveMapScreen extends Screen {
         }
         var marker = MapPointer.project(viewport.pixelX(playerX + .5), viewport.pixelZ(playerZ + .5),
                 mapWidth - 1, mapHeight - 1, 0);
-        int px = x + marker.x(), pz = y + marker.y();
-        g.fill(px - 5, pz, px + 6, pz + 1, 0xFFFFFFFF);
-        g.fill(px, pz - 5, px + 1, pz + 6, 0xFFFFFFFF);
         g.disableScissor();
+        BiomeMapCanvas.drawCrossAt(g, x + marker.x(), y + marker.y(), "YOU", x, y, mapWidth, mapHeight);
         String source = full ? MapTexts.text("live_full") : MapTexts.text("live_visited");
         String guide = full ? source : MapTexts.text("live_explore");
         if (inside(mx, my)) {
             int wx = (int)Math.floor(viewport.worldX(mx - x)), wz = (int)Math.floor(viewport.worldZ(my - y));
             var tile = visible.get(SurfaceCache.key(wx, wz));
             String biome = tile == null ? null : tile.biomes()[tile.index(wx, wz)];
+            String coordinates = MapTexts.coordinates(wx, wz);
             if (overview != null && biome == null) {
                 var cell = overview.hovered(mx, my);
                 if (cell != null) biome = cell.id();
             }
             String feature = overview == null ? null : overview.markerHover(mx, my);
-            if (feature != null) guide = feature;
-            else if (biome != null) guide = source + " · " + ResultTexts.name(biome) + " · X " + wx + " Z " + wz;
+            if (feature != null) guide = coordinates + " · " + feature;
+            else if (biome != null) guide = coordinates + " · " + ResultTexts.name(biome);
+            else guide = coordinates + " · " + guide;
         }
         g.centeredText(font, font.plainSubstrByWidth(guide, mapWidth), x + mapWidth / 2,
                 y + mapHeight + 4, 0xFFFFFFFF);
         super.extractRenderState(g, mx, my, tick);
+        if (context != null) context.draw(g, mx, my);
     }
 
     private void drawImage(GuiGraphicsExtractor g, MapImage image, int wx, int wz, int w, int h) {
@@ -335,29 +354,72 @@ final class LiveMapScreen extends Screen {
         return mx >= x && my >= y && mx < x + mapWidth && my < y + mapHeight;
     }
 
+    private void showContext(double mouseX, double mouseY) {
+        int wx = (int)Math.floor(viewport.worldX(mouseX - x)), wz = (int)Math.floor(viewport.worldZ(mouseY - y));
+        context = new MapContextMenu(font, width, height, mouseX, mouseY, List.of(
+                new MapContextMenu.Entry(MapTexts.label("center_here"), () -> {
+                    context = null;
+                    viewport.reset(wx, wz, viewport.scale());
+                    if (overview != null) overview.dirty();
+                }),
+                new MapContextMenu.Entry(MapTexts.label("map_copy_coordinates"), () -> {
+                    minecraft.keyboardHandler.setClipboard(wx + " " + wz);
+                    context = null;
+                })));
+    }
+
+    @Override public boolean keyPressed(net.minecraft.client.input.KeyEvent event) {
+        if (MapContextMenu.keyboardShortcut(event)) {
+            showContext(x + mapWidth / 2.0, y + mapHeight / 2.0);
+            return true;
+        }
+        if (context != null) {
+            if (event.isEscape()) { context = null; return true; }
+            if (context.key(event)) return true;
+        }
+        return super.keyPressed(event);
+    }
+
     @Override public boolean mouseClicked(MouseButtonEvent event, boolean keyboard) {
-        if (event.button() == InputConstants.MOUSE_BUTTON_LEFT && inside(event.x(), event.y())) { drag = true; return true; }
+        if (event.button() == InputConstants.MOUSE_BUTTON_RIGHT && inside(event.x(), event.y())) {
+            showContext(event.x(), event.y());
+            return true;
+        }
+        if (context != null) {
+            if (context.click(event)) return true;
+            context = null;
+        }
+        if (event.button() == InputConstants.MOUSE_BUTTON_LEFT && inside(event.x(), event.y())) {
+            drag = true;
+            return true;
+        }
         return super.mouseClicked(event, keyboard);
     }
     @Override public boolean mouseReleased(MouseButtonEvent event) {
-        drag = false; return super.mouseReleased(event);
+        drag = false;
+        return context != null && context.release() || super.mouseReleased(event);
     }
     @Override public boolean mouseDragged(MouseButtonEvent event, double dx, double dy) {
+        if (context != null && context.drag(event.y())) return true;
         if (!drag) return super.mouseDragged(event, dx, dy);
         viewport.pan(dx, dy);
         if (overview != null) overview.dirty();
         return true;
     }
     @Override public boolean mouseScrolled(double mx, double my, double h, double v) {
+        if (context != null && context.scroll(mx, my, v)) return true;
         if (!inside(mx, my)) return super.mouseScrolled(mx, my, h, v);
+        context = null;
         viewport.zoomSmooth(v, mx - x, my - y);
         return true;
     }
 
     private void closeImages() {
-        images.values().forEach(MapImage::close); images.clear();
+        images.values().forEach(MapImage::close);
+        images.clear();
     }
     @Override public void removed() {
+        context = null;
         closeImages();
         visible = Map.of();
         revision = -1;

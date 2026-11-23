@@ -1,32 +1,18 @@
 plugins {
-    id 'net.fabricmc.fabric-loom' version '1.17.13'
+    id "net.fabricmc.fabric-loom" version "${loom_version}"
     id 'maven-publish'
 }
 
 version = project.mod_version
 group = project.maven_group
 
-// Multiversion 26.x in one folder: -PmcLine=262 builds the 26.1/26.2
-// line, default (or -PmcLine=263) builds 26.3. Version-specific
-// sources live in src/mc262 and src/mc263, shared code in src/main.
-def mcLine = (project.findProperty("mcLine") ?: "263").toString()
-if (mcLine != "262" && mcLine != "263") throw new GradleException("mcLine must be 262 or 263")
-if (mcLine == "262") {
-    project.ext.minecraft_version = "26.2"
-    project.ext.fabric_api_version = "0.154.2+26.2"
-    project.ext.yacl_mc_version = "26.2"
-    project.ext.mod_version = "1.4.1+26.x"
-    project.ext.mc_range = ">=26.1 <26.3"
-    version = project.mod_version
-}
-
 sourceSets {
     main {
-        java { srcDir "src/mc${mcLine}/java" }
-        resources { srcDir "src/mc${mcLine}/resources" }
+        java { srcDir "src/mc263/java" }
+        resources { srcDir "src/mc263/resources" }
     }
     test {
-        java { srcDir "src/mc${mcLine}/test" }
+        java { srcDir "src/mc263/test" }
     }
 }
 
@@ -35,18 +21,19 @@ base {
 }
 
 repositories {
+    mavenLocal()
     mavenCentral()
     maven { url = "https://maven.fabricmc.net/" }
     maven { url = "https://minecraft.net" }
-    maven { url = "https://maven.isxander.dev/releases" }
     maven { url = "https://maven.terraformersmc.com/" }
 }
 
-def modmenuJar = file("libs/modmenu-20.0.1.jar")
+def modmenuRelease = "xckkBHD5"
+def modmenuJar = file("libs/modmenu-${project.modmenu_version}.jar")
 if (!modmenuJar.exists()) {
     modmenuJar.parentFile.mkdirs()
     try {
-        new URL("https://cdn.modrinth.com/data/mOgUt4GM/versions/njXb639R/modmenu-20.0.1.jar").withInputStream { is ->
+        new URL("https://cdn.modrinth.com/data/mOgUt4GM/versions/${modmenuRelease}/${modmenuJar.name}").withInputStream { is ->
             modmenuJar.bytes = is.bytes
         }
         logger.lifecycle("Downloaded ModMenu API for compilation")
@@ -56,7 +43,7 @@ if (!modmenuJar.exists()) {
 }
 
 loom {
-    accessWidenerPath = file("src/mc${mcLine}/resources/wywf.accesswidener")
+    accessWidenerPath = file("src/mc263/resources/wywf.accesswidener")
     mods {
         "wywf" {
             sourceSet sourceSets.main
@@ -69,7 +56,7 @@ loom {
                 runDir 'build/online-benchmark-run'
                 vmArg '-Xmx4G'
             }
-            if (mcLine == '263' && System.getProperty('os.name').startsWith('Windows')) {
+            if (System.getProperty('os.name').startsWith('Windows')) {
                 // Vulkan shader compilation can exhaust the default native thread stack
                 vmArg '-Xss4M'
                 // Match Minecraft 26.3 shadow space for native shader calls
@@ -77,10 +64,13 @@ loom {
             }
             programArgs "--username", "mermagudyan", "--uuid", "ad96c39f1b2047a58b5802365e1cad34"
             if (project.hasProperty('audit')) {
-                systemProperty 'wywf.audit', 'true'
+                vmArg '-Dwywf.audit=true'
             }
             if (project.hasProperty('debug')) {
-                systemProperty 'wywf.debug', 'true'
+                vmArg '-Dwywf.debug=true'
+            }
+            if (providers.systemProperty('diylib.debug').getOrElse('false').equalsIgnoreCase('true')) {
+                vmArg '-Ddiylib.debug=true'
             }
         }
     }
@@ -91,14 +81,13 @@ dependencies {
     implementation "net.fabricmc:fabric-loader:${project.loader_version}"
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
 
+    def diyLib = 'dev.diylib:diy-lib:0.1.0'
+    implementation diyLib
+
     // JNA for native cubiomes acceleration
     implementation "net.java.dev.jna:jna:5.14.0"
     implementation "net.java.dev.jna:jna-platform:5.14.0"
 
-    // Optional: YACL config screen (suggested, not required)
-    // yacl_mc_version tracks minecraft_version, except on prerelease MC
-    // (no YACL builds for rc versions, use the matching release line)
-    compileOnly "dev.isxander:yet-another-config-lib:${project.yacl_version}+${project.yacl_mc_version}-fabric"
     // ModMenu API (compile-only — downloaded from Modrinth if missing)
     if (modmenuJar.exists()) {
         compileOnly files(modmenuJar)
@@ -108,6 +97,34 @@ dependencies {
     testImplementation "org.junit.jupiter:junit-jupiter"
     testRuntimeOnly "org.junit.platform:junit-platform-launcher"
 }
+
+def packagedRuntime = tasks.named('jar', Jar).flatMap { it.archiveFile }
+def snapshotName = "wywf-client-${UUID.randomUUID()}.jar"
+def clientSnapshot = layout.file(providers.provider { new File(System.getProperty('java.io.tmpdir'), snapshotName) })
+
+def stageClientSnapshot = tasks.register('stageClientSnapshot') {
+    inputs.file(packagedRuntime)
+    outputs.file(clientSnapshot)
+    doLast {
+        def target = clientSnapshot.get().asFile.toPath()
+        java.nio.file.Files.createDirectories(target.parent)
+        java.nio.file.Files.copy(packagedRuntime.get().asFile.toPath(), target)
+    }
+}
+
+def deleteClientSnapshot = tasks.register('deleteClientSnapshot') {
+    doLast {
+        java.nio.file.Files.deleteIfExists(clientSnapshot.get().asFile.toPath())
+    }
+}
+
+tasks.named('runClient', JavaExec) {
+    def originalClasspath = files(new LinkedHashSet(classpath.from))
+    def stagedJar = files(clientSnapshot).builtBy(stageClientSnapshot)
+    setClasspath(originalClasspath.minus(sourceSets.main.output).plus(stagedJar))
+    finalizedBy deleteClientSnapshot
+}
+
 
 test {
     useJUnitPlatform()

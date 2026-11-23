@@ -36,20 +36,21 @@ public final class SearchHistoryPrompt {
                 return false;
             });
             ScreenKeyboardEvents.allowKeyRelease(screen).register((parent, event) -> !active(parent));
-            ScreenKeyboardEvents.allowCharType(screen).register((parent, event) -> !active(parent));
         });
     }
 
     static void show(Screen origin, SearchScreen search, int count, Runnable beforeSearch) {
         Runnable dismiss = () -> current = null;
-        var modal = new MenuModal(BlockMenuSkin.history(), Minecraft.getInstance().font, MapTexts.label("history_title"),
-                MapTexts.label("history_help"), () -> true, dismiss,
-                Button.builder(MapTexts.label("history_show", count), button -> begin(search, true, beforeSearch)).build(),
-                Button.builder(MapTexts.label("history_new"), button -> begin(search, false, beforeSearch)).build(),
-                Button.builder(ResultTexts.label("back"), button -> dismiss.run()).build());
+        var modal = new MenuModal(Minecraft.getInstance().font, MapTexts.label("history_title"),
+                MapTexts.label(search.verifiesHistory() ? "history_help" : "history_offline_help"), () -> true, dismiss,
+                MenuButton.builder(MapTexts.label("history_show", count), button -> begin(search, true, beforeSearch)).build(),
+                MenuButton.builder(MapTexts.label("history_new"), button -> begin(search, false, beforeSearch)).build(),
+                MenuButton.builder(ResultTexts.label("back"), button -> dismiss.run()).build());
         modal.bounds(origin.width, origin.height);
         current = new OpenPrompt(origin, modal);
     }
+
+    public static boolean blocksTyping(Screen screen) { return active(screen); }
 
     private static boolean active(Screen screen) {
         return current != null && current.origin() == screen;

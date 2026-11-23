@@ -1,6 +1,7 @@
 package com.wywf.client;
 
 import com.wywf.core.*;
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractWidget;
@@ -12,7 +13,7 @@ import java.util.*;
 import java.util.function.*;
 
 final class ConstructorSettings {
-    private record Row(String label, AbstractWidget widget, int offset, int height) {}
+    private record Row(java.util.List<net.minecraft.util.FormattedCharSequence> lines, AbstractWidget widget, int offset, int height) {}
     private final List<Row> rows = new ArrayList<>();
     private final SearchConfig config;
     private final net.minecraft.client.gui.Font font;
@@ -22,11 +23,16 @@ final class ConstructorSettings {
     private double scrollGrab;
     private AbstractWidget capture,focused;
     private ConstructorDropList open;
+    private SettingSlider candidates, minimum, ramp, seeds;
     ConstructorSettings(SearchConfig config) {
-        this.config=config; font=Minecraft.getInstance().font;
+        this.config=config;
+        font=Minecraft.getInstance().font;
     }
-    void bounds(int x,int y,int width,int bottom) {
-        this.x=x;this.y=y;this.width=width;this.bottom=bottom;
+    void bounds(int x, int y, int width, int bottom, SearchConfig.SearchCenter requiredCenter) {
+        this.x = x;
+        this.y = y;
+        this.width = width;
+        this.bottom = Math.max(y + 1, bottom);
         if(focused!=null)
             focused.setFocused(false);
         if(open!=null){
@@ -41,38 +47,48 @@ final class ConstructorSettings {
         scrollDrag=false;
         scrollGrab=0;
         category("category.general");
-        enumeration("general.language.option",KeywordDictionary.Lang.values(),config.queryLanguage(),config::queryLanguage);
-        enumeration("general.performance.thread_mode",SearchConfig.Mode.values(),config.mode(),config::mode);
-        number("general.performance.manual_threads",config.manualThreads(),0,64,config::manualThreads,v->v==0 ? text("auto") : ""+v);
-        enumeration("general.native.mode",SearchConfig.NativeMode.values(),config.nativeMode(),config::nativeMode);
-        category("search.scan.name");
-        number("search.scan.structure_radius",config.searchRadiusChunks(),8,80,config::searchRadiusChunks,v->v+" ch");
-        number("search.scan.biome_radius",config.biomeCheckRadiusChunks(),4,64,config::biomeCheckRadiusChunks,v->v+" ch");
-        number("search.scan.biome_step",config.biomeSampleStepChunks(),1,8,config::biomeSampleStepChunks,v->v+" ch");
+        enumeration("general.language.option", KeywordDictionary.Lang.values(), config.queryLanguage(), config::queryLanguage);
+
         category("search.center.name");
-        enumeration("search.center.option",
-                new SearchConfig.SearchCenter[]{SearchConfig.SearchCenter.ORIGIN,SearchConfig.SearchCenter.SPAWN},config.searchCenter(),config::searchCenter);
-        toggle("search.center.random_start",config.randomizeStart(),config::randomizeStart);
-        category("search.limits.name");
-        number("search.limits.time",config.timeLimitMinutes(),5,120,config::timeLimitMinutes,v->v+" min");
-        toggle("search.limits.infinite",config.infiniteSeeds(),config::infiniteSeeds);
-        number("search.limits.max_seeds",
-                (int)(config.rawMaxSeedsToCheck()/1000000),1,100000, v->config.maxSeedsToCheck(v*1000000L),v->v+" M");
+        var center = enumeration("search.center.option", SearchConfig.SearchCenter.values(),
+                requiredCenter == null ? config.searchCenter() : requiredCenter, config::searchCenter);
+        center.active = requiredCenter == null;
+        toggle("search.center.random_start", config.randomizeStart(), config::randomizeStart);
+
+        category("search.scan.name");
+        number("search.scan.structure_radius", config.searchRadiusChunks(), 8, 80, config::searchRadiusChunks, v -> v + " ch");
+        number("search.scan.biome_radius", config.biomeCheckRadiusChunks(), 4, 64, config::biomeCheckRadiusChunks, v -> v + " ch");
+        number("search.scan.biome_step", config.biomeSampleStepChunks(), 1, 8, config::biomeSampleStepChunks, v -> v + " ch");
+        toggle("search.candidates.linear", config.linearBiomeSearch(), config::linearBiomeSearch);
+
         category("search.candidates.name");
         toggle("search.candidates.server_verification", config.serverVerification(), config::serverVerification);
         toggle("search.candidates.offer_history", config.offerSearchHistory(), config::offerSearchHistory);
-        number("search.candidates.collect",config.candidatesToCollect(),1,20,config::candidatesToCollect,v->""+v);
-        number("candidates.minimum",config.minCandidates(),1,20,config::minCandidates,v->""+v);
-        number("candidates.ramp",config.candidateRampDownSeconds(),0,120,config::candidateRampDownSeconds,v->v+" s");
-        toggle("search.candidates.stop_first",config.stopAtFirstCandidate(),config::stopAtFirstCandidate);
-        toggle("search.candidates.sort_distance",config.sortCandidatesByDistance(),config::sortCandidatesByDistance);
-        toggle("search.candidates.linear",config.linearBiomeSearch(),config::linearBiomeSearch);
+        toggle("search.candidates.sort_distance", config.sortCandidatesByDistance(), config::sortCandidatesByDistance);
+        candidates = number("search.candidates.collect", config.candidatesToCollect(), 1, 20, config::candidatesToCollect, Integer::toString);
+        minimum = number("candidates.minimum", config.minCandidates(), 1, 20, config::minCandidates, Integer::toString);
+
+        category("search.limits.name");
+        toggle("search.candidates.stop_first", config.stopAtFirstCandidate(), config::stopAtFirstCandidate);
+        ramp = number("candidates.ramp", config.candidateRampDownSeconds(), 0, 120, config::candidateRampDownSeconds, v -> v + " s");
+        number("search.limits.time", config.timeLimitMinutes(), 5, 120, config::timeLimitMinutes, v -> v + " min");
+        toggle("search.limits.infinite", config.infiniteSeeds(), config::infiniteSeeds);
+        seeds = number("search.limits.max_seeds", (int)(config.rawMaxSeedsToCheck() / 1_000_000), 1, 100_000,
+                v -> config.maxSeedsToCheck(v * 1_000_000L), v -> v + " M");
+
+        category("constructor.performance");
+        enumeration("general.performance.thread_mode", SearchConfig.Mode.values(), config.mode(), config::mode);
+        number("general.performance.manual_threads", config.manualThreads(), 0, 64, config::manualThreads,
+                v -> v == 0 ? text("auto") : Integer.toString(v));
+        enumeration("general.native.mode", SearchConfig.NativeMode.values(), config.nativeMode(), config::nativeMode);
+
         category("map.category");
         if (ReliefGpu.available())
             toggle("map.gpu_relief", config.gpuRelief(), config::gpuRelief);
         number("map.work",config.mapWorkMillis(),1,6,config::mapWorkMillis,v->v+" ms");
         toggle("map.pause",config.pauseMapInactive(),config::pauseMapInactive);
         number("map.fit",config.exampleFitSeconds(),1,10,config::exampleFitSeconds,v->v+" s");
+        updateLimits();
         layout();
     }
     java.util.List<AbstractWidget> widgets(){
@@ -85,14 +101,17 @@ final class ConstructorSettings {
         return ConfigTranslations.tr("wywf.config."+suffix);
     }
     private void category(String key) {
-        rows.add(new Row(text(key),null,total,23));
-        total+=23;
+        var heading = MenuAccent.heading(text(key)).copy().withStyle(ChatFormatting.BOLD);
+        rows.add(new Row(font.split(heading, width - 8), null, total, 27));
+        total += 27;
     }
     private void add(String key,AbstractWidget widget,int height) {
         String help=text(key+".desc");
         widget.setTooltip(Tooltip.create(Component.literal(help.equals("wywf.config."+key+".desc") ? text(key) : help)));
-        height+=Math.max(0,font.split(Component.literal(text(key)),width-8).size()-1)*font.lineHeight;
-        rows.add(new Row(text(key),widget,total,height));total+=height;
+        var lines = font.split(Component.literal(text(key)), width - 8);
+        height += Math.max(0, lines.size() - 1) * font.lineHeight;
+        rows.add(new Row(lines, widget, total, height));
+        total+=height;
     }
     private void changed() {
         dirty=true;
@@ -108,26 +127,39 @@ final class ConstructorSettings {
         if(dirty&&System.currentTimeMillis()>=saveAt)
             flush();
     }
-    private <T extends Enum<T>> void enumeration(String key,T[] values,T current,Consumer<T> setter) {
+    private <T extends Enum<T>> ConstructorDropList enumeration(String key,T[] values,T current,Consumer<T> setter) {
         var options=Arrays.stream(values).map(Enum::name).toList();
         var list=new ConstructorDropList(0,0,width-8,"",options,Arrays.asList(values).indexOf(current),font,index->{
             setter.accept(values[index]);
             changed();
             },this::open);
-        add(key,list,44);
+        list.popupLimits(y, bottom);
+        add(key, list, 44);
+        return list;
     }
-    private void number(String key,int value,int min,int max,IntConsumer setter,IntFunction<String> format) {
-        add(key,new SettingSlider(width-8,text(key),value,min,max,v->{
-            setter.accept(v);
+    private SettingSlider number(String key, int value, int min, int max, IntConsumer setter, IntFunction<String> format) {
+        var slider = new SettingSlider(width - 8, text(key), value, min, max, next -> {
+            setter.accept(next);
             changed();
-            },format),54);
+        }, format);
+        add(key, slider, 54);
+        return slider;
     }
     private void toggle(String key,boolean value,Consumer<Boolean> setter) {
         add(key,new SettingToggle(text(key),value,v->{
             setter.accept(v);
+            updateLimits();
             changed();
         }),42);
     }
+    private void updateLimits() {
+        boolean one = config.stopAtFirstCandidate();
+        candidates.lockWithBedrock(one);
+        minimum.lockWithBedrock(one);
+        ramp.lockWithBedrock(one);
+        seeds.lockWithBedrock(config.infiniteSeeds());
+    }
+
     private int maxScroll() {
         return Math.max(0,total-(bottom-y));
     }
@@ -137,7 +169,7 @@ final class ConstructorSettings {
             var widget=row.widget;
             widget.setX(x);
             widget.setY(y+row.offset-scroll+(widget instanceof SettingSlider
-                    ? 28 : 15)+Math.max(0,font.split(Component.literal(row.label),width-8).size()-1)*font.lineHeight);
+                    ? 28 : 15)+Math.max(0,row.lines().size()-1)*font.lineHeight);
             widget.visible=widget.getY()+widget.getHeight()>y&&widget.getY()<bottom;
         }
     }
@@ -145,14 +177,10 @@ final class ConstructorSettings {
         if(open!=null&&open!=list)
             open.close();
         open=list;
-        int over=list.getY()+20+60-bottom;
-        if(over>0){
-            scroll+=over;
-            layout();
-        }
+
     }
     private int popupHeight(){
-        return open==null ? 0 : Math.max(40,bottom-open.getY()-20);
+        return open==null ? 0 : Math.max(0,bottom-open.getY()-20);
     }
     boolean contains(double mx,double my){
         return mx>=x&&mx<x+width&&my>=y&&my<bottom;
@@ -183,7 +211,8 @@ final class ConstructorSettings {
         if(!contains(event.x(),event.y()))
             return false;
         if(event.x()>=x+width-4&&maxScroll()>0){
-            scrollDrag=true;scrollGrab=event.y()-thumbTop();
+            scrollDrag=true;
+            scrollGrab=event.y()-thumbTop();
             return true;
         }
         for(var row:rows)
@@ -210,7 +239,8 @@ final class ConstructorSettings {
         return capture!=null&&capture.mouseDragged(event,dx,dy);
     }
     boolean release(MouseButtonEvent event){
-        boolean handled=capture!=null||scrollDrag;scrollDrag=false;
+        boolean handled=capture!=null||scrollDrag;
+        scrollDrag=false;
         if(open!=null)
             open.endPopupDrag();
         if(capture!=null){
@@ -220,9 +250,14 @@ final class ConstructorSettings {
         return handled;
     }
     boolean scroll(double mx,double my,double dy){
-        if(open!=null&&open.isOpen()&&open.popupHit((float)mx,(float)my,popupHeight())){open.scrollPopup((float)dy,popupHeight());return true;}
+        if(open!=null&&open.isOpen()&&open.popupHit((float)mx,(float)my,popupHeight())){
+            open.scrollPopup((float)dy,popupHeight());
+            return true;
+        }
         if(!contains(mx,my))return false;
-        if(open!=null)open.close();scroll-=(int)(dy*28);layout();return true;
+        if(open!=null)open.close();scroll-=(int)(dy*28);
+        layout();
+        return true;
     }
     boolean key(KeyEvent event){
         if(open!=null&&open.isOpen())
@@ -235,8 +270,12 @@ final class ConstructorSettings {
             int ry=y+row.offset-scroll;
             if(ry+row.height<=y||ry>=bottom)continue;
             int lineY=ry+2;
-            for(var line:font.split(Component.literal(row.label),width-8)){
-                g.text(font,line,x,lineY,row.widget==null ? 0xFFFFDF92 : 0xFFFFFFFF);lineY+=font.lineHeight;
+            for(var line:row.lines()){
+                if (row.widget == null)
+                    g.centeredText(font, line, x + width / 2, lineY + 4, 0xFFFFFFFF);
+                else
+                    g.text(font, line, x, lineY, 0xFFFFFFFF);
+                lineY += font.lineHeight;
             }
             if(row.widget!=null&&row.widget.visible)row.widget.extractRenderState(g,mx,my,delta);
         }
@@ -247,7 +286,11 @@ final class ConstructorSettings {
         }
     }
     void popup(GuiGraphicsExtractor g,int mx,int my){
-        if(open!=null&&open.isOpen())
-            open.drawPopup(g,mx,my,popupHeight(),1);
+        for (var row : rows) {
+            if (row.widget instanceof ConstructorDropList list && list != open && list.visible)
+                list.drawPopup(g, mx, my, Math.max(0, bottom - list.getBottom()), 1);
+        }
+        if (open != null && open.visible)
+            open.drawPopup(g, mx, my, popupHeight(), 1);
     }
 }

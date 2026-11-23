@@ -65,8 +65,9 @@ final class PlatformReliefGpu implements ReliefGpu {
     @Override
     public boolean render(ReliefMesh mesh, int width, int height, int fog, float centerY,
                           double yaw, double pitch, double zoom, double panX, double panY) {
+        if (mesh.faces().length == 0 || mesh.sunlight() != null || mesh.fogRim() != null) return false;
         var compiled = RenderSystem.getCompiledPipelineNullable(PIPELINE);
-        if (compiled == null || mesh.faces().length == 0 || mesh.sunlight() != null || mesh.fogRim() != null) return false;
+        if (compiled == null) return false;
         if (uploadedMesh != mesh) begin(mesh);
         if (unsupported) return false;
         if (uploading()) {
@@ -119,7 +120,9 @@ final class PlatformReliefGpu implements ReliefGpu {
         staging.clear();
         for (int i = uploaded; i < end; i++) {
             int encoded = faces[i * 3], color = faces[i * 3 + 2];
-            if ((color & ReliefTile.FACE_TYPE) != 0xFF000000) {
+            int material = color & ReliefTile.FACE_TYPE;
+            boolean crystal = material == ReliefTile.END_CRYSTAL;
+            if (material != ReliefTile.FACE_TYPE && !crystal) {
                 unsupported = true;
                 instances.close();
                 instances = null;
@@ -127,7 +130,8 @@ final class PlatformReliefGpu implements ReliefGpu {
             }
             int direction = encoded % 6, cell = encoded / 6;
             staging.putInt(cell % mesh.side()).putInt(faces[i * 3 + 1]).putInt(cell / mesh.side());
-            staging.putInt(ReliefRaster.directionalColor(color, direction, 0) & 0xFFFFFF | direction << 24);
+            int tint = crystal ? color : ReliefRaster.directionalColor(color, direction, 0);
+            staging.putInt(tint & 0xFFFFFF | (crystal ? direction + 6 : direction) << 24);
         }
         staging.flip();
         var encoder = RenderSystem.getDevice().createCommandEncoder();

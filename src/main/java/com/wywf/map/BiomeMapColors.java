@@ -27,11 +27,15 @@ public final class BiomeMapColors {
             if (!temperature && underground && !cave(cell.id()) && cell.surfaceId().contains("ocean")) color = oceanDepth(color, map.y());
             if (!temperature && !underground && cell.id().contains("ocean")) color = oceanDepth(color, cell.height());
             if (underground && cell.overview() != null && !cell.overview().samples().isEmpty()) {
-                var samples = cell.overview().samples(); int best = 0, frequency = -1;
+                var samples = cell.overview().samples();
+                int best = 0, frequency = -1;
                 for (var sample : samples) {
                     int candidate = sampleColor(sample,map.y(),temperature), count = 0;
                     for (var other : samples) if (candidate == sampleColor(other,map.y(),temperature)) count++;
-                    if (count > frequency || count == frequency && candidate < best) { best = candidate; frequency = count; }
+                    if (count > frequency || count == frequency && candidate < best) {
+                        best = candidate;
+                        frequency = count;
+                    }
                 }
                 color = best;
             }
@@ -50,7 +54,8 @@ public final class BiomeMapColors {
 
     public static BiomeMapSnapshot.Cell sampleAt(BiomeMapSnapshot.Cell cell, int worldX, int worldZ, int step) {
         if (cell == null || cell.overview() == null || cell.overview().samples().isEmpty()) return cell;
-        var samples = cell.overview().samples(); int probes = samples.size() == 16 ? 4 : 2;
+        var samples = cell.overview().samples();
+        int probes = samples.size() == 16 ? 4 : 2;
         int x = Math.min(probes-1,Math.floorMod(worldX,step)*probes/step);
         int z = Math.min(probes-1,Math.floorMod(worldZ,step)*probes/step);
         return samples.get(z*probes+x);
@@ -63,24 +68,50 @@ public final class BiomeMapColors {
     }
 
     public static int[] detailed(BiomeMapSnapshot map, int scale) {
+        return detailed(map, scale, 0);
+    }
+
+    public static int[] detailed(BiomeMapSnapshot map, int scale, long seed) {
         int[] base = raster(map, false, false), pixels = new int[map.width() * map.height() * scale * scale];
         int width = map.width() * scale;
         for (int z = 0; z < map.height(); z++) for (int x = 0; x < map.width(); x++) {
-            int i = z * map.width() + x; var cell = map.cells()[i];
-            for (int dz = 0; dz < scale; dz++) for (int dx = 0; dx < scale; dx++) {
-                int color = cell == null ? 0 : base[i];
-                if (map.y() >= 64 && cell != null && cell.overview() != null && !cell.overview().detail().isEmpty()) {
-                    int probes = cell.overview().detail().size() == 16 ? 4 : 2;
-                    color = cell.overview().detail().get((dz * probes / scale) * probes + dx * probes / scale);
-                    if (color == BiomePalette.color(cell.id()) && cell.id().contains("ocean")) color = oceanDepth(color, cell.height());
+            int i = z * map.width() + x;
+            var cell = map.cells()[i];
+            if (cell == null) continue;
+            var overview = cell.overview();
+            boolean surface = map.y() >= 64;
+            boolean detailed = overview != null && !overview.detail().isEmpty();
+            var samples = overview == null ? java.util.List.<BiomeMapSnapshot.Cell>of() : overview.samples();
+            int probes = (surface && detailed ? overview.detail().size() : samples.size()) == 16 ? 4 : 2;
+            var mainTint = surface && !detailed ? BiomePalette.tint(cell.id()) : null;
+            if (mainTint == null && !detailed && samples.isEmpty()) {
+                for (int dz = 0; dz < scale; dz++) {
+                    int first = (z * scale + dz) * width + x * scale;
+                    java.util.Arrays.fill(pixels, first, first + scale, base[i]);
                 }
-                if (map.y() < 64 && cell != null && cell.overview() != null && !cell.overview().samples().isEmpty()) {
-                    var samples = cell.overview().samples(); int probes = samples.size() == 16 ? 4 : 2;
-                    color = sampleColor(samples.get((dz*probes/scale)*probes+dx*probes/scale),map.y(),false);
+                continue;
+            }
+            int ocean = surface && detailed && cell.id().contains("ocean") ? BiomePalette.color(cell.id()) : 0;
+            int depthColor = ocean == 0 ? 0 : oceanDepth(ocean, cell.height());
+            for (int dz = 0; dz < scale; dz++) for (int dx = 0; dx < scale; dx++) {
+                int index = (dz * probes / scale) * probes + dx * probes / scale;
+                int color = base[i];
+                var tint = mainTint;
+                if (surface && detailed) {
+                    color = overview.detail().get(index);
+                    if (color == ocean) color = depthColor;
+                    if (samples.size() == overview.detail().size()) tint = BiomePalette.tint(samples.get(index).id());
+                }
+                if (!surface && !samples.isEmpty()) color = sampleColor(samples.get(index), map.y(), false);
+                if (tint != null) {
+                    double wx = map.x() + (x + (dx + .5) / scale) * map.step();
+                    double wz = map.z() + (z + (dz + .5) / scale) * map.step();
+                    color = tint.color(seed, wx, wz);
                 }
                 pixels[(z * scale + dz) * width + x * scale + dx] = color;
             }
         }
+        RiverLinks.paint(map, scale, pixels);
         return pixels;
     }
 

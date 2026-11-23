@@ -1,7 +1,12 @@
 package com.wywf.map;
 
 public record BiomeMapSnapshot(int x, int z, int step, int width, int height, Cell[] cells, boolean complete, int y) {
-    public record Overview(int color, float temperature, int upperColor, float upperTemperature, java.util.List<Integer> detail, java.util.List<Cell> samples) {
+    public record Overview(int color, float temperature, int upperColor, float upperTemperature, java.util.List<Integer> detail,
+                           java.util.List<Cell> samples, long riverLinks) {
+        public Overview(int color, float temperature, int upperColor, float upperTemperature,
+                        java.util.List<Integer> detail, java.util.List<Cell> samples) {
+            this(color, temperature, upperColor, upperTemperature, detail, samples, 0);
+        }
         public Overview(int color, float temperature, int upperColor, float upperTemperature, java.util.List<Integer> detail) {
             this(color, temperature, upperColor, upperTemperature, detail, java.util.List.of());
         }

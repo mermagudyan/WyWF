@@ -32,10 +32,12 @@ final class VanillaVerifier {
                 if(value==QueryLogic.Truth.NO){truth=QueryLogic.Truth.NO;break;}
                 else if (value == QueryLogic.Truth.UNKNOWN && truth != QueryLogic.Truth.NO) truth = value;
             }
-            failed = truth == QueryLogic.Truth.NO; partial |= truth == QueryLogic.Truth.UNKNOWN;
+            failed = truth == QueryLogic.Truth.NO;
+            partial |= truth == QueryLogic.Truth.UNKNOWN;
 
         } catch (PreviewWorld.BudgetExceeded error) {
-            evidence.add(error.getMessage()); partial = true;
+            evidence.add(error.getMessage());
+            partial = true;
         } catch (java.util.concurrent.CancellationException error) {
             return new VerificationSummary(VerificationSummary.Status.CANCELLED, spawn.getX(), spawn.getY(), spawn.getZ(), evidence, error.getMessage());
         }
@@ -70,7 +72,8 @@ final class VanillaVerifier {
                 DimensionSpace dimension = DimensionSpace.of(term.canonical);
                 if (dimension != DimensionSpace.OVERWORLD) {
                     level = session.level(dimension);
-                    cx = dimension.coordinate(cx); cz = dimension.coordinate(cz);
+                    cx = dimension.coordinate(cx);
+                    cz = dimension.coordinate(cz);
                     evidence.add("Dimension: " + dimension.id + "; center: " + cx + "," + cz + "; distances are local blocks");
                 }
                 if (term.loot != null && !LootCatalog.supported(term.canonical)) {
@@ -86,7 +89,8 @@ final class VanillaVerifier {
                     }
                 }
                 var verdict = VanillaStructures.verify(session, term, cx, cz);
-                evidence.addAll(verdict.evidence()); evidence.add(term + ": " + verdict.pass());
+                evidence.addAll(verdict.evidence());
+                evidence.add(term + ": " + verdict.pass());
                 return QueryLogic.Truth.of(verdict.pass());
             }
             if (term.category == KeywordDictionary.Category.BIOME) {
@@ -108,14 +112,16 @@ final class VanillaVerifier {
             }
             return QueryLogic.Truth.UNKNOWN;
         } catch (PreviewWorld.BudgetExceeded error) {
-            evidence.add(error.getMessage()); return QueryLogic.Truth.UNKNOWN;
+            evidence.add(error.getMessage());
+            return QueryLogic.Truth.UNKNOWN;
         }
     }
 
     private static BiomeCoverage.Verdict verifyBiome(PreviewWorld.Session session, ParsedQuery.Term term, int cx, int cz) {
         DimensionSpace dimension = DimensionSpace.of(term.canonical);
         var level = session.level(dimension);
-        cx = dimension.coordinate(cx); cz = dimension.coordinate(cz);
+        cx = dimension.coordinate(cx);
+        cz = dimension.coordinate(cz);
         if (term.biomeRegionCount()) return verifyBiomeRegions(session, level, term, cx, cz);
         if (term.modifier == Modifier.UNDER) {
             session.chunk(level, cx >> 4, cz >> 4, ChunkStatus.FULL);
@@ -278,14 +284,19 @@ final class VanillaVerifier {
         var level = session.level(dimension);
         var climate = dimension == DimensionSpace.OVERWORLD ? ServerClimate.sampler(level) : null;
         var cache = session.surfaceCache(dimension);
+        var biomeColors = new java.util.HashMap<String, Integer>();
         for (int chunkZ = 0; chunkZ < size; chunkZ += 16) for (int chunkX = 0; chunkX < size; chunkX += 16) {
             var cached=cache.get(x0+chunkX,z0+chunkZ);
             if(cached!=null){
+                biomeColors.putAll(cached.biomeColors());
                 for(int dz=0;dz<16;dz++){
                     int from=dz*16,to=(chunkZ+dz)*size+chunkX;
-                    System.arraycopy(cached.colors(),from,colors,to,16);System.arraycopy(cached.heights(),from,heights,to,16);
-                    System.arraycopy(cached.blocks(),from,blocks,to,16);System.arraycopy(cached.biomes(),from,biomes,to,16);
-                    System.arraycopy(cached.temperatures(),from,temperatures,to,16);System.arraycopy(cached.climate(),from,noise,to,16);
+                    System.arraycopy(cached.colors(),from,colors,to,16);
+                    System.arraycopy(cached.heights(),from,heights,to,16);
+                    System.arraycopy(cached.blocks(),from,blocks,to,16);
+                    System.arraycopy(cached.biomes(),from,biomes,to,16);
+                    System.arraycopy(cached.temperatures(),from,temperatures,to,16);
+                    System.arraycopy(cached.climate(),from,noise,to,16);
                 }
                 continue;
             }
@@ -298,22 +309,24 @@ final class VanillaVerifier {
                 BlockPos position = new BlockPos(x, y, z);
                 var state = level.getBlockState(position);
                 while (y > level.getMinY() && (state.isAir() || state.getMapColor(level, position) == MapColor.NONE)) {
-                    position = new BlockPos(x, --y, z); state = level.getBlockState(position);
+                    position = new BlockPos(x, --y, z);
+                    state = level.getBlockState(position);
                 }
                 colors[index] = ReliefBlocks.surfaceColor(state, level, position, level.getMinY(), level::getBlockState);
                 heights[index] = dimension == DimensionSpace.END && state.isAir() ? Integer.MIN_VALUE : y;
                 blocks[index] = BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
                 var biome = level.getBiome(position);
                 biomes[index] = biome.unwrapKey().orElseThrow().identifier().toString();
+                dev.diylib.client.render.DiyBlockColors.recordBiomeColor(biomeColors, biomes[index], biome.value());
                 temperatures[index] = biome.value().getBaseTemperature();
                 noise[index] = climate == null ? Float.NaN : Climate.unquantizeCoord(climate.sample(x >> 2, 16, z >> 2).temperature());
             }
-            var partial=new SurfaceSnapshot(session.result.seed,x0,z0,size,colors,heights,blocks,biomes,temperatures,noise,false);
+            var partial=new SurfaceSnapshot(session.result.seed,x0,z0,size,colors,heights,blocks,biomes,temperatures,noise,false,biomeColors);
             session.tile(dimension, SurfaceCache.region(partial,chunkX,chunkZ,16));
             java.util.concurrent.locks.LockSupport.parkNanos(2_000_000);
             session.checkpoint();
         }
-        session.surface(dimension, new SurfaceSnapshot(session.result.seed, x0, z0, size, colors, heights, blocks, biomes, temperatures, noise, true));
+        session.surface(dimension, new SurfaceSnapshot(session.result.seed, x0, z0, size, colors, heights, blocks, biomes, temperatures, noise, true, biomeColors));
     }
 
     private VanillaVerifier() {}

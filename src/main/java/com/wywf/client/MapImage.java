@@ -3,6 +3,7 @@ package com.wywf.client;
 import com.mojang.blaze3d.platform.NativeImage;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.resources.Identifier;
 import java.util.concurrent.atomic.AtomicLong;
@@ -19,9 +20,11 @@ final class MapImage implements AutoCloseable {
         if(texture==null||this.width!=width||this.height!=height){
             close();
             pixels=new NativeImage(width,height,false);
-            this.width=width;this.height=height;
+            this.width=width;
+            this.height=height;
             texture=new DynamicTexture(()->
-                    "WyWF map",pixels);Minecraft.getInstance().getTextureManager().register(id,texture);
+                    "WyWF map",pixels);
+                    Minecraft.getInstance().getTextureManager().register(id,texture);
             registered=true;
         }
         for(int y=0;y<height;y++)
@@ -32,6 +35,12 @@ final class MapImage implements AutoCloseable {
 
     void draw(GuiGraphicsExtractor g, int x, int y, int width, int height) {
         if (registered && width > 0 && height > 0) g.blit(id, x, y, x + width, y + height, 0, 1, 0, 1);
+    }
+
+    void drawTinted(GuiGraphicsExtractor g, int x, int y, int width, int height, int color) {
+        if (registered && width > 0 && height > 0)
+            g.blit(RenderPipelines.GUI_TEXTURED, id, x, y, 0, 0, width, height,
+                    this.width, this.height, this.width, this.height, color);
     }
 
     void drawCropped(GuiGraphicsExtractor g, int x, int y, int width, int height, float uv) {

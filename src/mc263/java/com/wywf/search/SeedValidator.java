@@ -99,7 +99,9 @@ public final class SeedValidator {
 
     // Copy with term order cached for one query
     public SeedValidator withQuery(ParsedQuery query) {
-        var v=new SeedValidator(structureChecker,biomeChecker,searchRadiusChunks,biomeRadiusChunks,reorder(query.terms()));v.estimated=query.estimated();return v;
+        var v=new SeedValidator(structureChecker,biomeChecker,searchRadiusChunks,biomeRadiusChunks,reorder(query.terms()));
+        v.estimated=query.estimated();
+        return v;
     }
 
     public StructureChecker structureChecker() {
@@ -241,14 +243,26 @@ public final class SeedValidator {
                     int gx = (i / n) * step - r, gz = (i % n) * step - r;
                     int d = gx * gx + gz * gz;
                     if (d < d1) {
-                        d3 = d2; x3 = x2; z3 = z2;
-                        d2 = d1; x2 = x1; z2 = z1;
-                        d1 = d; x1 = gx * 16; z1 = gz * 16;
+                        d3 = d2;
+                        x3 = x2;
+                        z3 = z2;
+                        d2 = d1;
+                        x2 = x1;
+                        z2 = z1;
+                        d1 = d;
+                        x1 = gx * 16;
+                        z1 = gz * 16;
                     } else if (d < d2) {
-                        d3 = d2; x3 = x2; z3 = z2;
-                        d2 = d; x2 = gx * 16; z2 = gz * 16;
+                        d3 = d2;
+                        x3 = x2;
+                        z3 = z2;
+                        d2 = d;
+                        x2 = gx * 16;
+                        z2 = gz * 16;
                     } else if (d < d3) {
-                        d3 = d; x3 = gx * 16; z3 = gz * 16;
+                        d3 = d;
+                        x3 = gx * 16;
+                        z3 = gz * 16;
                     }
                 }
                 if (d1 != Integer.MAX_VALUE && ctx.computeHeight(x1, z1) > sea) return new int[]{x1, z1};
@@ -273,10 +287,14 @@ public final class SeedValidator {
             if (good && ctx.computeHeight(bx, bz) > sea) {
                 return new int[]{bx, bz};
             }
-            x += dx; z += dz; turn++;
+            x += dx;
+            z += dz;
+            turn++;
             if (turn == steps) {
                 turn = 0;
-                int tmp = dx; dx = -dz; dz = tmp;
+                int tmp = dx;
+                dx = -dz;
+                dz = tmp;
                 if (dz == 0) steps++;
             }
         }
@@ -408,7 +426,8 @@ public final class SeedValidator {
         }
         if (query.hasLogic()) {
             List<SearchResult> witnesses = new ArrayList<>();
-            var evaluator = new SeedValidator(structureChecker,biomeChecker,searchRadiusChunks,biomeRadiusChunks);evaluator.estimated=query.estimated();
+            var evaluator = new SeedValidator(structureChecker,biomeChecker,searchRadiusChunks,biomeRadiusChunks);
+            evaluator.estimated=query.estimated();
             var truth = QueryLogic.evaluate(query.logic(), term -> {
                 if (com.wywf.core.DimensionSpace.external(term)||query.estimated()&&TargetDistance.deferred(term)) return QueryLogic.Truth.UNKNOWN;
                 var outcome = evaluator.validate(ctx, seed, (query.estimated() ? new ParsedQuery(term.toString(),List.of(term)).estimate() : new ParsedQuery(term.toString(),List.of(term))), cx, cz);
@@ -441,7 +460,10 @@ public final class SeedValidator {
                     SearchDiagnostics.record(term,r!=null);
                     if (r == null) return Outcome.rejected(Reason.NO_STRUCTURE, spawnStruct);
                     if (r.found) {
-                        if (matchedStructures == null) { matchedStructures = new ArrayList<>(4); structModifiers = new ArrayList<>(4); }
+                        if (matchedStructures == null) {
+                            matchedStructures = new ArrayList<>(4);
+                            structModifiers = new ArrayList<>(4);
+                        }
                         matchedStructures.add(term.canonical);
                         structModifiers.add(term.modifier.name());
                         if (term.modifier == Modifier.SOME || term.modifier == Modifier.ONLY
@@ -484,18 +506,23 @@ public final class SeedValidator {
                 case BIOME -> {
                     if (term.biomeLoot()) continue;
                     if(fields==null)fields=sampleBiomeFields(ctx,cx,cz,terms);
-                    boolean match=evalBiomeTerm(ctx,cx,cz,term,fields);SearchDiagnostics.record(term,match);
+                    boolean match=evalBiomeTerm(ctx,cx,cz,term,fields);
+                    SearchDiagnostics.record(term,match);
                     if (!match) {
                         return Outcome.rejected(Reason.BIOME_MISMATCH, spawnStruct);
                     }
-                    if (matchedBiomes == null) { matchedBiomes = new ArrayList<>(2); biomeModifiers = new ArrayList<>(2);
-                            biomeReportRadius = new HashMap<>(2); }
+                    if (matchedBiomes == null) {
+                        matchedBiomes = new ArrayList<>(2);
+                        biomeModifiers = new ArrayList<>(2);
+                            biomeReportRadius = new HashMap<>(2);
+                    }
                     matchedBiomes.add(term.canonical);
                     biomeModifiers.add(term.modifier.name());
                     biomeReportRadius.merge(term.canonical, biomeTermRadiusChunks(term), Math::max);
                 }
                 case SPAWN -> {
-                    boolean match=evalSpawnTerm(ctx,cx,cz,term,seed);SearchDiagnostics.record(term,match);
+                    boolean match=evalSpawnTerm(ctx,cx,cz,term,seed);
+                    SearchDiagnostics.record(term,match);
                     if (!match) {
                         return Outcome.rejected(Reason.SPAWN_MISMATCH, spawnStruct);
                     }
@@ -538,9 +565,11 @@ public final class SeedValidator {
         String canonical = term.canonical;
         if(estimated){
             if(TargetDistance.deferred(term))return StructureChecker.Result.notFound();
-            var positions=structureChecker.positions(ctx,cx,cz,structureScanRadiusChunks(term),canonical);
-            int needed=term.modifier==Modifier.SOME||term.modifier.counted() ? term.someCount : 1;
-            if(positions.size()<needed)return null;
+            int chunks = structureScanRadiusChunks(term);
+            var positions = structureChecker.positions(ctx, cx, cz, chunks, canonical);
+            int needed = term.modifier == Modifier.SOME || term.modifier.counted() ? term.someCount : 1;
+            if (positions.size() < needed) positions = structureChecker.positionsPlacementOnly(ctx, cx, cz, chunks, canonical);
+            if (positions.size() < needed) return null;
             if(positions.isEmpty())return StructureChecker.Result.notFound();
             var p=positions.stream().min(Comparator.comparingLong(v->distSq(v,cx,cz))).orElseThrow();
             return StructureChecker.Result.foundWith(p[0],p[1],canonical,positions);
@@ -582,7 +611,8 @@ public final class SeedValidator {
             // round(sqrt) <= R ⟺ d2 <= R*R+R, exact on integers
             long limitSq = (long) effectiveBlocks * effectiveBlocks + effectiveBlocks;
             int count = 0;
-            int[] best = null; long bestD2 = Long.MAX_VALUE;
+            int[] best = null;
+            long bestD2 = Long.MAX_VALUE;
             for (int[] p : pos) {
                 long d2 = distSq(p, cx, cz);
                 if (d2 <= limitSq) count++;
@@ -597,7 +627,8 @@ public final class SeedValidator {
             List<int[]> pos = structureChecker.positions(ctx, cx, cz, onlyChunks, canonical);
             long limitSq = (long) ONLY_BLOCKS * ONLY_BLOCKS + ONLY_BLOCKS;
             int count = 0;
-            int[] best = null; long bestD2 = Long.MAX_VALUE;
+            int[] best = null;
+            long bestD2 = Long.MAX_VALUE;
             for (int[] p : pos) {
                 long d2 = distSq(p, cx, cz);
                 if (d2 <= limitSq) count++;
@@ -614,7 +645,8 @@ public final class SeedValidator {
             long loSq = term.betweenMin <= 0 ? 0
                     : (long) term.betweenMin * term.betweenMin - term.betweenMin + 1;
             long hiSq = (long) term.betweenMax * term.betweenMax + term.betweenMax;
-            int[] best = null; long bestD2 = Long.MAX_VALUE;
+            int[] best = null;
+            long bestD2 = Long.MAX_VALUE;
             for (int[] p : pos) {
                 long d2 = distSq(p, cx, cz);
                 if (d2 >= loSq && d2 <= hiSq && d2 < bestD2) {
@@ -633,13 +665,19 @@ public final class SeedValidator {
             default     -> searchRadiusChunks;
         };
 
-        int[] found = structureChecker.firstPosition(ctx, cx, cz, scanChunks, canonical);
+        int limit = switch (mod) {
+            case AT -> 128;
+            case IN -> IN_ON_BLOCKS;
+            case NEAR -> NEAR_BLOCKS;
+            default -> -1;
+        };
+        int[] found = limit < 0 ? structureChecker.firstPosition(ctx, cx, cz, scanChunks, canonical)
+                : structureChecker.positions(ctx, cx, cz, scanChunks, canonical).stream()
+                        .min(Comparator.comparingLong(p -> distSq(p, cx, cz))).orElse(null);
         if (found == null) return null;
 
         int distance = dist(found, cx, cz);
-        if (mod == Modifier.AT && distance > 128) return null;
-        if (mod == Modifier.IN && distance > IN_ON_BLOCKS) return null;
-        if (mod == Modifier.NEAR && distance > NEAR_BLOCKS) return null;
+        if (limit >= 0 && distance > limit) return null;
 
         LOGGER.debug("[SeedValidator] seed {} structure FOUND: {} @({},{}) center=({},{}) dist={} scanChunks={}",
                 ctx.seed, canonical, found[0], found[1], cx, cz, distance, scanChunks);

@@ -14,8 +14,13 @@ public record SurfaceWindow(int x,int z,int width,int height) {
         return new SurfaceWindow((cx-nx/2)*64,(cz-nz/2)*64,nx*64,nz*64);
     }
     public int[] missing(SurfaceCache cache,double cx,double cz) {
-        int[] best=null;double nearest=Double.POSITIVE_INFINITY;
+        return missing(cache, cx, cz, (x, z) -> true);
+    }
+    public int[] missing(SurfaceCache cache, double cx, double cz, java.util.function.BiPredicate<Integer, Integer> eligible) {
+        int[] best=null;
+        double nearest=Double.POSITIVE_INFINITY;
         for(int pz=z;pz<z+height;pz+=64)for(int px=x;px<x+width;px+=64){
+            if (!eligible.test(px + 32, pz + 32)) continue;
             boolean missing=false;
             for(int dz=0;dz<64&&!missing;dz+=16)for(int dx=0;dx<64;dx+=16)if(cache.get(px+dx,pz+dz)==null){missing=true;break;}
             double distance=Math.hypot(px+32-cx,pz+32-cz);

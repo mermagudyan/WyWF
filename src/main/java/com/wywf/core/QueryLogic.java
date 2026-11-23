@@ -40,10 +40,16 @@ public final class QueryLogic {
         return "(" + render(b.left, label) + " " + b.op + " " + render(b.right, label) + ")";
     }
     public static SearchResult merge(ParsedQuery query, long seed, int x, int z, List<SearchResult> witnesses) {
-        var structures = new LinkedHashSet<String>(); var biomes = new LinkedHashSet<String>();
-        Map<String, int[]> positions = new HashMap<>(); Map<String, Integer> distances = new HashMap<>();
-        for (var r : witnesses) { structures.addAll(r.matchedStructures); biomes.addAll(r.matchedBiomes);
-            positions.putAll(r.structurePositions); distances.putAll(r.biomeDistances); }
+        var structures = new LinkedHashSet<String>();
+        var biomes = new LinkedHashSet<String>();
+        Map<String, int[]> positions = new HashMap<>();
+        Map<String, Integer> distances = new HashMap<>();
+        for (var r : witnesses) {
+            structures.addAll(r.matchedStructures);
+            biomes.addAll(r.matchedBiomes);
+            positions.putAll(r.structurePositions);
+            distances.putAll(r.biomeDistances);
+        }
         var first = witnesses.isEmpty() ? null : witnesses.getFirst();
         return new SearchResult(seed, x, z, first == null ? x : first.structureX, first == null ? z : first.structureZ,
                 query.primaryTarget().orElse("query"), List.copyOf(structures), List.copyOf(biomes), "", positions, distances);

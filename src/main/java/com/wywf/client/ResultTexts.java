@@ -41,7 +41,8 @@ final class ResultTexts {
     static String centerSummary(SearchResult result) {
         double distance = Double.POSITIVE_INFINITY;
         for (var entry : result.structurePositions.entrySet()) {
-            int[] position=entry.getValue();var dimension=DimensionSpace.of(entry.getKey().split("#",2)[0]);
+            int[] position=entry.getValue();
+            var dimension=DimensionSpace.of(entry.getKey().split("#",2)[0]);
             if (position.length >= 2) distance = Math.min(distance,
                     Math.hypot((double) position[0] - dimension.coordinate(result.centerX), (double) position[1] - dimension.coordinate(result.centerZ)));
         }

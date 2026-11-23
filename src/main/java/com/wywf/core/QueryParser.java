@@ -117,6 +117,20 @@ public final class QueryParser {
             while (wordEnd < len && normalized.charAt(wordEnd) != ' ') wordEnd++;
             String word = normalized.substring(i, wordEnd);
 
+            if (word.equals("near")) {
+                int qualifier = skipSpaces(normalized, wordEnd);
+                int after = qualifier + 2;
+                if (normalized.startsWith("me", qualifier) && (after == len || normalized.charAt(after) == ' ')) {
+                    if (after == len && !terms.isEmpty()) {
+                        var target = terms.getLast();
+                        if (target.modifier == Modifier.DEFAULT && target.category != KeywordDictionary.Category.SPAWN) {
+                            terms.set(terms.size() - 1, new ParsedQuery.Term(target.canonical, target.category, Modifier.NEAR));
+                            break;
+                        }
+                    }
+                    wordEnd = after;
+                }
+            }
             if (word.equals("within")) {
                 int start = skipSpaces(normalized, wordEnd);
                 int end = numberEnd(normalized, start);
@@ -204,7 +218,8 @@ public final class QueryParser {
                 try { pendingSomeCount = Integer.parseInt(word); }
                 catch (NumberFormatException error) { return new ParsedQuery(input, terms, ignored, null, "Invalid count"); }
                 if (pendingSomeCount > 64) return new ParsedQuery(input, terms, ignored, null, "Count must be 0..64");
-                pending = Modifier.EXACTLY; i = wordEnd; continue;
+                pending = Modifier.EXACTLY;
+                i = wordEnd; continue;
             }
             if (pendingSpawn) {
                 int matched = dict.matchBlockAt(normalized, i, out);
@@ -307,7 +322,8 @@ public final class QueryParser {
             var targets=bound.stream().filter(t->t.category==KeywordDictionary.Category.STRUCTURE).toList();
             if(targets.size()!=1||!tags.supports(targets.getFirst().canonical))
                 return new ParsedQuery(original,bound,ignored,null,"Attach supported tags to one structure");
-            var target=targets.getFirst();var selected=tags;
+            var target=targets.getFirst();
+            var selected=tags;
             bound=bound.stream().map(t->t==target?t.withTags(selected):t).toList();
         }
         return new ParsedQuery(input, pinned ? bound.stream().map(t -> t.withPinned(true)).toList() : bound, ignored);

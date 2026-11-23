@@ -65,7 +65,8 @@ public final class BiomeMaps {
             if(closed)return;closed=true;
             synchronized(INSTANCE.lock){
                 INSTANCE.pending.entrySet().removeIf(e->e.getKey().scope==this);
-                INSTANCE.releases.add(this);INSTANCE.lock.notifyAll();
+                INSTANCE.releases.add(this);
+                INSTANCE.lock.notifyAll();
             }
         }
         private void release() { cache.clear();heights.clear();sources.clear();tileCount=0; }
@@ -79,7 +80,10 @@ public final class BiomeMaps {
     public static final class Session implements AutoCloseable {
         private final Scope scope;
         private final boolean ownsScope;
-        private Session(Scope scope,boolean ownsScope){this.scope=scope;this.ownsScope=ownsScope;}
+        private Session(Scope scope,boolean ownsScope){
+            this.scope=scope;
+            this.ownsScope=ownsScope;
+        }
         private volatile long version;
         private volatile boolean closed, paused, loading;
         private volatile BiomeMapSnapshot snapshot;
@@ -93,19 +97,29 @@ public final class BiomeMaps {
 
         public void suspend() {
             synchronized (INSTANCE.lock) {
-                version++; INSTANCE.pending.remove(this);
+                version++;
+                INSTANCE.pending.remove(this);
                 if (loading) last = null;
                 loading = false;
             }
         }
         public void invalidate() {
-            synchronized (INSTANCE.lock) { version++; last = null; snapshot = null; loading = false; INSTANCE.pending.remove(this); }
+            synchronized (INSTANCE.lock) {
+                version++;
+                last = null;
+                snapshot = null;
+                loading = false;
+                INSTANCE.pending.remove(this);
+            }
         }
         public boolean request(Request request) {
             synchronized (INSTANCE.lock) {
                 if (closed || scope.closed || request.equals(last)) return true;
                 if (INSTANCE.pending.size() >= 8 && !INSTANCE.pending.containsKey(this)) return false;
-                last = request; error = null; snapshot = null; loading = true;
+                last = request;
+                error = null;
+                snapshot = null;
+                loading = true;
                 Job job = new Job(this, request, ++version);
                 INSTANCE.pending.remove(this);
                 INSTANCE.pending.put(this, job);
@@ -116,7 +130,9 @@ public final class BiomeMaps {
 
         @Override public void close() {
             synchronized (INSTANCE.lock) {
-                closed = true; version++; loading = false;
+                closed = true;
+                version++;
+                loading = false;
                 INSTANCE.pending.remove(this);
                 snapshot = null;
                 if(ownsScope)scope.close();
@@ -130,11 +146,15 @@ public final class BiomeMaps {
             synchronized (lock) {
                 while (pending.isEmpty() && releases.isEmpty()) {
                     try { lock.wait(); }
-                    catch (InterruptedException error) { Thread.currentThread().interrupt(); return; }
+                    catch (InterruptedException error) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
                 }
                 while(!releases.isEmpty())releases.removeFirst().release();
                 if(!pending.isEmpty()){
-                    Session owner = pending.keySet().iterator().next();job = pending.remove(owner);
+                    Session owner = pending.keySet().iterator().next();
+                    job = pending.remove(owner);
                 }
             }
             if(job==null)continue;
@@ -152,7 +172,8 @@ public final class BiomeMaps {
                 synchronized (lock) {
                     if (valid(job)) {
                         job.session.error = error.getClass().getSimpleName();
-                        job.session.loading = false; job.session.last = null;
+                        job.session.loading = false;
+                        job.session.last = null;
                     }
                 }
                 org.slf4j.LoggerFactory.getLogger(BiomeMaps.class).warn("Biome preview failed", error);
@@ -205,31 +226,43 @@ public final class BiomeMaps {
         return BiomePalette.color(counts.entrySet().stream().sorted(Map.Entry.<String, Integer>comparingByValue().reversed()
                 .thenComparing(Map.Entry.comparingByKey())).findFirst().orElseThrow().getKey());
     }
-    private BiomeMapSnapshot.Overview overview(MapBiomeSampler source, int x, int z, int y, int step) {
+    private BiomeMapSnapshot.Overview overview(MapBiomeSampler source, int x, int z, int y, int step,
+                                               java.util.function.IntBinaryOperator riverAt) {
         int probes = step >= 128 ? 4 : 2;
         while (true) {
             Map<String, Integer> counts = new java.util.HashMap<>(), upperCounts = new java.util.HashMap<>();
             float temperature = 0, upperTemperature = 0;
+            boolean keepSamples = y < 64;
             var detail = new java.util.ArrayList<Integer>(probes * probes);
             var samples = new java.util.ArrayList<BiomeMapSnapshot.Cell>(probes * probes);
             for (int dz = 0; dz < probes; dz++) for (int dx = 0; dx < probes; dx++) {
                 var sample = source.point(x + (dx * 2 + 1) * step / (probes * 2),
                         y, z + (dz * 2 + 1) * step / (probes * 2), false);
                 detail.add(BiomePalette.color(sample.id()));
-                if (y < 64) samples.add(sample);
-                counts.merge(sample.id(), 1, Integer::sum); upperCounts.merge(sample.surfaceId(), 1, Integer::sum);
-                temperature += sample.temperature(); upperTemperature += sample.surfaceTemperature();
+                samples.add(sample);
+                keepSamples = keepSamples || BiomePalette.tint(sample.id()) != null;
+                counts.merge(sample.id(), 1, Integer::sum);
+                upperCounts.merge(sample.surfaceId(), 1, Integer::sum);
+                temperature += sample.temperature();
+                upperTemperature += sample.surfaceTemperature();
             }
-            if (probes == 2 && (counts.containsKey("minecraft:river") || counts.containsKey("minecraft:frozen_river"))) {
+            boolean hasRiver = counts.containsKey("minecraft:river") || counts.containsKey("minecraft:frozen_river");
+            if (probes == 2 && hasRiver) {
                 probes = 4; continue;
             }
+            long links = riverAt != null && hasRiver
+                    ? RiverLinks.find(samples, detail, x, z, step, riverAt) : 0;
             return new BiomeMapSnapshot.Overview(dominant(counts), temperature / (probes * probes),
-                    dominant(upperCounts), upperTemperature / (probes * probes), java.util.List.copyOf(detail), java.util.List.copyOf(samples));
+                    dominant(upperCounts), upperTemperature / (probes * probes), java.util.List.copyOf(detail),
+                    keepSamples ? java.util.List.copyOf(samples) : java.util.List.of(), links);
         }
     }
     private void render(Job job, WorldContext context, MapBiomeSampler source, int lod) {
         Request request = job.request;
         int step = request.step * lod;
+        java.util.function.IntBinaryOperator riverAt = request.dimension == DimensionSpace.OVERWORLD
+                && request.y >= 64 && RiverLinks.supports(step)
+                ? (x, z) -> source.riverAtQuart(x, request.y >> 2, z) : null;
         int startX = Math.floorDiv(request.x, step) * step;
         int startZ = Math.floorDiv(request.z, step) * step;
         int width = Math.min(512, (request.width + lod - 1) / lod + 1);
@@ -253,7 +286,8 @@ public final class BiomeMaps {
             BiomeMapSnapshot.Cell[] tile = job.session.scope.cache.get(key);
             if (tile == null) {
                 tile = new BiomeMapSnapshot.Cell[TILE_SIZE * TILE_SIZE];
-                job.session.scope.cache.put(key,tile);job.session.scope.tileCount=job.session.scope.cache.size();
+                job.session.scope.cache.put(key,tile);
+                job.session.scope.tileCount=job.session.scope.cache.size();
             }
             for (int i = 0; i < tile.length; i++) {
                 if (i % 8 == 0) checkpoint(job);
@@ -270,7 +304,7 @@ public final class BiomeMaps {
                 }
                 BiomeMapSnapshot.Cell point = source.point(bx,request.y,bz,step < 4);
                 if (step >= 8) point = new BiomeMapSnapshot.Cell(point.id(), point.temperature(),
-                        point.surfaceId(), point.surfaceTemperature(), overview(source,bx,bz,request.y,step));
+                        point.surfaceId(), point.surfaceTemperature(), overview(source, bx, bz, request.y, step, riverAt));
                 int terrainHeight = Integer.MIN_VALUE;
                 if (request.dimension == DimensionSpace.END) {
                     terrainHeight = endHeight(job.session.scope, context, bx, bz, step);

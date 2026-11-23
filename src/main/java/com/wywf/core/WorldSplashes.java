@@ -11,7 +11,9 @@ public final class WorldSplashes {
             "Trust the compass", "A village worth the wait", "Certified block moment", "Plot twist it is a mushroom island",
             "Somewhere a creeper is waiting", "Bring a pickaxe", "Less searching more crafting", "You found your place",
             "This seed has main character energy", "The grass is greener in this chunk", "Now with actual terrain",
-            "You might cry when you see this", "Your next adventure starts here");
+            "You might cry when you see this", "Your next adventure starts here", "The Fall of the Empire", "FWyW",
+            "Maybe in GTA 6?", "Who's the coolest? — You!", "The fish is gasping for air in the water...",
+            "You've reached the top of the iceberg!", "§r§0k 0dka-K7ua-IulO-Lok3");
     public static String choose(){return VALUES.get(ThreadLocalRandom.current().nextInt(VALUES.size()));}
     private WorldSplashes(){}
 }

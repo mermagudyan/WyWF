@@ -57,7 +57,6 @@ public final class KeywordDictionary {
 
     private final Map<String, List<String>> variants = new HashMap<>();
 
-    private final Map<String, String> variantToBase = new HashMap<>();
 
     private volatile List<String> sortedKeys = List.of();
 
@@ -115,9 +114,6 @@ public final class KeywordDictionary {
                         if (v.isJsonPrimitive()) list.add(v.getAsString());
                     }
                     variants.put(generic, List.copyOf(list));
-                    for (String v : list) {
-                        variantToBase.putIfAbsent(v, generic);
-                    }
                     continue;
                 }
                 if (!key.startsWith("wywf.synonym.")) continue;
@@ -306,11 +302,12 @@ public final class KeywordDictionary {
     }
 
     public List<String> getVariants(String canonical) {
-        List<String> v = variants.get(canonical);
-        if (v != null) return v;
-        String base = variantToBase.get(canonical);
-        if (base != null) return List.of(base);
-        return List.of(canonical);
+        List<String> alternatives = variants.get(canonical);
+        return alternatives == null ? List.of(canonical) : alternatives;
+    }
+
+    public boolean matchesStructureLayer(String selected, String actual) {
+        return selected.equals(actual) || variants.getOrDefault(selected, List.of()).contains(actual);
     }
 
     public Collection<Entry> all() { return entries.values(); }

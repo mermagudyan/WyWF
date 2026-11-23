@@ -21,6 +21,7 @@ final class FinalSearchTask {
     private final CandidateQuota quota=new CandidateQuota();
     private final SearchResult recommended;
     private final SearchRun run;
+    private final CandidateReview shortlist;
     private PreviewWorld.Session current;
     private long processed;
     private long attemptStarted;
@@ -29,8 +30,14 @@ final class FinalSearchTask {
 
     FinalSearchTask(SearchScreen owner, CreateWorldScreen creator, ParsedQuery query, SearchConfig config,
                     CandidateReview shortlist, SearchRun run) {
-        this.owner = owner; this.creator = creator; this.query = query; this.config = config.copy();
-        offer(shortlist.candidates()); recommended = shortlist.selected().orElse(null); this.run = run;
+        this.owner = owner;
+        this.creator = creator;
+        this.query = query;
+        this.config = config.copy();
+        this.shortlist = shortlist;
+        offer(shortlist.candidates());
+        recommended = shortlist.selected().orElse(null);
+        this.run = run;
     }
     void streaming(){inputDone=false;}
     void offer(List<SearchResult> results) {
@@ -100,6 +107,15 @@ final class FinalSearchTask {
             current = null;
         }
         if (!config.serverVerification()) acceptWithoutServer();
+        else if (run == null && current == null && !stopping && !pending.isEmpty()) {
+            var result = pending.getFirst();
+            var previous = shortlist.verification(result);
+            if (previous != null && previous.status() == VerificationSummary.Status.PASS) {
+                pending.removeFirst();
+                quota.accept(result);
+                acceptedLocations.add(new Location(result));
+            }
+        }
         if(run!=null&&!finishRequested&&(quota.remaining(config,run.elapsedMs())==0||quota.retryBlocked())){
             owner.stopInputForDeadline();
             finishRequested=!quota.retryBlocked();
@@ -122,6 +138,11 @@ final class FinalSearchTask {
             if (verify && (rankAt || config.sortCandidatesByDistance())) accepted.sort(Comparator.comparingDouble(this::atDistance));
             var selected = verify && rankAt && !accepted.isEmpty() ? accepted.getFirst() : accepted.contains(recommended) ? recommended : null;
             var review = new CandidateReview(accepted, selected, !verify && (rankAt || config.sortCandidatesByDistance()));
+            for (var candidate : accepted) {
+                var saved = verify ? PreviewWorld.find(candidate, query, config) : null;
+                var summary = saved != null ? saved.summary() : shortlist.verification(candidate);
+                if (summary != null) review.recordVerification(candidate, summary);
+            }
             String reason = verify ? MapTexts.text("finalizing_done", accepted.size(), processed)
                     : ResultTexts.text("offline_help");
             if(!finishRequested&&quota.remaining(config,run==null?0:run.elapsedMs())>0)
@@ -132,6 +153,8 @@ final class FinalSearchTask {
         if (!config.serverVerification())
             return;
         if (current == null) {
+            if (run == null && shortlist.verification(pending.getFirst()) != null
+                    && shortlist.verification(pending.getFirst()).status() == VerificationSummary.Status.PASS) return;
             if (PreviewWorld.active() != null)
                 return;
             if (OnlineSearchBenchmark.rankCandidates())
@@ -143,7 +166,8 @@ final class FinalSearchTask {
             catch (Exception error) {
                 org.slf4j.LoggerFactory.getLogger("wywf-search").warn("[vanilla-final] startup failed",error);
                 failed(new SearchFailure(pending.getFirst().seed,SearchFailure.Kind.STARTUP,error.toString(),List.of(),List.of()));
-                PreviewWorld.shutdownActive(); stopping = true;
+                PreviewWorld.shutdownActive();
+                stopping = true;
             }
             return;
         }
@@ -178,7 +202,7 @@ final class FinalSearchTask {
         stopping = true;
     }
     private void acceptWithoutServer() {
-        int remaining = quota.remaining(config, run == null ? 0 : run.elapsedMs());
+        int remaining = run == null ? pending.size() : quota.remaining(config, run.elapsedMs());
         while (remaining > 0 && !pending.isEmpty()) {
             var result = pending.removeFirst();
             if (acceptedLocations.add(new Location(result))) {
@@ -206,7 +230,8 @@ final class FinalSearchTask {
                 }
             }
             if (score > bestScore) {
-                best = candidate; bestScore = score;
+                best = candidate;
+                bestScore = score;
             }
         }
         if (best != first) {
@@ -215,7 +240,8 @@ final class FinalSearchTask {
         }
     }
     private void failed(SearchFailure failure){
-        quota.reject(failure);owner.failure(failure);
+        quota.reject(failure);
+        owner.failure(failure);
     }
     private double atDistance(SearchResult result) {
         var saved = PreviewWorld.find(result, query, config);

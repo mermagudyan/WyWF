@@ -1,23 +1,41 @@
 package com.wywf.client;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import com.wywf.core.*;
 import com.wywf.verify.LootCatalog;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.client.gui.components.*;
+import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.Tooltip;
+import net.minecraft.client.gui.navigation.ScreenRectangle;
+import net.minecraft.client.gui.narration.NarratedElementType;
+import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
+import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
+
 import java.util.*;
+import java.util.function.Consumer;
+import java.util.function.IntConsumer;
 
 final class TargetEditor {
-    private record Row(String label, AbstractWidget widget, int offset, int height) {}
+    private static final int MARGIN = 6, ANCHOR_GAP = 5, PAD = 5, ROW = 16, CARD = 30, CARD_GAP = 3;
+    private static final int BACKGROUND = 0xFF202020, EDGE = 0xFF555555, TEXT = 0xFFF4F4F4;
+    private static final int[] CARD_COLORS = {0xFF29312D, 0xFF302B28, 0xFF292D35, 0xFF322B31, 0xFF303127, 0xFF283236};
+    private static final long ANIMATION = 165_000_000L;
+    private static final long REVEAL_ON_LAYOUT = Long.MIN_VALUE;
 
+    private enum Section { MODIFIER, TAGS, LOOT, CONTAINER, ITEMS, CARDS }
+    private record Value(int minimum, int maximum, Modifier countMode, int quantity, LootConstraint loot,
+                         boolean pinned, StructureTags tags) {}
     private record LootInput(LootConstraint.Requirement original, String quantity) {
-        LootInput(LootConstraint.Requirement original) {
-            this(original, Integer.toString(original.count()));
-        }
+        LootInput(LootConstraint.Requirement original) { this(original, Integer.toString(original.count())); }
 
         LootConstraint.Requirement requirement() {
             try {
@@ -30,251 +48,997 @@ final class TargetEditor {
         }
     }
 
-    private record Value(int minimum, int maximum, Modifier countMode, int quantity, LootConstraint loot,
-                         boolean pinned, StructureTags tags) {}
+    private record Rect(int x, int y, int w, int h) {
+        int right() { return x + w; }
+        int bottom() { return y + h; }
+        boolean hits(double px, double py) { return px >= x && px < right() && py >= y && py < bottom(); }
+        boolean intersects(AbstractWidget widget) {
+            return w > 0 && h > 0 && widget.getX() < right() && widget.getY() < bottom()
+                    && widget.getX() + widget.getWidth() > x && widget.getY() + widget.getHeight() > y;
+        }
+        ScreenRectangle screenRect() { return new ScreenRectangle(x, y, w, h); }
+    }
+    private record Row(Component label, int offset, int labelColor, AbstractWidget control, int controlX, int controlY) {}
+    private record LootChoice(String id, String name, String search) {}
+    private record BranchMotion(StackMotion direction, StackMotion opening) {}
+    private record Card(String label, net.minecraft.world.item.Item icon, EditBox count, MenuRow remove,
+                        StackMotion slide, StackMotion shade) {}
+
     private final SearchDraft draft;
     private final SearchDraft.Target target;
     private final CreateWorldScreen creator;
-    private final Runnable refresh, close;
-    private final java.util.function.Consumer<Runnable> guard;
-    private final net.minecraft.client.gui.Font font=Minecraft.getInstance().font;
-    private final List<Row> rows=new ArrayList<>();
-    private final Map<String,LootCatalog.Choices> cachedChoices=new HashMap<>();
+    private final Runnable close;
+    private final Consumer<Runnable> guard;
+    private final Font font = Minecraft.getInstance().font;
+    private final Map<String, LootCatalog.Choices> cachedChoices = new HashMap<>();
+    private final Map<String, List<LootChoice>> cachedItems = new HashMap<>();
     private final Map<String, LootInput> items = new LinkedHashMap<>();
     private final List<String> containers;
-    private String minimum, maximum, quantity, container, filter = "";
+    private final EnumMap<Section, Long> transitions = new EnumMap<>(Section.class);
+    private final EnumMap<Section, MenuRow> triggers = new EnumMap<>(Section.class);
+    private final EnumMap<Section, BranchMotion> branchMotions = new EnumMap<>(Section.class);
+    private final List<Pane> panes = new ArrayList<>();
+    private final List<Card> cards = new ArrayList<>();
+    private final int anchorX, anchorY;
+    private int screenWidth, screenHeight, direction, paneLimit;
+    private String minimum, maximum, quantity, container, filter = "", eyesMinimum, eyesMaximum;
     private Modifier countMode;
     private StructureTags tags;
-    private String eyesMinimum,eyesMaximum;
-    private boolean pinned, lootEnabled, filtering;
-    private int x,y,headerY,width,bottom,total,scroll;
-    private List<net.minecraft.util.FormattedCharSequence> header=List.of();
-    private ConstructorDropList open;
-    private AbstractWidget focused,capture;
-    private Button apply;
-    TargetEditor(SearchDraft draft,SearchDraft.Target target,CreateWorldScreen creator,Runnable refresh,Runnable close) {
-        this(draft,target,creator,refresh,close,Runnable::run);
-    }
-    TargetEditor(SearchDraft draft,SearchDraft.Target target,CreateWorldScreen creator,Runnable refresh,Runnable close,java.util.function.Consumer<Runnable> guard) {
-        this.guard=guard;
-        this.draft=draft;
-        this.target=target;
-        this.creator=creator;
-        this.refresh=refresh;
-        this.close=close;
-        var p=draft.placement(target).orElseThrow();
-        minimum=""+p.minRadius();
-        maximum=""+p.radius();
-        quantity=""+p.quantity();
-        tags=p.tags();
-        eyesMinimum=""+(tags.eyes()
-                ? tags.eyesMin():1);
-        eyesMaximum=""+(tags.eyes()
-                ? tags.eyesMax():12);
-        countMode=p.countMode();
-        pinned=p.pinned();
-        lootEnabled=p.loot()!=null;
-        container=p.loot()==null
-                ? "any":p.loot().container();
-        if (p.loot() != null) p.loot().items().forEach(item -> items.put(item.item(), new LootInput(item)));
-        containers=creator==null?List.of("any"):LootCatalog.containers(creator,target.canonical());
-    }
-    SearchDraft.Target target(){
-        return target;
-    }
-    List<AbstractWidget> widgets(){
-        return rows.stream().map(Row::widget).filter(Objects::nonNull).toList();
-    }
-    AbstractWidget focused(){
-        return focused;
-    }
-    private boolean ru(){
-        return Minecraft.getInstance().getLanguageManager().getSelected().startsWith("ru");
-    }
-    private LootCatalog.Choices choices() {
-        return cachedChoices.computeIfAbsent(container, c -> isBiome()
-                ? LootCatalog.biomeChoices(creator, target.canonical(), c) : LootCatalog.choices(creator, target.canonical(), c));
+    private boolean pinned, lootEnabled, lootOpen, itemOpen, cardsHidden;
+    private Section choice;
+    private EditBox filterBox;
+    private AbstractWidget focused, capture;
+    private Pane scrollingPane;
+    private MenuRow apply;
+    private Rect cardBounds;
+    private int hoveredCard = -1, lastCardMouseX = Integer.MIN_VALUE, lastCardMouseY = Integer.MIN_VALUE;
+    private int cardScroll;
+    private boolean grabbingCardScroll;
+    private long cardFrame;
+
+    TargetEditor(SearchDraft draft, SearchDraft.Target target, CreateWorldScreen creator, int anchorX, int anchorY,
+                 Runnable close, Consumer<Runnable> guard) {
+        this.draft = draft;
+        this.target = target;
+        this.creator = creator;
+        this.anchorX = anchorX;
+        this.anchorY = anchorY;
+        this.close = close;
+        this.guard = guard;
+
+        var placement = draft.placement(target).orElseThrow();
+        minimum = Integer.toString(placement.minRadius());
+        maximum = Integer.toString(placement.radius());
+        quantity = Integer.toString(placement.quantity());
+        countMode = placement.countMode();
+        tags = placement.tags();
+        eyesMinimum = Integer.toString(tags.eyes() ? tags.eyesMin() : 1);
+        eyesMaximum = Integer.toString(tags.eyes() ? tags.eyesMax() : 12);
+        pinned = placement.pinned();
+        lootEnabled = placement.loot() != null;
+        container = lootEnabled ? placement.loot().container() : "any";
+        if (lootEnabled) placement.loot().items().forEach(item -> items.put(item.item(), new LootInput(item)));
+        containers = creator == null ? List.of("any") : LootCatalog.containers(creator, target.canonical());
     }
 
-    private boolean isBiome() {
-
-        return target.category() == KeywordDictionary.Category.BIOME;
-    }
-    void bounds(int x,int y,int width,int bottom) {
-        this.x=x;this.headerY=y;
-        this.width=width;
-        this.bottom=bottom;
-        rows.clear();
-        total=0;
-        open=null;
-        capture=null;
-        focused=null;
-        header=font.split(Component.literal(target.phrase(
-                ru()?KeywordDictionary.Lang.RU:KeywordDictionary.Lang.EN)+(lootEnabled?" · "+LootContainers.name(container,ru()):"")),width-8);
-        this.y=y+header.size()*font.lineHeight+8;
-        heading(MapTexts.text("edit_distance"));
-        var modes = new ArrayList<Modifier>();
-        modes.add(null);
-        Arrays.stream(Modifier.values()).filter(m -> SearchDraft.supportsModifier(target.category(), m))
-                .filter(m -> !com.wywf.map.BiomeMapColors.cave(target.canonical())
-                        || m != Modifier.UNDER && (m != Modifier.FAR || !target.canonical().equals("minecraft:deep_dark")))
-                .forEach(modes::add);
-        drop(MapTexts.text("marker_modifier"), modes.stream().map(this::modifierName).toList(),
-                modes.indexOf(countMode), i -> {
-                    countMode = modes.get(i);
-                    if (countMode != null) minimum = "0";
-                    if (countMode == Modifier.SOME && quantity.equals("1")) quantity = "2";
-                    if (!supportsLoot()) lootEnabled = false;
-                    refresh.run();
-                });
-        if (countMode == null) number(
-                SearchConstructorScreen.label("minimum").getString(),minimum,4,v->{
-                    minimum=v;validate();
-                });
-        if (countMode == null || counted()) number(SearchConstructorScreen.label("maximum").getString(),maximum,4,v->{
-            maximum=v;validate();
-        });
-        if (usesCount()) number(MapTexts.text("quantity"),quantity,2,v->{
-            quantity=v;validate();
-        });
-        add(MapTexts.text("keep_condition"),new SettingToggle(MapTexts.text("keep_condition"),pinned,v->pinned=v),40);
-        if(target.category()==KeywordDictionary.Category.STRUCTURE) {
-            var tagChoices=StructureTags.options(target.canonical());
-            if(!tagChoices.isEmpty()){
-                var labels=new ArrayList<String>();labels.add(ru()?"Без тегов":"No tags");
-                tagChoices.forEach(id->labels.add((tags.selected(id)?"✓ ":"")+StructureTags.label(id,ru())));
-                drop(ru()?"Теги структуры":"Structure tags",labels,java.util.stream.IntStream.range(0,tagChoices.size())
-                        .filter(i->tags.selected(tagChoices.get(i))).map(i->i+1)
-                        .findFirst().orElse(0),i->{tags=i==0?StructureTags.NONE:tags.toggle(tagChoices.get(i-1));refresh.run();});
-                if(!tags.empty())heading(tags.description(ru()));
-                if(tags.eyes()){
-                    number(ru()?"Минимум оков":"Minimum eyes",eyesMinimum,2,v->{
-                        eyesMinimum=v;validate();
-                    });
-                    number(ru()?"Максимум оков":"Maximum eyes",eyesMaximum,2,v->{
-                        eyesMaximum=v;validate();
-                    });
-                }
-            }
-        }
-        if (creator != null && supportsLoot()) {
-            if (isBiome() || containers.size() > 1) {
-                heading(MapTexts.text("loot_settings"));
-                add(MapTexts.text("loot_enabled"),
-                        new SettingToggle(
-                        MapTexts.text("loot_enabled"),lootEnabled,v->{
-                            lootEnabled=v;refresh.run();
-                        }),40);
-                if(lootEnabled)buildLoot();
-            } else if(creator != null && supportsLoot()) heading(MapTexts.text("loot_no_containers"));
-        }
-        apply=Button.builder(MapTexts.label("edit_done"),
-                b->commit()).bounds(x,bottom-21,(width-6)/2,20).build();
-        var cancel=Button.builder(SearchConstructorScreen.label("back"),
-                b->guard.accept(close)).bounds(x+(width+6)/2,bottom-21,(width-6)/2,20).build();
-        var delete=Button.builder(SearchConstructorScreen.label("delete"),
-                b->{draft.remove(target);close.run();}).bounds(x,bottom-45,width-6,20).build();
-        rows.add(new Row("",delete,-1,0));
-        rows.add(new Row("",apply,-1,0));rows.add(new Row("",cancel,-1,0));
-        layout();validate();
-    }
-    private boolean counted() {
-        return countMode != null && countMode.counted();
+    void bounds(int width, int height) {
+        screenWidth = width;
+        screenHeight = height;
+        rebuild();
     }
 
-    private boolean usesCount() {
-        return counted() || countMode == Modifier.SOME;
-    }
-
+    private boolean ru() { return Minecraft.getInstance().getLanguageManager().getSelected().startsWith("ru"); }
+    private boolean isBiome() { return target.category() == KeywordDictionary.Category.BIOME; }
+    private boolean counted() { return countMode != null && countMode.counted(); }
+    private boolean usesCount() { return counted() || countMode == Modifier.SOME; }
     private boolean supportsLoot() {
         return !usesCount() && countMode != Modifier.NEVER && countMode != Modifier.ONLY && countMode != Modifier.UNDER;
     }
 
-    private String modifierName(Modifier mode) {
-        if (mode == null) return MapTexts.text("modifier_between");
-        String id = mode.name().toLowerCase(Locale.ROOT);
-        return MapTexts.text((mode.counted() ? "count_mode_" : "modifier_") + id);
+    private LootCatalog.Choices choices() {
+        return cachedChoices.computeIfAbsent(container, value -> isBiome()
+                ? LootCatalog.biomeChoices(creator, target.canonical(), value)
+                : LootCatalog.choices(creator, target.canonical(), value));
     }
 
-    private void buildLoot() {
-        List<String> values=new ArrayList<>(containers);if(!values.contains(container))values.add(container);
-        if (!isBiome()) {
-            drop(MapTexts.text("loot_container"),values.stream().map(c->LootContainers.name(c,ru()))
-                    .toList(),values.indexOf(container),i->{container=values.get(i);
-                filter="";filtering=false;
-                refresh.run();});
-        } else {
-            heading(MapTexts.text("loot_in_biome"));
+    private void rebuild() {
+        if (screenWidth == 0) return;
+        var oldFocus = focused;
+        int savedScroll = panes.isEmpty() ? 0 : panes.getFirst().scroll;
+        setFocus(null);
+        capture = null;
+        scrollingPane = null;
+        grabbingCardScroll = false;
+        triggers.clear();
+        panes.clear();
+        cards.clear();
+        cardBounds = null;
+        direction = anchorX <= screenWidth / 2 ? 1 : -1;
+        boolean rootPicker = choice == Section.MODIFIER || choice == Section.TAGS;
+        boolean showLoot = lootOpen && lootEnabled && !rootPicker;
+        int depth = 1 + (rootPicker || showLoot ? 1 : 0)
+                + (showLoot && (choice == Section.CONTAINER || itemOpen) ? 1 : 0)
+                + (showLoot && choice == null && !items.isEmpty() && !cardsHidden ? 1 : 0);
+        int groupSpace = Math.max(1, screenWidth - 2 * MARGIN - (depth - 1) * 2);
+        paneLimit = Math.max(1, Math.min(195, groupSpace / depth));
+        int w = Math.min(Math.clamp(screenWidth / 4, 142, 192), paneLimit);
+        var main = new Pane(w);
+        var language = ru() ? KeywordDictionary.Lang.RU : KeywordDictionary.Lang.EN;
+        main.title(target.phrase(language));
+        main.heading(MapTexts.text("edit_distance"), 0xFFB7B7B7);
+        var modes = new ArrayList<Modifier>();
+        modes.add(null);
+        Arrays.stream(Modifier.values()).filter(mode -> SearchDraft.supportsModifier(target.category(), mode))
+                .filter(mode -> !com.wywf.map.BiomeMapColors.cave(target.canonical())
+                        || mode != Modifier.UNDER && (mode != Modifier.FAR || !target.canonical().equals("minecraft:deep_dark")))
+                .forEach(modes::add);
+        main.branch(MapTexts.text("marker_modifier"), modifierName(countMode), Section.MODIFIER, () -> toggleChoice(Section.MODIFIER));
+        if (countMode == null) main.number(SearchConstructorScreen.label("minimum").getString(), minimum, 4, value -> minimum = value);
+        if (countMode == null || counted())
+            main.number(SearchConstructorScreen.label("maximum").getString(), maximum, 4, value -> maximum = value);
+        if (usesCount()) main.number(MapTexts.text("quantity"), quantity, 2, value -> quantity = value);
+        main.toggle(MapTexts.text("keep_condition"), pinned, value -> pinned = value);
+        var tagIds = isBiome() ? List.<String>of() : StructureTags.options(target.canonical());
+        String tagLabel = ru() ? "Теги структуры" : "Structure tags";
+        String noTags = ru() ? "Без тегов" : "No tags";
+        if (!tagIds.isEmpty()) {
+            main.branch(tagLabel, tags.empty() ? noTags : tags.description(ru()), Section.TAGS, () -> toggleChoice(Section.TAGS));
+            if (tags.eyes()) {
+                main.number(ru() ? "Минимум оков" : "Minimum eyes", eyesMinimum, 2, value -> eyesMinimum = value);
+                main.number(ru() ? "Максимум оков" : "Maximum eyes", eyesMaximum, 2, value -> eyesMaximum = value);
+            }
         }
-        var available=choices();
-        heading(MapTexts.text("loot_one_chest"));
-        var search=box(filter,100,v->{
-            filter=v;filtering=true;refresh.run();
-        });
-        if(filtering){
-            focused=search;search.setFocused(true);
+        if (creator != null && supportsLoot()) {
+            if (isBiome() || containers.size() > 1 || lootEnabled) {
+                main.toggle(MapTexts.text("loot_enabled"), lootEnabled, value -> {
+                    lootEnabled = value;
+                    lootOpen = value;
+                    itemOpen = false;
+                    cardsHidden = false;
+                    choice = null;
+                    transitions.put(Section.LOOT, REVEAL_ON_LAYOUT);
+                    rebuild();
+                });
+                if (lootEnabled) main.branch(MapTexts.text("loot_settings"), "", Section.LOOT, this::toggleLoot);
+            } else main.heading(MapTexts.text("loot_no_containers"), 0xFFB7B7B7);
         }
-        search.setHint(SearchConstructorScreen.label("filter"));
-        add(MapTexts.text("loot_item_filter"),search,39);
-        var options=available.items().stream()
-                .filter(i->!items.containsKey(i.item())).filter(i->
-                (ResultTexts.name(i.item())+" "+i.item()).toLowerCase(Locale.ROOT).contains(filter.toLowerCase(Locale.ROOT)))
-                .sorted(Comparator.comparing(i->ResultTexts.name(i.item()))).toList();
-        var choose=drop(MapTexts.text("loot_choose"),options.stream().map(i->
-                ResultTexts.name(i.item())).toList(),-1,i->
-        {
-            String item = options.get(i).item();
-            items.put(item, new LootInput(new LootConstraint.Requirement(item, 1)));
-            filter = "";
-            filtering = false;
-            refresh.run();
+        main.removeAction(SearchConstructorScreen.label("delete").getString(), () -> {
+            draft.remove(target);
+            close.run();
         });
-        choose.active=!options.isEmpty()&&items.size()<16;
-        choose.setTooltip(Tooltip.create(MapTexts.label(options.isEmpty()?"loot_no_items":"loot_bound_help")));
+        apply = main.footer(MapTexts.text("edit_done"), () -> {
+            if (applyToDraft()) close.run();
+        }, SearchConstructorScreen.label("back").getString(), () -> guard.accept(close));
+
+        int reserve = (depth - 1) * (paneLimit + 2);
+        int x = direction > 0 ? Math.min(anchorX + ANCHOR_GAP, screenWidth - MARGIN - w - reserve)
+                : Math.max(anchorX - w - ANCHOR_GAP, MARGIN + reserve);
+        int h = main.windowHeight(244);
+        boolean above = ConstructorDropList.preferAbove(h, anchorY - MARGIN, screenHeight - MARGIN - anchorY);
+        main.scroll = savedScroll;
+        main.place(x, above ? anchorY - h : anchorY, h);
+        panes.add(main);
+
+        if (choice == Section.MODIFIER) picker(main, Section.MODIFIER, MapTexts.text("marker_modifier"),
+                modes.stream().map(this::modifierName).toList(), modes.indexOf(countMode), index -> {
+                    countMode = modes.get(index);
+                    if (countMode != null) minimum = "0";
+                    if (countMode == Modifier.SOME && quantity.equals("1")) quantity = "2";
+                    if (!supportsLoot()) lootEnabled = lootOpen = itemOpen = false;
+                    closeChoice();
+                });
+        if (choice == Section.TAGS && !tagIds.isEmpty()) {
+            var labels = new ArrayList<>(List.of(noTags));
+            tagIds.forEach(id -> labels.add((tags.selected(id) ? "✓ " : "") + StructureTags.label(id, ru())));
+            picker(main, Section.TAGS, tagLabel, labels, tags.empty() ? 0 : -1, index -> {
+                tags = index == 0 ? StructureTags.NONE : tags.toggle(tagIds.get(index - 1));
+                closeChoice();
+            });
+        }
+        if (showLoot) buildLoot(main);
+        if (oldFocus == filterBox && filterBox != null && itemOpen && choice == null) setFocus(filterBox);
+        validate();
+    }
+
+    private String modifierName(Modifier mode) {
+        if (mode == null) return MapTexts.text("modifier_between");
+        return MapTexts.text((mode.counted() ? "count_mode_" : "modifier_") + mode.name().toLowerCase(Locale.ROOT));
+    }
+
+    private void toggleChoice(Section section) {
+        if (choice != null) transitions.put(choice, System.nanoTime());
+        choice = choice == section ? null : section;
+        if (choice != null) transitions.put(choice, System.nanoTime());
+        if (section == Section.CONTAINER) itemOpen = false;
+        rebuild();
+    }
+
+    private void closeChoice() {
+        if (choice != null) transitions.put(choice, System.nanoTime());
+        choice = null;
+        rebuild();
+    }
+
+    private void toggleLoot() {
+        lootOpen = !lootOpen;
+        itemOpen = false;
+        choice = null;
+        transitions.put(Section.LOOT, REVEAL_ON_LAYOUT);
+        rebuild();
+    }
+
+    private void picker(Pane parent, Section section, String title, List<String> labels, int selected, IntConsumer pick) {
+        var pane = new Pane(popupWidth(labels, 126, 188));
+        pane.header(title, this::closeChoice);
+        for (int i = 0; i < labels.size(); i++) {
+            int index = i;
+            pane.row((i == selected && !labels.get(i).startsWith("✓") ? "✓ " : "") + labels.get(i), () -> pick.accept(index));
+        }
+        pane.attach(parent, section, 156, false);
+    }
+
+    private void buildLoot(Pane parent) {
+        var values = new ArrayList<>(containers);
+        if (!values.contains(container)) values.add(container);
+        var pane = new Pane(popupWidth(List.of(MapTexts.text("loot_container"),
+                LootContainers.name(container, ru()), MapTexts.text("loot_choose")), 140, 184));
+        pane.header(MapTexts.text("loot_settings"), this::toggleLoot);
+        if (isBiome()) pane.heading(MapTexts.text("loot_in_biome"), TEXT);
+        else pane.branch(MapTexts.text("loot_container"), LootContainers.name(container, ru()),
+                Section.CONTAINER, () -> toggleChoice(Section.CONTAINER));
+        pane.wrapped(MapTexts.text("loot_one_chest"));
+        var choose = pane.branch(MapTexts.text("loot_choose"), "", Section.ITEMS, this::toggleItems);
+        choose.active = items.size() < 16 || itemOpen;
+        if (!items.isEmpty()) pane.branch(MapTexts.text("loot_selected_cards", items.size()), "", Section.CARDS, () -> {
+            cardsHidden = !cardsHidden;
+            transitions.put(Section.CARDS, System.nanoTime());
+            rebuild();
+        });
+        if (!choices().complete()) pane.wrapped(MapTexts.text("loot_incomplete"));
+        pane.attach(parent, Section.LOOT, 170, true);
+
+        Pane cardAnchor = pane;
+        if (choice == Section.CONTAINER) picker(pane, Section.CONTAINER, MapTexts.text("loot_container"),
+                values.stream().map(value -> LootContainers.name(value, ru())).toList(), values.indexOf(container), index -> {
+                    container = values.get(index);
+                    filter = "";
+                    filterBox = null;
+                    closeChoice();
+                });
+        if (itemOpen && choice == null) cardAnchor = buildItemPicker(pane);
+        if (!items.isEmpty() && !cardsHidden && choice == null) buildCards(cardAnchor);
+    }
+
+    private void toggleItems() {
+        itemOpen = !itemOpen;
+        choice = null;
+        if (itemOpen) transitions.put(Section.ITEMS, REVEAL_ON_LAYOUT);
+        else transitions.remove(Section.ITEMS);
+        if (itemOpen && filterBox == null) {
+            filterBox = box(filter, 100, value -> {
+                filter = value;
+                rebuild();
+            });
+            filterBox.setHint(Component.literal(MapTexts.text("loot_item_filter")));
+        }
+        rebuild();
+        if (itemOpen) setFocus(filterBox);
+    }
+
+    private Pane buildItemPicker(Pane parent) {
+        var matches = cachedItems.computeIfAbsent(container, key -> choices().items().stream()
+                .map(item -> {
+                    String name = ResultTexts.name(item.item());
+                    return new LootChoice(item.item(), name, (name + " " + item.item()).toLowerCase(Locale.ROOT));
+                }).sorted(Comparator.comparing(LootChoice::name)).toList());
+        String needle = filter.strip().toLowerCase(Locale.ROOT);
+        var options = matches.stream()
+                .filter(item -> !items.containsKey(item.id()) && item.search().contains(needle)).toList();
+        var pane = new Pane(popupWidth(matches.stream().map(LootChoice::name).toList(), 148, 195));
+        pane.header(MapTexts.text("loot_choose"), this::toggleItems);
+        pane.filterBox = filterBox;
+        if (options.isEmpty()) pane.heading(MapTexts.text("loot_empty_filter"), 0xFFBABABA);
+        else for (var item : options) pane.row(item.name(), () -> {
+            if (items.size() >= 16) return;
+            items.put(item.id(), new LootInput(new LootConstraint.Requirement(item.id(), 1)));
+            cardsHidden = false;
+            if (items.size() == 16) itemOpen = false;
+            rebuild();
+        });
+        int preferredHeight = Math.min(172, Math.max(1, matches.size()) * ROW + pane.fixedHeight());
+        pane.attach(parent, Section.ITEMS, 172, preferredHeight, true);
+        return pane;
+    }
+
+    private void buildCards(Pane parent) {
+        int width = popupWidth(items.keySet().stream().map(ResultTexts::name).toList(), 130, 165);
+        int contentHeight = items.size() * CARD + (items.size() - 1) * CARD_GAP;
+        int height = Math.max(1, Math.min(contentHeight, parent.bounds.h()));
+        int x = sideX(parent.bounds, width, parent.direction);
+        var trigger = triggers.get(Section.CARDS);
+        int y = itemOpen ? parent.bounds.y() : trigger.getY();
+        cardBounds = new Rect(x, clampY(y, height), width, height);
+        trigger.arrowDirection = x >= parent.bounds.x() ? 1 : -1;
+        hoveredCard = -1;
+        lastCardMouseX = lastCardMouseY = Integer.MIN_VALUE;
         for (var input : items.values()) {
             var item = input.original();
-            String name = ResultTexts.name(item.item());
-            heading(name);
-            var limit = available.items().stream().filter(i -> i.item().equals(item.item())).findFirst().orElse(null);
-            String help = limit == null ? MapTexts.text("loot_not_here", name)
-                    : MapTexts.text("loot_limit", limit.chestMax(), limit.rollMax(), limit.slotMax());
             var count = box(input.quantity(), 4, value -> {
                 items.put(item.item(), new LootInput(item, value));
                 validate();
             });
-            count.setWidth(width - 38);
+            var limit = choices().items().stream().filter(option -> option.item().equals(item.item())).findFirst().orElse(null);
+            String name = ResultTexts.name(item.item());
+            String help = limit == null ? MapTexts.text("loot_not_here", name)
+                    : MapTexts.text("loot_limit", limit.chestMax(), limit.rollMax(), limit.slotMax());
             count.setTooltip(Tooltip.create(Component.literal(help)));
-            add("", count, 24);
-            var remove = Button.builder(Component.literal("×"), b -> {
+            var remove = new MenuRow("×", "", null, () -> {
                 items.remove(item.item());
-                refresh.run();
-            }).bounds(0, 0, 24, 20).build();
-            rows.add(new Row("", remove, total - 24, -24));
+                rebuild();
+            });
+            var key = Identifier.tryParse(item.item());
+            var icon = key != null && BuiltInRegistries.ITEM.containsKey(key) ? BuiltInRegistries.ITEM.getValue(key) : null;
+            cards.add(new Card(name, icon, count, remove, new StackMotion(0), new StackMotion(0)));
         }
-        if(!available.complete())heading(MapTexts.text("loot_incomplete"));
+        cardScroll = Math.clamp(cardScroll, 0, cardScrollLimit());
+        layoutCards(anchorX, anchorY);
     }
-    private EditBox box(String value,int max,java.util.function.Consumer<String> change) {
-        var b=new EditBox(font,0,0,width-6,20,Component.empty());b.setMaxLength(max);b.setValue(value);b.setResponder(change);
-        return b;
+
+    static int cardStep(int count, int height) {
+        return count <= 1 ? CARD : Math.clamp((height - CARD) / (count - 1), 1, CARD + CARD_GAP);
     }
-    private void number(String name,String value,int max,java.util.function.Consumer<String> change){
-        add(name,box(value,max,change),40);
+
+    private int cardSlot() {
+        return Math.max(cardStep(cards.size(), cardBounds.h()), Math.min(CARD, font.lineHeight + 4));
     }
-    private void heading(String value){
-        int h=font.split(Component.literal(value),width-8).size()*font.lineHeight+7;
-        rows.add(new Row(value,null,total,h));
-        total+=h;
+
+    private int cardScrollLimit() {
+        return Math.max(0, (cards.size() - 1) * cardSlot() + CARD - cardBounds.h());
     }
-    private void add(String label,AbstractWidget widget,int height) {
-        int extra=label.isEmpty()?0:Math.max(0,font.split(Component.literal(label),width-8).size()-1)*font.lineHeight;
-        rows.add(new Row(label,widget,total,height+extra));
-        total+=height+extra;
+
+    private int cardSlide() {
+        return cardSlot() >= CARD ? 0 : Math.min(8, cardBounds.w() / 8);
     }
-    private ConstructorDropList drop(String label,List<String> options,int current,java.util.function.Consumer<Integer> select) {
-        var list=new ConstructorDropList(0,0,width-6,"",options,current,font,select,this::open);
-        add(label,list,40);
-        return list;
+
+    private int cardX(int index) {
+        return cardBounds.x() + (int) Math.round(cards.get(index).slide().value(cardFrame));
     }
+
+    private int cardTop(int index) {
+        return cardBounds.y() + index * cardSlot() - cardScroll;
+    }
+
+    private int cardWidth() {
+        return Math.max(1, cardBounds.w() - cardSlide() - (cardScrollLimit() == 0 ? 0 : 4));
+    }
+
+    private boolean cardHit(int index, double x, double y) {
+        return new Rect(cardX(index), cardTop(index), cardWidth(), CARD).hits(x, y);
+    }
+
+    private boolean cardScrollHit(double x) {
+        return cardScrollLimit() > 0 && x >= cardBounds.right() - 4;
+    }
+
+    private void scrollCardsTo(int position) {
+        cardScroll = Math.clamp(position, 0, cardScrollLimit());
+        lastCardMouseX = lastCardMouseY = Integer.MIN_VALUE;
+    }
+
+    private void dragCardScroll(double y) {
+        int range = cardScrollLimit();
+        int thumb = Math.max(1, cardBounds.h() * cardBounds.h() / (cardBounds.h() + range));
+        double track = Math.max(1, cardBounds.h() - thumb);
+        scrollCardsTo((int) Math.round((y - cardBounds.y() - thumb / 2.0) / track * range));
+    }
+
+    private void layoutCards(int mx, int my) {
+        if (cardBounds == null) return;
+        cardFrame = System.nanoTime();
+        if (mx != lastCardMouseX || my != lastCardMouseY) {
+            lastCardMouseX = mx;
+            lastCardMouseY = my;
+            int next = cardSlide() > 0 && !grabbingCardScroll ? frontCardAt(mx, my) : -1;
+            if (next != hoveredCard && hoveredCard >= 0 && capture == null) {
+                var former = cards.get(hoveredCard);
+                if (focused == former.count() || focused == former.remove()) setFocus(null);
+            }
+            hoveredCard = next;
+        }
+
+        for (int i = 0; i < cards.size(); i++) {
+            var card = cards.get(i);
+            boolean shifted = hoveredCard >= 0 && hoveredCard != i;
+            card.slide().target(shifted ? cardSlide() : 0, cardFrame);
+            card.shade().target(shifted ? .20 : 0, cardFrame);
+            int x = cardX(i), y = cardTop(i), width = cardWidth();
+            card.count().setX(x + 23);
+            card.count().setY(y + 15);
+            card.count().setWidth(Math.max(12, Math.min(39, width - 46)));
+            card.remove().setX(x + width - 19);
+            card.remove().setY(y + 14);
+            card.remove().setWidth(14);
+        }
+    }
+
+    private int frontCardAt(double x, double y) {
+        if (!cardBounds.hits(x, y) || cardScrollHit(x)) return -1;
+        if (hoveredCard >= 0 && cardHit(hoveredCard, x, y)) return hoveredCard;
+        for (int i = cards.size() - 1; i >= 0; i--) {
+            if (cardHit(i, x, y)) return i;
+        }
+        return -1;
+    }
+
+    private boolean showCardControls(int index) {
+        return (hoveredCard == index || cardSlot() >= CARD || index == cards.size() - 1)
+                && cardWidth() >= 50;
+    }
+
+    private void drawCard(GuiGraphicsExtractor g, int index, int interactiveCard, int mx, int my, float tick) {
+        var card = cards.get(index);
+        int x = cardX(index), y = cardTop(index), w = cardWidth(), h = CARD;
+        if (y >= cardBounds.bottom() || y + CARD <= cardBounds.y()) return;
+
+        boolean interactive = index == interactiveCard;
+        boolean emphasized = index == hoveredCard;
+        TargetTileLayer.draw(g, x, y, w, h, () -> {
+            int tint = CARD_COLORS[index % CARD_COLORS.length];
+            int color = emphasized ? MenuAccent.mix(tint, 0xFFE9DDB3, .15f) : tint;
+            g.fill(x, y, x + w, y + h, color);
+            g.text(font, trim(card.label(), Math.max(1, w - 24 - PAD)), x + 23, y + 2, TEXT);
+            if (card.icon() != null) MenuItemIcon.draw(g, card.icon(), x + 4, y + 7);
+            if (showCardControls(index)) {
+                card.count().extractRenderState(g, interactive ? mx : -1, interactive ? my : -1, tick);
+                card.remove().extractRenderState(g, interactive ? mx : -1, interactive ? my : -1, tick);
+            }
+            g.nextStratum();
+            g.outline(x, y, w, h, 0xFF55534F);
+            TargetTileLayer.dim(g, x, y, w, h, card.shade().value(cardFrame));
+        });
+    }
+
+    private int popupWidth(List<String> values, int minimum, int maximum) {
+        int textWidth = values.stream().mapToInt(font::width).max().orElse(0);
+        return Math.min(Math.clamp(textWidth + 22, minimum, maximum), paneLimit);
+    }
+    private int clampY(int y, int height) { return Math.clamp(y, MARGIN, Math.max(MARGIN, screenHeight - MARGIN - height)); }
+    private int clampX(int x, int width) { return Math.clamp(x, MARGIN, Math.max(MARGIN, screenWidth - MARGIN - width)); }
+
+    private int sideX(Rect parent, int width, int preferred) {
+        int right = parent.right() + 2, left = parent.x() - width - 2;
+        boolean fitsRight = right + width <= screenWidth - MARGIN, fitsLeft = left >= MARGIN;
+        if (preferred > 0 && fitsRight || !fitsLeft && fitsRight) return right;
+        if (fitsLeft) return left;
+        int freeRight = screenWidth - MARGIN - right, freeLeft = parent.x() - MARGIN;
+        return clampX(freeRight >= freeLeft ? right : left, width);
+    }
+
+    private EditBox box(String value, int max, Consumer<String> change) {
+        var box = new EditBox(font, 0, 0, 40, 14, Component.empty());
+        box.setMaxLength(max);
+        box.setValue(value);
+        box.setResponder(change);
+        return box;
+    }
+
+    private String trim(String text, int width) {
+        if (width <= 0) return "";
+        if (font.width(text) <= width) return text;
+        int available = width - font.width("…");
+        return available < 0 ? "" : font.plainSubstrByWidth(text, available) + "…";
+    }
+
+    private void drawBranch(GuiGraphicsExtractor graphics, Section section, int x, int y,
+                            int direction, int color) {
+        var motion = branchMotions.computeIfAbsent(section,
+                ignored -> new BranchMotion(new StackMotion(direction), new StackMotion(0)));
+        long now = System.nanoTime();
+        motion.direction().target(direction, now);
+        motion.opening().target(expanded(section) ? 1 : 0, now);
+        TargetTileLayer.chevron(graphics, x, y, motion.direction().value(now), motion.opening().value(now), color);
+    }
+
+    private boolean expanded(Section section) {
+        return switch (section) {
+            case LOOT -> lootOpen;
+            case ITEMS -> itemOpen;
+            case CARDS -> cardBounds != null;
+            default -> choice == section;
+        };
+    }
+
+    private void setFocus(AbstractWidget widget) {
+        if (focused != null) focused.setFocused(false);
+        focused = widget;
+        if (widget != null) widget.setFocused(true);
+    }
+
+    void pauseInput() {
+        capture = null;
+        scrollingPane = null;
+        grabbingCardScroll = false;
+        setFocus(null);
+    }
+
+    boolean click(MouseButtonEvent event, boolean keyboard) {
+        if (event.button() != InputConstants.MOUSE_BUTTON_LEFT) return over(event.x(), event.y());
+        layoutCards((int)event.x(), (int)event.y());
+        if (cardBounds != null && cardBounds.hits(event.x(), event.y())) {
+            if (cardScrollHit(event.x())) {
+                grabbingCardScroll = true;
+                setFocus(null);
+                dragCardScroll(event.y());
+                return true;
+            }
+            int visible = frontCardAt(event.x(), event.y());
+            if (visible >= 0 && showCardControls(visible)) clickCard(cards.get(visible), event, keyboard);
+            return true;
+        }
+        for (var pane : panes.reversed()) {
+            if (!pane.visible().hits(event.x(), event.y())) continue;
+            if (pane.pickScrollbar(event.x(), event.y())) scrollingPane = pane;
+            else {
+                var widget = pane.widgetAt(event.x(), event.y());
+                setFocus(null);
+                if (widget != null) clickWidget(widget, event, keyboard);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    private boolean clickCard(Card card, MouseButtonEvent event, boolean keyboard) {
+        if (card.count().isMouseOver(event.x(), event.y())) return clickWidget(card.count(), event, keyboard);
+        if (card.remove().isMouseOver(event.x(), event.y())) return clickWidget(card.remove(), event, keyboard);
+        return false;
+    }
+
+    private boolean clickWidget(AbstractWidget widget, MouseButtonEvent event, boolean keyboard) {
+        setFocus(widget);
+        capture = widget;
+        return widget.mouseClicked(event, keyboard);
+    }
+
+    private boolean over(double x, double y) {
+        return cardBounds != null && cardBounds.hits(x, y) || panes.stream().anyMatch(pane -> pane.visible().hits(x, y));
+    }
+
+    boolean drag(MouseButtonEvent event, double dx, double dy) {
+        if (grabbingCardScroll) {
+            dragCardScroll(event.y());
+            return true;
+        }
+        if (scrollingPane != null) {
+            scrollingPane.dragScrollbar(event.y());
+            return true;
+        }
+        return capture != null && capture.mouseDragged(event, dx, dy);
+    }
+
+    void release(MouseButtonEvent event) {
+        if (capture != null) capture.mouseReleased(event);
+        capture = null;
+        scrollingPane = null;
+        grabbingCardScroll = false;
+    }
+
+    boolean scroll(double x, double y, double amount) {
+        if (cardBounds != null && cardBounds.hits(x, y)) {
+            if (cardScrollLimit() > 0) {
+                setFocus(null);
+                scrollCardsTo(cardScroll - (int) Math.round(amount * cardSlot()));
+            }
+            return true;
+        }
+        for (var pane : panes.reversed()) {
+            if (pane.visible().hits(x, y)) {
+                pane.scrollTo(pane.scroll - (int)Math.round(amount * ROW));
+                return true;
+            }
+        }
+        return false;
+    }
+
+    boolean key(KeyEvent event) {
+        if (event.isEscape()) {
+            if (choice != null) closeChoice();
+            else if (itemOpen) toggleItems();
+            else if (lootOpen) toggleLoot();
+            else guard.accept(close);
+            return true;
+        }
+        if (event.key() == InputConstants.KEY_TAB) {
+            var visible = new ArrayList<AbstractWidget>();
+            for (var pane : panes) pane.visibleControls(visible);
+            if (cardBounds != null) for (int i = 0; i < cards.size(); i++) {
+                if (!showCardControls(i))
+                    continue;
+                var card = cards.get(i);
+                if (cardBounds.intersects(card.count())) visible.add(card.count());
+                if (cardBounds.intersects(card.remove())) visible.add(card.remove());
+            }
+            if (!visible.isEmpty()) {
+                int step = event.hasShiftDown() ? -1 : 1;
+                int index = visible.indexOf(focused);
+                setFocus(visible.get(Math.floorMod(index < 0 && step < 0 ? -1 : index + step, visible.size())));
+            }
+            return true;
+        }
+        if (focused != null && focused.keyPressed(event)) return true;
+        return true;
+    }
+
+    boolean charTyped(CharacterEvent event) {
+        if (focused != null) focused.charTyped(event);
+        return true;
+    }
+
+    void draw(GuiGraphicsExtractor g, int mx, int my, float tick) {
+        long now = System.nanoTime();
+        var masks = new Rect[panes.size()];
+        for (int i = 0; i < masks.length; i++) masks[i] = panes.get(i).visible(now);
+        boolean overCards = cardBounds != null && cardBounds.hits(mx, my);
+        for (int i = 0; i < masks.length; i++) {
+            boolean covered = overCards;
+            for (int j = i + 1; !covered && j < masks.length; j++)
+                covered = masks[j].hits(mx, my);
+            panes.get(i).draw(g, masks[i], covered ? -1 : mx, covered ? -1 : my, tick);
+        }
+        if (cardBounds == null) return;
+        layoutCards(mx, my);
+        int interactive = frontCardAt(mx, my);
+        TargetTileLayer.draw(g, cardBounds.x(), cardBounds.y(), cardBounds.w(), cardBounds.h(), () -> {
+            for (int i = 0; i < cards.size(); i++) {
+                if (i != hoveredCard) drawCard(g, i, interactive, mx, my, tick);
+            }
+            if (hoveredCard >= 0) drawCard(g, hoveredCard, interactive, mx, my, tick);
+            int range = cardScrollLimit();
+            if (range > 0) {
+                int h = cardBounds.h();
+                int thumb = Math.max(1, h * h / (h + range));
+                int top = cardBounds.y() + (h - thumb) * cardScroll / range;
+                g.nextStratum();
+                g.fill(cardBounds.right() - 3, cardBounds.y(), cardBounds.right(), cardBounds.bottom(), 0xFF2F2F2F);
+                g.fill(cardBounds.right() - 3, top, cardBounds.right(), top + thumb, 0xFFAFAFAF);
+            }
+        });
+    }
+
+    private final class Pane {
+        private final int width;
+        private final List<Row> rows = new ArrayList<>();
+        private Rect bounds;
+        private int total, scroll, thumbGrab, direction, fixedTop, fixedBottom, revealCenter;
+        private long revealedAt;
+        private EditBox filterBox;
+        private boolean filterAbove;
+        private MenuRow done, back, remove, closeButton;
+        private List<AbstractWidget> fixedWidgets = List.of();
+        private Component title;
+
+        Pane(int width) { this.width = width; }
+
+        void title(String label) {
+            String text = trim(label, width - 2 * PAD - 2);
+            rows.add(new Row(MenuAccent.heading(text), total + 3, 0xFFFFFFFF, null, 0, 0));
+            total += ROW;
+        }
+
+        private Component rowLabel(String label) {
+            return Component.literal(trim(label, width - 2 * PAD - 2));
+        }
+
+        void heading(String label, int color) {
+            rows.add(new Row(rowLabel(label), total + 3, color, null, 0, 0));
+            total += ROW;
+        }
+
+        void wrapped(String label) {
+            for (var line : font.split(Component.literal(label), Math.max(1, width - 2 * PAD - 4))) {
+                var builder = new StringBuilder();
+                line.accept((index, style, point) -> { builder.appendCodePoint(point); return true; });
+                rows.add(new Row(rowLabel(builder.toString()), total + 2, 0xFFC6C6C6, null, 0, 0));
+                total += font.lineHeight + 2;
+            }
+            total += 3;
+        }
+
+        void number(String label, String current, int max, Consumer<String> onEdit) {
+            var input = box(current, max, value -> { onEdit.accept(value); validate(); });
+            input.setWidth(Math.max(1, Math.min(58, width - 2 * PAD)));
+            rows.add(new Row(rowLabel(label), total + 2, TEXT, input, PAD, total + font.lineHeight + 4));
+            total += font.lineHeight + 20;
+        }
+
+        void toggle(String label, boolean on, Consumer<Boolean> setter) {
+            var row = row(label, () -> {});
+            row.switchValue = on;
+            row.action = () -> {
+                row.switchValue = !row.switchValue;
+                setter.accept(row.switchValue);
+            };
+        }
+
+        MenuRow row(String label, Runnable action) { return addRow(label, "", null, action); }
+
+        MenuRow branch(String label, String detail, Section section, Runnable action) {
+            var row = addRow(label, detail, section, action);
+            triggers.put(section, row);
+            return row;
+        }
+
+        private MenuRow addRow(String label, String detail, Section section, Runnable action) {
+            var row = new MenuRow(label, detail, section, action);
+            row.setWidth(Math.max(1, width - 2 * PAD - 3));
+            int labelWidth = row.getWidth() - (section == null ? 4 : 18);
+            if (font.width(label) > labelWidth || font.width(detail) > labelWidth)
+                row.setTooltip(Tooltip.create(Component.literal(detail.isEmpty() ? label : label + "\n" + detail)));
+            rows.add(new Row(null, total, TEXT, row, PAD, total));
+            total += detail.isEmpty() ? ROW : 2 * font.lineHeight + 7;
+            return row;
+        }
+
+        void header(String label, Runnable onClose) {
+            title = MenuAccent.heading(trim(label, width - 26));
+            closeButton = new MenuRow("×", "", null, onClose);
+            closeButton.setWidth(14);
+        }
+
+        void removeAction(String label, Runnable action) {
+            remove = new MenuRow(label, "", null, action);
+            remove.footerStyle = 1;
+        }
+
+        private int actionHeight() {
+            return done == null ? 0 : (remove != null && width < 144 ? 2 * ROW + 4 : ROW + 2);
+        }
+
+        MenuRow footer(String primary, Runnable confirm, String secondary, Runnable cancel) {
+            done = new MenuRow(primary, "", null, confirm);
+            back = new MenuRow(secondary, "", null, cancel);
+            done.footerStyle = 3;
+            back.footerStyle = 2;
+            return done;
+        }
+
+        private int fixedHeight() {
+            return 2 * PAD + (title == null ? 0 : ROW) + actionHeight() + (filterBox == null ? 0 : ROW + 2);
+        }
+
+        int windowHeight(int maximum) {
+            return Math.max(1, Math.min(Math.min(total + fixedHeight(), maximum), screenHeight - 2 * MARGIN));
+        }
+
+        void attach(Pane parent, Section section, int maxHeight, boolean animate) {
+            attach(parent, section, maxHeight, windowHeight(maxHeight), animate);
+        }
+
+        void attach(Pane parent, Section section, int maxHeight, int preferredHeight, boolean animate) {
+            var anchor = triggers.get(section);
+            int height = windowHeight(maxHeight);
+            int anchorY = Math.clamp(anchor.getY(), parent.contentTop(), Math.max(parent.contentTop(), parent.contentBottom() - ROW));
+            boolean above = ConstructorDropList.preferAbove(preferredHeight, anchorY + ROW - MARGIN, screenHeight - MARGIN - anchorY);
+            int x = sideX(parent.bounds, width, parent.direction);
+            direction = x >= parent.bounds.x() ? 1 : -1;
+            filterAbove = !above;
+            revealCenter = anchorY + ROW / 2;
+            revealedAt = animate ? transitions.getOrDefault(section, 0L) : 0;
+            anchor.arrowDirection = direction;
+            place(x, above ? anchorY + ROW - height : anchorY, height);
+            if (revealedAt == REVEAL_ON_LAYOUT) {
+                revealedAt = System.nanoTime();
+                transitions.put(section, revealedAt);
+            }
+            panes.add(this);
+        }
+
+        void place(int x, int y, int height) {
+            if (direction == 0) direction = TargetEditor.this.direction;
+            bounds = new Rect(clampX(x, width), clampY(y, height), width, height);
+            for (var row : rows) {
+                if (row.control() instanceof MenuRow branch && branch.section != null)
+                    branch.arrowDirection = direction;
+            }
+            fixedTop = PAD + (title == null ? 0 : ROW) + (filterBox != null && filterAbove ? ROW + 2 : 0);
+            fixedBottom = PAD + actionHeight() + (filterBox != null && !filterAbove ? ROW + 2 : 0);
+            scrollTo(scroll);
+            if (closeButton != null) {
+                closeButton.setX(bounds.right() - 18);
+                closeButton.setY(bounds.y() + 2);
+            }
+            if (filterBox != null) {
+                filterBox.setWidth(Math.max(1, width - 2 * PAD));
+                filterBox.setX(bounds.x() + PAD);
+                filterBox.setY(filterAbove ? bounds.y() + PAD + ROW : bounds.bottom() - PAD - ROW);
+            }
+            if (done != null) {
+                int left = bounds.x() + PAD, right = bounds.right() - PAD;
+                int yButton = bounds.bottom() - PAD - ROW;
+                boolean stacked = remove != null && width < 144;
+                int columns = remove != null && !stacked ? 3 : 2;
+                int buttonWidth = Math.max(1, (right - left - 3 * (columns - 1)) / columns);
+                positionAction(done, right - buttonWidth, yButton, buttonWidth);
+                positionAction(back, right - 2 * buttonWidth - 3, yButton, buttonWidth);
+                if (remove != null) positionAction(remove, left, stacked ? yButton - ROW - 2 : yButton,
+                        stacked ? Math.max(1, right - left) : buttonWidth);
+            }
+            var widgets = new ArrayList<AbstractWidget>(5);
+            if (closeButton != null) widgets.add(closeButton);
+            if (filterBox != null) widgets.add(filterBox);
+            if (remove != null) widgets.add(remove);
+            if (done != null) { widgets.add(back); widgets.add(done); }
+            fixedWidgets = List.copyOf(widgets);
+        }
+
+        private void positionAction(MenuRow button, int x, int y, int w) {
+            button.setX(x);
+            button.setY(y);
+            button.setWidth(w);
+            button.setTooltip(font.width(button.getMessage()) > w - 4 ? Tooltip.create(button.getMessage()) : null);
+        }
+
+        int contentTop() { return bounds.y() + fixedTop; }
+        int contentBottom() { return Math.max(contentTop(), bounds.bottom() - fixedBottom); }
+        int viewportHeight() { return contentBottom() - contentTop(); }
+        Rect contentBounds() { return new Rect(bounds.x(), contentTop(), bounds.w(), viewportHeight()); }
+        int maxScroll() { return Math.max(0, total - viewportHeight()); }
+
+        void scrollTo(int value) {
+            scroll = Math.clamp(value, 0, maxScroll());
+            for (var row : rows) if (row.control() != null) {
+                row.control().setX(bounds.x() + row.controlX());
+                row.control().setY(contentTop() + row.controlY() - scroll);
+            }
+        }
+
+        int thumbHeight() { return Math.min(viewportHeight(), Math.max(8, viewportHeight() * viewportHeight() / Math.max(1, total))); }
+        int thumbTop() { return contentTop() + (viewportHeight() - thumbHeight()) * scroll / Math.max(1, maxScroll()); }
+
+        boolean pickScrollbar(double x, double y) {
+            if (maxScroll() == 0 || x < bounds.right() - 5 || y < contentTop() || y >= contentBottom()) return false;
+            thumbGrab = (int)y - thumbTop();
+            if (thumbGrab < 0 || thumbGrab >= thumbHeight()) {
+                thumbGrab = thumbHeight() / 2;
+                dragScrollbar(y);
+            }
+            return true;
+        }
+
+        void dragScrollbar(double y) {
+            int travel = viewportHeight() - thumbHeight();
+            if (travel > 0) scrollTo((int)Math.round((y - contentTop() - thumbGrab) * maxScroll() / travel));
+        }
+
+        Rect visible() { return visible(System.nanoTime()); }
+
+        Rect visible(long now) {
+            if (revealedAt == 0) return bounds;
+            double elapsed = Math.clamp((now - revealedAt) / (double) ANIMATION, 0, 1);
+            if (elapsed == 1) return bounds;
+            double remaining = 1 - elapsed;
+            double progress = 1 - remaining * remaining * remaining;
+            int startWidth = Math.min(20, width);
+            int startHeight = Math.min(ROW, bounds.h());
+            int startX = direction > 0 ? bounds.x() : bounds.right() - startWidth;
+            int startY = Math.clamp(revealCenter - startHeight / 2, bounds.y(), bounds.bottom() - startHeight);
+            var origin = new ScreenRectangle(startX, startY, startWidth, startHeight);
+            var mask = TargetTileLayer.reveal(bounds.screenRect(), origin, progress);
+            return new Rect(mask.left(), mask.top(), mask.width(), mask.height());
+        }
+
+        AbstractWidget widgetAt(double x, double y) {
+            for (var widget : fixedWidgets) if (widget.active && widget.isMouseOver(x, y)) return widget;
+            if (y >= contentTop() && y < contentBottom())
+                for (var row : rows) if (row.control() != null && row.control().active && row.control().isMouseOver(x, y))
+                    return row.control();
+            return null;
+        }
+
+        void visibleControls(List<AbstractWidget> output) {
+            var mask = visible();
+            for (var widget : fixedWidgets)
+                if (widget.active && mask.intersects(widget)) output.add(widget);
+            var content = contentBounds();
+            for (var row : rows) {
+                var widget = row.control();
+                if (widget != null && widget.active && content.intersects(widget) && mask.intersects(widget))
+                    output.add(widget);
+            }
+        }
+
+        void draw(GuiGraphicsExtractor g, Rect mask, int mx, int my, float tick) {
+            g.nextStratum();
+            g.fill(mask.x() - 1, mask.y() - 1, mask.right() + 1, mask.bottom() + 1, EDGE);
+            g.fill(mask.x(), mask.y(), mask.right(), mask.bottom(), BACKGROUND);
+            boolean hovered = mask.hits(mx, my);
+            int pointerX = hovered ? mx : -1, pointerY = hovered ? my : -1;
+            TargetTileLayer.clip(g, mask.screenRect(), () -> {
+                if (title != null)
+                    g.text(font, title, bounds.x() + PAD, bounds.y() + PAD, 0xFFFFFFFF);
+                drawRows(g, pointerX, pointerY, tick);
+                for (var widget : fixedWidgets)
+                    widget.extractRenderState(g, pointerX, pointerY, tick);
+            });
+        }
+
+        private void drawRows(GuiGraphicsExtractor g, int mx, int my, float tick) {
+            var content = contentBounds();
+            if (content.h() == 0) return;
+            boolean hovered = content.hits(mx, my);
+            TargetTileLayer.clip(g, content.screenRect(), () -> {
+                for (var row : rows) {
+                    int y = content.y() + row.offset() - scroll;
+                    int extra = row.control() == null ? ROW : row.controlY() - row.offset() + row.control().getHeight();
+                    if (y + extra <= content.y()) continue;
+                    if (y >= content.bottom()) break;
+                    if (row.label() != null)
+                        g.text(font, row.label(), bounds.x() + PAD, y, row.labelColor());
+                    if (row.control() != null)
+                        row.control().extractRenderState(g, hovered ? mx : -1, hovered ? my : -1, tick);
+                }
+                if (maxScroll() > 0) {
+                    int top = thumbTop();
+                    g.fill(bounds.right() - 4, top, bounds.right() - 1, top + thumbHeight(), 0xFFAFAFAF);
+                }
+            });
+        }
+    }
+
+    private final class MenuRow extends AbstractWidget {
+        private final String title, detail;
+        private final Section section;
+        private Runnable action;
+        private Boolean switchValue;
+        private int footerStyle;
+        private int arrowDirection;
+
+        MenuRow(String title, String detail, Section section, Runnable action) {
+            super(0, 0, 1, detail.isEmpty() ? ROW : 2 * font.lineHeight + 7, Component.literal(title));
+            this.title = title;
+            this.detail = detail;
+            this.section = section;
+            this.action = action;
+            arrowDirection = direction;
+        }
+
+        @Override public void onClick(MouseButtonEvent event, boolean dbl) { action.run(); }
+        @Override public boolean keyPressed(KeyEvent event) {
+            if (!active || !event.isSelection()) return false;
+            action.run();
+            return true;
+        }
+
+        @Override protected void extractWidgetRenderState(GuiGraphicsExtractor g, int mx, int my, float tick) {
+            int x = getX(), y = getY(), width = getWidth();
+            if (active && (isHoveredOrFocused() || isMouseOver(mx, my))) g.fill(x, y, x + width, y + getHeight(), 0xFF3A3A3A);
+            int color = active ? TEXT : 0xFF919191;
+            int labelWidth = width - (section != null || switchValue != null ? 20 : 4);
+            int labelX = x + 2;
+            if (footerStyle != 0) {
+                int border = footerStyle == 3 ? 0xFF9E8B69 : footerStyle == 1 ? 0xFF886359 : 0xFF66645F;
+                TargetTileLayer.button(g, x, y, width, getHeight(), active, isHoveredOrFocused(), border);
+                g.centeredText(font, trim(title, labelWidth), x + width / 2, y + 4, color);
+            } else {
+                if (!active && switchValue == null) TargetTileLayer.button(g, x, y, width, getHeight(), false, false, 0xFFB385E5);
+                g.text(font, trim(title, labelWidth), labelX, y + 3, color);
+            }
+            if (!detail.isEmpty()) g.text(font, trim(detail, labelWidth), labelX, y + font.lineHeight + 4, 0xFFBABABA);
+            if (switchValue != null) {
+                TargetTileLayer.toggle(g, x + width - 15, y + 2, 12, 12, switchValue, isHoveredOrFocused(), active);
+            }
+            handleCursor(g);
+            if (section != null)
+                drawBranch(g, section, x + width - 7, y + getHeight() / 2, arrowDirection, color);
+        }
+
+        @Override protected void updateWidgetNarration(NarrationElementOutput output) {
+            output.add(NarratedElementType.TITLE, getMessage());
+        }
+    }
+
+
+
     private Value validate() {
         if (apply == null) return null;
         try {
@@ -312,10 +1076,6 @@ final class TargetEditor {
         draft.configure(target, value.minimum(), value.maximum(), value.countMode(), value.quantity(),
                 value.loot(), value.pinned(), value.tags());
         return true;
-    }
-
-    private void commit() {
-        if (applyToDraft()) close.run();
     }
 
     private Value edited() {
@@ -361,55 +1121,4 @@ final class TargetEditor {
         return validate() != null;
     }
 
-    void pauseInput(){capture=null;if(open!=null)open.close();}
-    private int contentBottom(){return bottom-52;}
-    private int maxScroll(){return Math.max(0,total-(contentBottom()-y));}
-    private void layout() {
-        scroll=Math.max(0,Math.min(maxScroll(),scroll));
-        for(var row:rows)if(row.widget()!=null&&row.offset()>=0) {
-            var widget=row.widget();widget.setX(x+(row.height()==-24?width-30:0));
-            widget.setY(y+row.offset()-scroll+(row.label().isEmpty()?0:font.split(Component.literal(row.label()),width-8).size()*font.lineHeight+4));
-            widget.visible=widget.getY()+widget.getHeight()>y&&widget.getY()<contentBottom();
-        }
-    }
-    private int popupHeight(){return Math.max(20,contentBottom()-open.getY()-20);}
-    private void open(ConstructorDropList list) {
-        if(open!=null&&open!=list)open.close();open=list;
-        int over=list.getY()+80-contentBottom();if(over>0){scroll=Math.min(maxScroll(),scroll+over);layout();}
-    }
-    boolean click(MouseButtonEvent e,boolean keyboard) {
-        if(open!=null&&open.isOpen()) {
-            if(open.thumbHit((float)e.x(),(float)e.y(),popupHeight())){open.beginPopupDrag((float)e.y(),popupHeight());return true;}
-            if(open.popupHit((float)e.x(),(float)e.y(),popupHeight())){open.handlePopupClick((float)e.x(),(float)e.y(),popupHeight());return true;}
-            if(open.isMouseOver(e.x(),e.y())){open.close();return true;}open.close();
-        }
-        if(e.x()<x||e.x()>=x+width||e.y()<y||e.y()>=bottom)return false;
-        for(var row:rows)if(row.widget()!=null&&row.widget().visible&&row.widget().isMouseOver(e.x(),e.y())) {
-            if(e.y()>=contentBottom()&&row.offset()>=0)continue;
-            if(focused!=null)focused.setFocused(false);focused=row.widget();capture=focused;focused.setFocused(true);return focused.mouseClicked(e,keyboard);
-        }
-        return true;
-    }
-    boolean drag(MouseButtonEvent e,double dx,double dy){if(open!=null&&open.isPopupDrag()){open.dragPopupTo((float)e.y(),popupHeight());return true;}return capture!=null&&capture.mouseDragged(e,dx,dy);}
-    void release(MouseButtonEvent e){if(open!=null)open.endPopupDrag();if(capture!=null){capture.mouseReleased(e);capture=null;}}
-    boolean scroll(double mx,double my,double dy) {
-        if(open!=null&&open.isOpen()&&open.popupHit((float)mx,(float)my,popupHeight())){open.scrollPopup((float)dy,popupHeight());return true;}
-        if(mx<x||mx>=x+width||my<y||my>=contentBottom())return false;
-        if(open!=null)open.close();scroll-=(int)(dy*28);layout();return true;
-    }
-    boolean key(KeyEvent e){if(open!=null&&open.isOpen())return open.keyPressed(e);if(e.isEscape()){guard.accept(close);return true;}return focused!=null&&focused.keyPressed(e);}
-    void draw(GuiGraphicsExtractor g,int mx,int my,float delta) {
-        int hy=headerY;for(var line:header){g.text(font,line,x,hy,0xFFFFDF92);hy+=font.lineHeight;}
-        g.enableScissor(x,y,x+width,contentBottom());
-        for(var row:rows) {
-            if(row.offset()<0)continue;
-            int ry=y+row.offset()-scroll;if(ry+Math.max(24,row.height())<=y||ry>=contentBottom())continue;
-            int lineY=ry+2;for(var line:font.split(Component.literal(row.label()),width-8)){g.text(font,line,x,lineY,row.widget()==null?0xFFFFDF92:0xFFFFFFFF);lineY+=font.lineHeight;}
-            if(row.widget()!=null&&row.widget().visible)row.widget().extractRenderState(g,mx,my,delta);
-        }
-        g.disableScissor();
-        for(var row:rows)if(row.offset()<0)row.widget().extractRenderState(g,mx,my,delta);
-        if(maxScroll()>0){int h=contentBottom()-y,th=Math.max(15,h*h/Math.max(1,total)),ty=y+(int)((h-th)*scroll/(double)maxScroll());g.fill(x+width-3,y,x+width,contentBottom(),0x55000000);g.fill(x+width-3,ty,x+width,ty+th,0xAAFFFFFF);}
-    }
-    void popup(GuiGraphicsExtractor g,int mx,int my){if(open!=null&&open.isOpen())open.drawPopup(g,mx,my,popupHeight(),1);}
 }

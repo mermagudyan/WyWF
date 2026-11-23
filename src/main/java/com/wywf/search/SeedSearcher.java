@@ -17,40 +17,72 @@ public final class SeedSearcher {
     private final BiomeChecker        biomeChecker;
     private final KeywordDictionary   dictionary;
 
-    private volatile ExecutorService        pool;
-    private volatile List<Future<?>>        futures = List.of();
-    private volatile AtomicBoolean          running = new AtomicBoolean(false);
-    private volatile boolean               cancelledByUser = false;
-    private final AtomicLong                globalSeedCursor = new AtomicLong(0);
-
-    private final SearchProgress progress = new SearchProgress();
-    private volatile SearchConfig activeConfig;
-    private volatile CandidateStream stream;
-    public SearchResult pollCandidate(){var input=stream;return input==null?null:input.poll();}
-    public boolean waitingForVerification(){var input=stream;return input!=null&&input.full();}
-    public int queuedCandidates(){var input=stream;return input==null?candidates.size():input.size();}
-    public void verificationLoad(boolean active, boolean backedUp) {
-        var input = stream;
-        var cfg = activeConfig;
-        if (input != null && cfg != null)
-            input.workers(active ? SearchScheduling.of(cfg).workers() : cfg.resolveThreadCount(), backedUp);
-    }
-    public int activeWorkers(){var input=stream;return input==null?progress.snapshot().threads():Math.min(input.workers(),progress.snapshot().threads());}
-
-    private final List<SearchResult> candidates = Collections.synchronizedList(new ArrayList<>());
-
-    private volatile SearchDiagnostics diagnostics=new SearchDiagnostics();
-    public SearchDiagnostics diagnostics(){return diagnostics;}
-    public boolean verifyCandidate(ParsedQuery query,SearchConfig config,SearchResult result,java.util.function.BooleanSupplier cancelled){
-        CubiomesBridge.setThreadMode(config.nativeMode());
-        try{return !DeepVerifier.survivors(contextFactory,structureChecker,query.estimate(),config,List.of(result),config.biomeCheckRadiusChunks(),cancelled).isEmpty();}
-        finally{CubiomesBridge.clearThreadMode();CubiomesBridge.destroyCurrentGenerator();}
-    }
-    private volatile String stopReason;
+    private ExecutorService pool;
+    private volatile RunState state = new RunState();
     private final AtomicLong revision = new AtomicLong();
-    private volatile Set<Long> batchSeeds = Set.of();
 
-    public Set<Long> batchSeeds() { return batchSeeds; }
+    private static final class RunState {
+        final AtomicBoolean running = new AtomicBoolean();
+        final AtomicLong cursor = new AtomicLong();
+        final SearchProgress progress = new SearchProgress();
+        final List<SearchResult> candidates = Collections.synchronizedList(new ArrayList<>());
+        final SearchDiagnostics diagnostics = new SearchDiagnostics();
+        volatile SearchConfig config;
+        volatile CandidateStream stream;
+        volatile boolean cancelledByUser;
+        volatile String stopReason;
+        volatile Set<Long> batchSeeds = Set.of();
+    }
+
+    public SearchResult pollCandidate() {
+        var input = state.stream;
+        return input == null ? null : input.poll();
+    }
+
+    public boolean waitingForVerification() {
+        var input = state.stream;
+        return input != null && input.full();
+    }
+
+    public int queuedCandidates() {
+        var current = state;
+        var input = current.stream;
+        return input == null ? current.candidates.size() : input.size();
+    }
+
+    public void verificationLoad(boolean active, boolean backedUp) {
+        var current = state;
+        var input = current.stream;
+        var cfg = current.config;
+        if (input != null && cfg != null) {
+            int budget = MapBackground.cpuAllowance(cfg.resolveThreadCount());
+            if (active) budget = Math.min(budget, SearchScheduling.of(cfg).workers());
+            input.workers(budget, backedUp);
+        }
+    }
+
+    public int activeWorkers() {
+        var current = state;
+        int active = current.progress.snapshot().threads();
+        return current.stream == null ? active : Math.min(current.stream.workers(), active);
+    }
+
+    public SearchDiagnostics diagnostics() { return state.diagnostics; }
+
+    public boolean verifyCandidate(ParsedQuery query, SearchConfig config, SearchResult result,
+                                   java.util.function.BooleanSupplier cancelled) {
+        CubiomesBridge.setThreadMode(config.nativeMode());
+        var checkedQuery = config.serverVerification() ? query.estimate() : query;
+        try {
+            return !DeepVerifier.survivors(contextFactory, structureChecker, checkedQuery, config,
+                    List.of(result), config.biomeCheckRadiusChunks(), cancelled).isEmpty();
+        } finally {
+            CubiomesBridge.clearThreadMode();
+            CubiomesBridge.destroyCurrentGenerator();
+        }
+    }
+
+    public Set<Long> batchSeeds() { return state.batchSeeds; }
 
     public SeedSearcher(WorldContextFactory contextFactory, KeywordDictionary dictionary) {
         this.contextFactory   = contextFactory;
@@ -59,13 +91,13 @@ public final class SeedSearcher {
         this.biomeChecker     = new VanillaBiomeChecker();
     }
 
-    public SearchProgress progress() { return progress; }
+    public SearchProgress progress() { return state.progress; }
 
-    public List<SearchResult> candidates() { return candidates; }
+    public List<SearchResult> candidates() { return state.candidates; }
 
-    public boolean isRunning() { return running.get(); }
+    public boolean isRunning() { return state.running.get(); }
 
-    public String stopReason() { return stopReason; }
+    public String stopReason() { return state.stopReason; }
 
     public synchronized void start(ParsedQuery rawQuery, SearchConfig config, Consumer<SearchResult> onFound) {
         start(rawQuery, config, new SearchRun(), onFound);
@@ -78,18 +110,25 @@ public final class SeedSearcher {
         start(query,config,run,done,false);
     }
     private synchronized void start(ParsedQuery rawQuery,SearchConfig config,SearchRun run,Consumer<SearchResult> onFound,boolean denseAtEnd){
-        if(running.get())throw new IllegalStateException("Search already running");
-        diagnostics=new SearchDiagnostics();
-        final CandidateStream requestStream=denseAtEnd?null:new CandidateStream(SearchScheduling.of(config).rawCapacity(), Math.min(2, config.resolveThreadCount()));
-        stream=requestStream;
-        if(rawQuery.place()!=null){startPlace(rawQuery,config,run,onFound);return;}
+        if (isRunning()) throw new IllegalStateException("Search already running");
+        final long request = revision.incrementAndGet();
+        var current = new RunState();
+        var running = current.running;
+        var progress = current.progress;
+        var candidates = current.candidates;
+        final CandidateStream requestStream = denseAtEnd ? null
+                : new CandidateStream(SearchScheduling.of(config).rawCapacity(), Math.min(2, config.resolveThreadCount()));
+        current.stream = requestStream;
+        state = current;
+        if (rawQuery.place() != null) {
+            startPlace(current, request, rawQuery, config.copy(), run, onFound);
+            return;
+        }
         Set<Long> excluded = run.excluded();
         long remainingTime = run.remainingTimeMs(config);
         long remainingSeeds = run.remainingSeeds(config);
-        batchSeeds = Set.of();
-        if (running.get()) throw new IllegalStateException("Search already running");
-
-        ParsedQuery query = filterToAvailable(rawQuery).estimate();
+        var available = filterToAvailable(rawQuery);
+        ParsedQuery query = config.serverVerification() ? available.estimate() : available;
 
         if (query.isEmpty()) {
             if (WyWFDebug.ENABLED) LOGGER.info("No searchable terms in query \"{}\" — nothing to search, aborting", rawQuery.raw());
@@ -102,20 +141,10 @@ public final class SeedSearcher {
             return;
         }
 
-        final long request = revision.incrementAndGet();
-        candidates.clear();
-
-        // Fresh flag per search: a stale worker from a cancelled search holds the
-        // OLD instance (false) and dies, instead of resurrecting against this
-        // search's cursor/progress when start() flips a shared flag to true.
-        running = new AtomicBoolean(false);
-
         final SearchConfig searchCfg = config.copy();
         int threadCount = searchCfg.resolveThreadCount();
-        activeConfig = searchCfg;if(requestStream!=null)requestStream.workers(threadCount);
-        cancelledByUser = false;
-        stopReason = null;
-        globalSeedCursor.set(0);
+        current.config = searchCfg;
+        if (requestStream != null) requestStream.workers(MapBackground.cpuAllowance(threadCount));
         running.set(true);
         progress.start(threadCount);
         SeedValidator.resetSpawnStats();
@@ -195,13 +224,14 @@ public final class SeedSearcher {
             SearchWorker worker = new SearchWorker(
                     i, threadCount, query,
                     contextFactory, validator, progress,
-                    running, globalSeedCursor, startOffset, candidates,
-                    config
+                    running, current.cursor, startOffset, candidates,
+                    searchCfg
             );
-            worker.exclude(excluded);worker.stream(requestStream);
+            worker.exclude(excluded);
+            worker.stream(requestStream);
             fs.add(pool.submit(() -> {
                 try {
-                    SearchDiagnostics.bind(diagnostics);
+                    SearchDiagnostics.bind(current.diagnostics);
                     worker.run();
                 } finally {
                     SearchDiagnostics.bind(null);
@@ -209,7 +239,6 @@ public final class SeedSearcher {
                 }
             }));
         }
-        futures = fs;
 
         Thread monitor = new Thread(() -> {
             long lastChecked = 0;
@@ -245,18 +274,18 @@ public final class SeedSearcher {
                     lastTarget = target;
                 }
                 if (requestStream==null && !candidates.isEmpty() && candidates.size() >= target) {
-                    stopReason = "collected " + candidates.size() + " candidate(s) (target " + target + ")";
-                    if (WyWFDebug.ENABLED) LOGGER.warn("[SeedSearcher] Stopping: {}", stopReason);
+                    current.stopReason = "collected " + candidates.size() + " candidate(s) (target " + target + ")";
+                    if (WyWFDebug.ENABLED) LOGGER.warn("[SeedSearcher] Stopping: {}", current.stopReason);
                     requestRunning.set(false);
                 }
                 if (timeLimitMs > 0 && (now - searchStartTime) >= timeLimitMs) {
-                    stopReason = "time limit reached (" + searchCfg.timeLimitMinutes() + " min)";
-                    if (WyWFDebug.ENABLED) LOGGER.warn("[SeedSearcher] Stopping: {}", stopReason);
+                    current.stopReason = "time limit reached (" + searchCfg.timeLimitMinutes() + " min)";
+                    if (WyWFDebug.ENABLED) LOGGER.warn("[SeedSearcher] Stopping: {}", current.stopReason);
                     requestRunning.set(false);
                 }
                 if (s.checkedSeeds() >= maxSeeds) {
-                    stopReason = "seed limit reached (" + formatNumber(maxSeeds) + " seeds)";
-                    if (WyWFDebug.ENABLED) LOGGER.warn("[SeedSearcher] Stopping: {}", stopReason);
+                    current.stopReason = "seed limit reached (" + formatNumber(maxSeeds) + " seeds)";
+                    if (WyWFDebug.ENABLED) LOGGER.warn("[SeedSearcher] Stopping: {}", current.stopReason);
                     requestRunning.set(false);
                 }
                 lastChecked = s.checkedSeeds();
@@ -285,8 +314,9 @@ public final class SeedSearcher {
             progress.finish();
 
             if(requestStream!=null){
-                requestStream.finish();batchSeeds=Set.of();
-                if(!cancelledByUser&&revision.get()==request)onFound.accept(null);
+                requestStream.finish();
+                current.batchSeeds=Set.of();
+                if(!current.cancelledByUser&&revision.get()==request)onFound.accept(null);
                 return;
             }
             SearchProgress.Snapshot snap;
@@ -300,18 +330,18 @@ public final class SeedSearcher {
 
             List<SearchResult> snapshot;
             synchronized (candidates) { snapshot = List.copyOf(candidates); }
-            if (cancelledByUser || revision.get() != request) return;
-            batchSeeds = Set.copyOf(snapshot.stream().map(result -> result.seed).toList());
-            if (stopReason == null && !snapshot.isEmpty()) stopReason = "collected " + snapshot.size() + " candidate(s)";
+            if (current.cancelledByUser || revision.get() != request) return;
+            current.batchSeeds = Set.copyOf(snapshot.stream().map(result -> result.seed).toList());
+            if (current.stopReason == null && !snapshot.isEmpty()) current.stopReason = "collected " + snapshot.size() + " candidate(s)";
             List<SearchResult> survivors=denseAtEnd ? DeepVerifier.survivors(contextFactory,structureChecker,query,searchCfg,
-                    snapshot,searchCfg.biomeCheckRadiusChunks(),()->cancelledByUser||revision.get()!=request):snapshot;
-            if (cancelledByUser || revision.get() != request) return;
+                    snapshot,searchCfg.biomeCheckRadiusChunks(),()->current.cancelledByUser||revision.get()!=request):snapshot;
+            if (current.cancelledByUser || revision.get() != request) return;
             synchronized (candidates) { candidates.clear(); candidates.addAll(survivors); }
             SearchResult chosen = survivors.isEmpty() ? null : searchCfg.sortCandidatesByDistance()
                     ? survivors.stream().min(Comparator.comparingDouble(SearchResult::distanceToStructure)).orElseThrow()
                     : survivors.getFirst();
             if (chosen != null) {
-                String reason = stopReason != null ? stopReason
+                String reason = current.stopReason != null ? current.stopReason
                         : (snap.finished() ? "search complete" : "candidate found");
                 SearchResult finalResult = new SearchResult(
                         chosen.seed, chosen.centerX, chosen.centerZ,
@@ -336,16 +366,16 @@ public final class SeedSearcher {
                     LOGGER.info("===== Search finished: seed {} chosen from {} candidate(s) after {} checked seeds ({} ms, ~{} seeds/sec) native={} =====",
                             chosen.seed, poolSize, snap.checkedSeeds(), snap.elapsedMs(),
                             snap.elapsedMs() > 0 ? Math.round(snap.checkedSeeds() * 1000.0 / snap.elapsedMs()) : 0,
-                            activeConfig != null ? activeConfig.nativeMode() : "unknown");
+                            searchCfg.nativeMode());
                     LOGGER.info("  origin ({}, {}), distances: {}", chosen.centerX, chosen.centerZ, distInfo);
                 }
-                if (!cancelledByUser && revision.get() == request) onFound.accept(finalResult);
+                if (!current.cancelledByUser && revision.get() == request) onFound.accept(finalResult);
             } else {
                 if (WyWFDebug.ENABLED) LOGGER.warn("===== Search finished: no matching seed found. Checked {} seeds ({} ms, ~{} seeds/sec) native={} =====",
                         snap.checkedSeeds(), snap.elapsedMs(),
                         snap.elapsedMs() > 0 ? Math.round(snap.checkedSeeds() * 1000.0 / snap.elapsedMs()) : 0,
-                        activeConfig != null ? activeConfig.nativeMode() : "unknown");
-                if (!cancelledByUser && revision.get() == request) onFound.accept(null);
+                        searchCfg.nativeMode());
+                if (!current.cancelledByUser && revision.get() == request) onFound.accept(null);
             }
             CubiomesBridge.destroyCurrentGenerator();
         }, "WYWF-Search-Completion");
@@ -401,48 +431,67 @@ public final class SeedSearcher {
         return contextFactory.isStructureAvailable(id) || contextFactory.isStructureSetAvailable(id);
     }
 
-    private synchronized void startPlace(ParsedQuery original,SearchConfig config,SearchRun run,Consumer<SearchResult> done){
-        if(running.get())throw new IllegalStateException("Search already running");
-        long request=revision.incrementAndGet();var flag=new AtomicBoolean(true);running=flag;
-        cancelledByUser=false;candidates.clear();batchSeeds=Set.of();stopReason=null;progress.start(1);
-        activeConfig=config.copy();var place=original.place();var query=original.estimate();var input=stream;
+    private void startPlace(RunState current, long request, ParsedQuery original, SearchConfig config, SearchRun run, Consumer<SearchResult> done) {
+        var flag = current.running;
+        var candidates = current.candidates;
+        var progress = current.progress;
+        flag.set(true);
+        progress.start(1);
+        current.config = config;
+        var place=original.place();
+        var query = config.serverVerification() ? original.estimate() : original;
+        var input = current.stream;
         var task=new Thread(()->{
-            CubiomesBridge.setThreadMode(config.nativeMode());SearchDiagnostics.bind(diagnostics);
+            CubiomesBridge.setThreadMode(config.nativeMode());
+            SearchDiagnostics.bind(current.diagnostics);
             try{
                 var context=contextFactory.create(place.seed(),query.structures().contains("minecraft:stronghold"));
                 if(CubiomesBridge.isActive())CubiomesBridge.applySeed(place.seed());
                 var validator=new SeedValidator(structureChecker,biomeChecker,config.searchRadiusChunks(),config.biomeCheckRadiusChunks()).withQuery(query);
                 long started=System.currentTimeMillis(),limit=run.remainingSeeds(config),time=run.remainingTimeMs(config);
                 while(flag.get()&&revision.get()==request){
-                    if(progress.snapshot().checkedSeeds()>=limit||System.currentTimeMillis()-started>=time){stopReason="FTP search limit reached";break;}
-                    long index=run.nextPlace();if(index>=place.cells()){stopReason="FTP region exhausted";break;}
+                    if(progress.snapshot().checkedSeeds()>=limit||System.currentTimeMillis()-started>=time){current.stopReason="FTP search limit reached";break;}
+                    long index=run.nextPlace();if(index>=place.cells()){current.stopReason="FTP region exhausted";break;}
                     var p=place.position(index);if(!place.contains(p[0],p[1]))continue;
-                    var outcome=validator.validate(context,query,p[0],p[1]);progress.onSeedChecked();
+                    var outcome=validator.validate(context,query,p[0],p[1]);
+                    progress.onSeedChecked();
                     if(!outcome.accepted)progress.onSeedDiscarded();
                     if(outcome.accepted){
                         if(input!=null){input.put(outcome.result,()->!flag.get()||revision.get()!=request);continue;}
                         synchronized(candidates){candidates.add(outcome.result);}
-                        if(candidates.size()>=config.effectiveCandidateTarget(progress.snapshot().elapsedMs())){stopReason="collected "+candidates.size()+" FTP places";break;}}
+                        if(candidates.size()>=config.effectiveCandidateTarget(progress.snapshot().elapsedMs())){current.stopReason="collected "+candidates.size()+" FTP places";break;}}
                 }
-                if(cancelledByUser||revision.get()!=request)return;
-                flag.set(false);progress.finish();batchSeeds=Set.of(place.seed());if(input!=null)input.finish();
+                if(current.cancelledByUser||revision.get()!=request)return;
+                flag.set(false);
+                progress.finish();
+                current.batchSeeds=Set.of(place.seed());if(input!=null)input.finish();
                 done.accept(candidates.isEmpty()?null:candidates.getFirst());
             }catch(Throwable error){
                 if(WyWFDebug.ENABLED)LOGGER.warn("FTP search failed",error);
-                flag.set(false);progress.finish();if(input!=null)input.finish();stopReason="FTP could not evaluate this generator";
-                if(!cancelledByUser&&revision.get()==request)done.accept(null);
-            }finally{SearchDiagnostics.bind(null);CubiomesBridge.clearThreadMode();CubiomesBridge.destroyCurrentGenerator();}
-        },"WyWF-FindThisPlace");task.setDaemon(true);task.setPriority(Thread.MIN_PRIORITY);task.start();
+                flag.set(false);
+                progress.finish();if(input!=null)input.finish();current.stopReason="FTP could not evaluate this generator";
+                if(!current.cancelledByUser&&revision.get()==request)done.accept(null);
+            }finally{
+                SearchDiagnostics.bind(null);
+                CubiomesBridge.clearThreadMode();
+                CubiomesBridge.destroyCurrentGenerator();
+            }
+        },"WyWF-FindThisPlace");
+        task.setDaemon(true);
+        task.setPriority(Thread.MIN_PRIORITY);
+        task.start();
     }
     public long screenedSeeds() {
-        return globalSeedCursor.get();
+        return state.cursor.get();
     }
 
     public synchronized void cancel() {
         revision.incrementAndGet();
-        cancelledByUser = true;
-        running.set(false);var input=stream;if(input!=null)input.close();
-        progress.finish();
+        var current = state;
+        current.cancelledByUser = true;
+        current.running.set(false);
+        if (current.stream != null) current.stream.close();
+        current.progress.finish();
         if (WyWFDebug.ENABLED) LOGGER.warn("[SeedSearcher] Search cancelled by user");
         shutdownPool();
     }

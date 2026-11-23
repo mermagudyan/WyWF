@@ -47,7 +47,8 @@ public record StructureTags(boolean abandoned, String spawner, int eyesMin, int 
         return values.isEmpty()?"":" tags "+String.join(",",values);
     }
     public static StructureTags parse(String text){
-        var result=NONE;var seen=new HashSet<String>();
+        var result=NONE;
+        var seen=new HashSet<String>();
         for(String token:text.toLowerCase(Locale.ROOT).split(",",-1)){
             token=token.strip();
             String group=token.startsWith("eyes_")?"eyes":token.startsWith("spawner_")?"spawner":token;

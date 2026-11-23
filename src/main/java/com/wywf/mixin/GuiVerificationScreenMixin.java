@@ -10,7 +10,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(Gui.class)
 public abstract class GuiVerificationScreenMixin {
-    @Inject(method = "setScreen", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "setScreen", at = @At("HEAD"), cancellable = true, require = 0)
     private void wywf_keepSearchVisible(Screen screen, CallbackInfo ci) {
         if (PreviewScreenGuard.loading) ci.cancel();
     }

@@ -25,7 +25,8 @@ final class VanillaTags {
         if(tags.eyes()){
             boolean matched=false;
             for(var piece:start.getPieces())if(piece instanceof StrongholdPieces.PortalRoom){
-                var box=piece.getBoundingBox();generate(session,level,box);
+                var box=piece.getBoundingBox();
+                generate(session,level,box);
                 int frames=0,eyes=0;
                 for(var pos:BlockPos.betweenClosed(box.minX(),box.minY(),box.minZ(),box.maxX(),box.maxY(),box.maxZ())){
                     var state=level.getBlockState(pos);

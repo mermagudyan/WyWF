@@ -33,7 +33,10 @@ public final class ConfigStore {
         Path p = configPath();
         // Migrate legacy location if needed
         if (!Files.exists(p) && Files.exists(LEGACY_PATH)) {
-            try { Files.createDirectories(p.getParent()); Files.copy(LEGACY_PATH, p); } catch (IOException ignored) {}
+            try {
+                Files.createDirectories(p.getParent());
+                Files.copy(LEGACY_PATH, p);
+            } catch (IOException ignored) {}
         }
         if (!Files.exists(p)) return SearchConfig.defaults();
         try (Reader r = Files.newBufferedReader(p, StandardCharsets.UTF_8)) {
