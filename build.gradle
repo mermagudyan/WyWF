@@ -133,9 +133,11 @@ test {
 processResources {
     inputs.property "version", project.version
     inputs.property "mc_range", project.mc_range
+    inputs.property "min_loader_version", project.min_loader_version
 
     filesMatching("fabric.mod.json") {
-        expand "version": project.version, "mc_range": project.mc_range
+        expand "version": project.version, "mc_range": project.mc_range,
+                "min_loader_version": project.min_loader_version
     }
 }
 

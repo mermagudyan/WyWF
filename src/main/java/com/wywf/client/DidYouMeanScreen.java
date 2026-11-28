@@ -1,5 +1,6 @@
 package com.wywf.client;
 
+import dev.diylib.client.ui.DiyVanillaButton;
 import com.wywf.WYWFClient;
 import com.wywf.core.*;
 import net.minecraft.client.Minecraft;
@@ -59,12 +60,12 @@ public final class DidYouMeanScreen extends Screen {
         int buttonWidth = (panelWidth - 24 - 8) / 3;
         int x = (width - buttonWidth * 3 - 8) / 2;
         int y = panelY + panelHeight - 30;
-        addRenderableWidget(MenuButton.builder(MapTexts.label("spelling_use"), b -> accept.accept(corrected))
+        addRenderableWidget(DiyVanillaButton.builder(MapTexts.label("spelling_use"), b -> accept.accept(corrected))
                 .bounds(x, y, buttonWidth, 20).build());
-        Button unchanged = addRenderableWidget(MenuButton.builder(MapTexts.label("spelling_as_written"), b -> accept.accept(original))
+        Button unchanged = addRenderableWidget(DiyVanillaButton.builder(MapTexts.label("spelling_as_written"), b -> accept.accept(original))
                 .bounds(x + buttonWidth + 4, y, buttonWidth, 20).build());
         unchanged.active = canUseOriginal;
-        addRenderableWidget(MenuButton.builder(ResultTexts.label("back"), b -> onClose())
+        addRenderableWidget(DiyVanillaButton.builder(ResultTexts.label("back"), b -> onClose())
                 .bounds(x + 2 * (buttonWidth + 4), y, buttonWidth, 20).build());
     }
 

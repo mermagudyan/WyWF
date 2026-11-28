@@ -28,7 +28,7 @@ final class ReliefRaster {
     }
 
     private record PlacedQuad(float x, float y, float z, Quad shape, int direction) {}
-    private record ProjectedShape(PlacedQuad[] parts, int color) {}
+    private record ProjectedShape(PlacedQuad[] parts, PlacedQuad eye, int color) {}
 
 
     private record Quad(float ux, float uy, float vx, float vy, float uDepth, float vDepth,
@@ -49,6 +49,29 @@ final class ReliefRaster {
         private int[] opaque;
         private int[] probes;
         private int[] outlinePixels;
+        private byte[] eyeMask;
+        private int[] checkedFaces;
+        private boolean hasEye;
+
+        private void prepareEye(int size, int[] faces) {
+            if (checkedFaces != faces) {
+                checkedFaces = faces;
+                hasEye = false;
+                for (int index = 2; index < faces.length; index += 3) {
+                    if ((faces[index] & ReliefTile.FACE_TYPE) == ReliefTile.END_PORTAL_EYE) {
+                        hasEye = true;
+                        break;
+                    }
+                }
+            }
+            if (!hasEye) eyeMask = null;
+            else if (eyeMask == null || eyeMask.length != size) eyeMask = new byte[size];
+            else Arrays.fill(eyeMask, (byte) 0);
+        }
+
+        PortalEye.Pixels eyePixels(int width, int height) {
+            return PortalEye.capture(eyeMask, width, height);
+        }
 
         private void prepareProbes(int size, boolean outline) {
             if (!com.wywf.core.WyWFDebug.ENABLED && !outline) {
@@ -94,6 +117,8 @@ final class ReliefRaster {
     private final int[] pixels;
     private final float[] depth;
     private final int[] probes;
+    private final byte[] eyeMask;
+    private boolean drawingEye;
     private int currentFace = -1;
     private float[] overlayDepth;
     private int[] opaquePixels;
@@ -134,6 +159,7 @@ final class ReliefRaster {
         pixels = buffers.colors;
         depth = buffers.terrainDepth;
         probes = buffers.probes;
+        eyeMask = buffers.eyeMask;
     }
 
     static int[] draw(ReliefMesh mesh, int width, int height, double yaw, double pitch, double zoom,
@@ -175,6 +201,7 @@ final class ReliefRaster {
                       Buffers buffers, int workerLimit, Outline outline, java.util.function.BooleanSupplier cancelled) {
         buffers.resize(width * height);
         buffers.prepareProbes(width * height, outline != null);
+        buffers.prepareEye(width * height, mesh.faces());
         Arrays.fill(buffers.terrainDepth, Float.NEGATIVE_INFINITY);
         Arrays.fill(buffers.colors, fogColor);
         int bands = Math.clamp(workerLimit, 1, Math.min(MAX_WORKERS, height));
@@ -230,6 +257,16 @@ final class ReliefRaster {
             return (long)x << 32 | (z & 0xFFFFFFFFL);
         }
 
+        boolean intersectsChunk(int x, int z) {
+            return x <= anchor.maxX() && x + 15 >= anchor.minX() && z <= anchor.maxZ() && z + 15 >= anchor.minZ();
+        }
+
+        boolean matchesFace(int x, int y, int z, int color) {
+            int material = color & ReliefTile.FACE_TYPE;
+            return material != ReliefTile.WATER_FACE && !ReliefTile.plant(material)
+                    && color != ReliefTile.CAVE_SHADOW && material != ReliefTile.ICE_WATER_SHADOW && covers(x, y, z);
+        }
+
         private boolean covers(int x, int y, int z) {
             if (x < anchor.minX() || x > anchor.maxX() || z < anchor.minZ() || z > anchor.maxZ()) return false;
             if (anchor.bounds().isEmpty()) return y >= this.y - 4 && y <= this.y + 32;
@@ -260,10 +297,7 @@ final class ReliefRaster {
                 int face = index / 3;
                 if (classified[face] == 0) {
                     int cell = faces[index] / 6, wx = originX + cell % mesh.side(), wz = originZ + cell / mesh.side();
-                    int color = faces[index + 2], material = color & ReliefTile.FACE_TYPE;
-                    boolean solid = material != ReliefTile.WATER_FACE && !ReliefTile.plant(material)
-                            && color != ReliefTile.CAVE_SHADOW && material != ReliefTile.ICE_WATER_SHADOW;
-                    classified[face] = (byte)(solid && covers(wx, faces[index + 1], wz) ? 2 : 1);
+                    classified[face] = (byte)(matchesFace(wx, faces[index + 1], wz, faces[index + 2]) ? 2 : 1);
                 }
                 selected[px] = classified[face] == 2;
             }
@@ -409,7 +443,6 @@ final class ReliefRaster {
                         overlays.add(Float.floatToRawIntBits(haze));
                         continue;
                     }
-                    if (color == ReliefTile.CAVE_SHADOW && up.depth <= .38f) continue;
                     if (material == ReliefTile.ENTRANCE_FACE)
                         color = MenuAccent.mix(0xFF000000 | color, 0xFF181821,
                                 .83f * Math.clamp((up.depth - .38f) / .35f, 0, 1));
@@ -448,7 +481,21 @@ final class ReliefRaster {
         if (netherSlice && mesh.fogRim() != null) drawFogRim(mesh.fogRim(), side, mesh.minimum(), true);
     }
 
-    private static float shadow(ReliefMesh mesh, int cell, int y) {
+    static int pickFace(ReliefMesh mesh, int width, int height, int x, int y, double yaw, double pitch,
+                        double zoom, DimensionSpace dimension, boolean underRoof, int fog, float centerY,
+                        int span, double panX, double panY) {
+        var buffers = new Buffers();
+        buffers.resize((y + 1) * width);
+        buffers.prepareProbes((y + 1) * width, true);
+        Arrays.fill(buffers.terrainDepth, y * width, (y + 1) * width, Float.NEGATIVE_INFINITY);
+        Arrays.fill(buffers.colors, y * width, (y + 1) * width, fog);
+        new ReliefRaster(width, height, yaw, pitch, zoom, mesh.side(), span, centerY, fog,
+                underRoof ? NETHER_SLICE_HEIGHT_SCALE : 1, panX, panY, buffers, y, y + 1)
+                .drawBand(mesh, dimension, underRoof, 0, 0, null, buffers, () -> false);
+        return buffers.probes[y * width + x];
+    }
+
+    static float shadow(ReliefMesh mesh, int cell, int y) {
         return mesh.sunlight() == null ? 0 : Math.clamp((mesh.sunlight()[cell] - y - .35f) / 2, 0, 1);
     }
 
@@ -533,7 +580,8 @@ final class ReliefRaster {
     }
 
     private void face(int x, int y, int z, int direction, int color, float haze, float shadow, IceWaterFog iceFog) {
-        int lighting = (color & ReliefTile.FACE_TYPE) == ReliefTile.ICE_WATER_SHADOW ? -1 : direction;
+        int lighting = color == ReliefTile.CAVE_SHADOW || (color & ReliefTile.FACE_TYPE) == ReliefTile.ICE_WATER_SHADOW
+                ? -1 : direction;
         quad(x + (direction == ReliefMesh.EAST ? 1 : 0), y + (direction == ReliefMesh.TOP ? 1 : 0),
                 z + (direction == ReliefMesh.SOUTH ? 1 : 0), faceShapes[direction], color, haze, lighting, shadow, 0, iceFog);
     }
@@ -565,13 +613,25 @@ final class ReliefRaster {
             var geometry = ReliefShapes.get(id);
             var boxes = geometry.boxes();
             var parts = new java.util.ArrayList<PlacedQuad>(boxes.size() * 3);
-            for (var bounds : boxes)
-                box(parts, (float)bounds.minX, (float)bounds.minY, (float)bounds.minZ,
-                        (float)bounds.maxX, (float)bounds.maxY, (float)bounds.maxZ);
-            projected = new ProjectedShape(parts.toArray(PlacedQuad[]::new), geometry.color());
+            PlacedQuad eye = null;
+            for (var bounds : boxes) {
+                float x0 = (float) bounds.minX, y0 = (float) bounds.minY, z0 = (float) bounds.minZ;
+                float x1 = (float) bounds.maxX, y1 = (float) bounds.maxY, z1 = (float) bounds.maxZ;
+                int first = parts.size();
+                box(parts, x0, y0, z0, x1, y1, z1);
+                if ((id & ReliefTile.FACE_TYPE) == ReliefTile.END_PORTAL_EYE && y1 > 13f / 16 && visible(ReliefMesh.TOP))
+                    eye = parts.remove(first);
+            }
+            projected = new ProjectedShape(parts.toArray(PlacedQuad[]::new), eye, geometry.color());
             projectedShapes.put(id, projected);
         }
         drawParts(x, y, z, projected.parts, projected.color, haze, shadow);
+        var eye = projected.eye;
+        if (eye != null) {
+            drawingEye = true;
+            quad(x + eye.x, y + eye.y, z + eye.z, eye.shape, 0xFF111D29, haze, eye.direction, 0, 0);
+            drawingEye = false;
+        }
     }
 
     private void drawPlant(int x, int y, int z, int color, float haze, float shadow) {
@@ -690,6 +750,7 @@ final class ReliefRaster {
         int iceTint = underIce ? MenuAccent.mix(IceWaterFog.shadow(color), background, haze) : 0;
         boolean xWall = direction == ReliefMesh.WEST || direction == ReliefMesh.EAST;
         boolean zWall = direction == ReliefMesh.NORTH || direction == ReliefMesh.SOUTH;
+        byte eyeAlpha = drawingEye ? (byte) Math.round(255 * (1 - Math.clamp(haze, 0, 1))) : 0;
         boolean plantDetail = plant && scale >= 8 && shape.vDepth == up.depth;
         int berry = plantDetail && material == ReliefTile.BERRY_FACE ? MenuAccent.mix(0xFFBF4940, background, haze) : 0;
         for (int row = top; row <= bottom; row++) {
@@ -706,6 +767,7 @@ final class ReliefRaster {
                     if (plantDetail && (v > .80f && (u < .16f || u > .87f) || v > .94f && (u < .35f || u > .64f)))
                         continue;
                     overlayDepth[i] = d;
+                    if (eyeMask != null) eyeMask[i] = 0;
                     if (probes != null) probes[i] = currentFace;
                     if (plant) {
                         boolean berryPixel = berry != 0 && (v > .54f && v < .70f && u > .19f && u < .33f
@@ -729,6 +791,7 @@ final class ReliefRaster {
                     }
                 } else {
                     depth[i] = d;
+                    if (eyeMask != null) eyeMask[i] = eyeAlpha;
                     if (probes != null) probes[i] = currentFace;
                     pixels[i] = fill;
                 }

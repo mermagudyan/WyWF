@@ -323,20 +323,9 @@ public final class SearchWorker implements Runnable {
 
                     globalSeedCursor.incrementAndGet();
                     localChecked++;
-                    progress.onSeedChecked();
-                    logOutcome(seed, outcome);
-
-                    if (outcome.accepted) {
-                        reportFound(outcome.result, false);
-                        if (enoughCandidates()) return;
-                    }
+                    if (recordOutcome(seed, outcome)) return;
                 } catch (Throwable t) {
-                    globalSeedCursor.incrementAndGet();
-                    progress.onSeedDiscarded();
-                    if (FIRST_ERROR_LOGGED.compareAndSet(false, true)) {
-                        LOGGER.error("[thread {}] FIRST seed {} discarded due to error:", threadIndex, seed, t);
-                    }
-                    LOGGER.debug("[thread {}] seed {} discarded due to error: {}", threadIndex, seed, t.toString());
+                    discardOnError(seed, t);
                 }
             }
         }
@@ -398,20 +387,9 @@ public final class SearchWorker implements Runnable {
 
                 globalSeedCursor.incrementAndGet();
                 localChecked++;
-                progress.onSeedChecked();
-                logOutcome(seed, outcome);
-
-                if (outcome.accepted) {
-                    reportFound(outcome.result, false);
-                    if (enoughCandidates()) return;
-                }
+                if (recordOutcome(seed, outcome)) return;
             } catch (Throwable t) {
-                globalSeedCursor.incrementAndGet();
-                progress.onSeedDiscarded();
-                if (FIRST_ERROR_LOGGED.compareAndSet(false, true)) {
-                    LOGGER.error("[thread {}] FIRST seed {} discarded due to error:", threadIndex, seed, t);
-                }
-                LOGGER.debug("[thread {}] seed {} discarded due to error: {}", threadIndex, seed, t.toString());
+                discardOnError(seed, t);
             }
 
             long next = inner + step;
@@ -422,6 +400,23 @@ public final class SearchWorker implements Runnable {
             }
             inner = next;
         }
+    }
+
+    private boolean recordOutcome(long seed, SeedValidator.Outcome outcome) {
+        progress.onSeedChecked();
+        logOutcome(seed, outcome);
+        if (!outcome.accepted) return false;
+        reportFound(outcome.result, false);
+        return enoughCandidates();
+    }
+
+    private void discardOnError(long seed, Throwable error) {
+        globalSeedCursor.incrementAndGet();
+        progress.onSeedDiscarded();
+        if (FIRST_ERROR_LOGGED.compareAndSet(false, true)) {
+            LOGGER.error("[thread {}] FIRST seed {} discarded due to error:", threadIndex, seed, error);
+        }
+        LOGGER.debug("[thread {}] seed {} discarded due to error: {}", threadIndex, seed, error.toString());
     }
 
     // One context reused for spawn lookup and every term evaluation

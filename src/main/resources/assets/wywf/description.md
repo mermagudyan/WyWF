@@ -8,22 +8,6 @@ want, press Create, and the mod searches offline for a matching seed.
 
 ## Version compatibility
 
-| Minecraft version | 1.4.1 | 1.4.0 | 1.2.x | 1.1.x | 1.0.x |
-|-------------------|-------|-------|-------|-------|-------|
-| 1.16.5            | ❌    | ❌    | ❌    | ❌    | ❌    |
-| 1.17.1            | ❌    | ❌    | ❌    | ❌    | ❌    |
-| 1.18.2            | ❌    | ❌    | ❌    | ❌    | ❌    |
-| 1.19.2            | ❌    | ❌    | ❌    | ❌    | ❌    |
-| 1.20.1            | ❌    | ❌    | ❌    | ❌    | ❌    |
-| 1.20.4            | ❌    | ❌    | ❌    | ❌    | ❌    |
-| 1.21.1            | ✅    | ✅    | ❌    | ❌    | ❌    |
-| 1.21.5            | ✅    | ✅    | ❌    | ❌    | ❌    |
-| 1.21.11           | ✅    | ✅    | ❌    | ❌    | ❌    |
-| 26.1              | ✅    | ✅    | ✅    | ✅    | ✅    |
-| 26.1.2            | ✅    | ✅    | ✅    | ✅    | ✅    |
-| 26.2              | ✅    | ✅    | ✅    | ✅    | ✅    |
-| 26.3              | ✅    | ❌    | ❌    | ❌    | ❌    |
-
 ## How it works
 
 Type a description into the Seed field, for example:
@@ -95,6 +79,3 @@ Apache License 2.0.
 Fast native biome/structure math is based on
 [cubiomes by Cubitect](https://github.com/Cubitect/cubiomes),
 via the active fork by [xpple](https://github.com/xpple/cubiomes).
-The DLL ships **inside the mod** — nothing is downloaded at runtime.
-Build sources, the build script and SHA-256 hashes are published with
-each release for verification.

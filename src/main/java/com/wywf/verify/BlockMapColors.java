@@ -20,6 +20,7 @@ public final class BlockMapColors {
         if (!id.startsWith("minecraft:")) return fallback;
         return switch (id) {
             case "minecraft:grass_block", "minecraft:short_grass" -> 0xFF759448;
+            case "minecraft:mycelium" -> 0xFF6C5F6D;
             case "minecraft:oak_leaves", "minecraft:oak_leaf_litter" -> 0xFF507435;
             case "minecraft:birch_leaves" -> 0xFF789144;
             case "minecraft:spruce_leaves" -> 0xFF3B664D;

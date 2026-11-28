@@ -227,10 +227,16 @@ public final class PreviewWorld {
             return future;
         }
         public CompletableFuture<List<MapFeature>> discoverFeatures(int x,int z,Set<String> selected){
+            return discoverFeatures(x, z, selected, Set.of());
+        }
+
+        public CompletableFuture<List<MapFeature>> discoverFeatures(int x, int z, Set<String> selected, Set<Long> savedChunks) {
             var future=new CompletableFuture<List<MapFeature>>();
-            mapWork.add(new MapWork<>(()->{
-                var found=MapDiscovery.features(this,x,z,selected);for(var f:found)if(discoveredFeatures.size()<4096)discoveredFeatures.put(f.id()+":"+f.x()+":"+f.y()+":"+f.z(),f);return found;
-            },future));
+            var work = new MapWork<>(()->{
+                var found=MapDiscovery.features(this,x,z,selected,savedChunks);for(var f:found)if(discoveredFeatures.size()<4096)discoveredFeatures.put(f.id()+":"+f.x()+":"+f.y()+":"+f.z(),f);return found;
+            },future);
+            mapWork.add(work);
+            future.whenComplete((found, error) -> { if (future.isCancelled()) mapWork.remove(work); });
             return future;
         }
         public CompletableFuture<PlaceSurvey.Report> survey(PlaceSurvey.Request request) {

@@ -27,7 +27,8 @@ final class SavedMapPreview implements WorldMapSource {
     private record SurfaceRequest(DimensionSpace dimension, int x, int z) {}
     private final SurfaceCache surfaces=new SurfaceCache(1024);
     private final SurfaceCache endSurfaces = new SurfaceCache(1024);
-    private boolean closed,failed;
+    private volatile boolean closed;
+    private boolean failed;
     SavedMapPreview(WorldMapSource source, Path directory) {
         original = source;
         this.directory = directory;
@@ -106,10 +107,17 @@ final class SavedMapPreview implements WorldMapSource {
     public CompletableFuture<List<MapFeature>> discoverFeatures(int x, int z, Set<String> selected) {
         if (selected.contains(EndReturnGateways.ID)) {
             return MapBackground.io(() -> SavedSurfaceReader.endReturnGateways(directory, x, z))
-                    .thenApply(found -> {
-                        if (!closed) for (var item : found) if (features.size() < 4096) features.add(item);
-                        return found;
-                    });
+                    .thenComposeAsync(page -> {
+                        if (closed) return CompletableFuture.completedFuture(List.of());
+                        for (var item : page.features()) if (features.size() < 4096) features.add(item);
+                        if (!page.incomplete()) return CompletableFuture.completedFuture(page.features());
+                        return request(p -> p.discoverFeatures(x, z, selected, page.savedChunks()), features)
+                                .thenApply(generated -> {
+                                    var found = new ArrayList<>(page.features());
+                                    found.addAll(generated);
+                                    return List.copyOf(found);
+                                });
+                    }, Minecraft.getInstance());
         }
         return request(p -> p.discoverFeatures(x, z, selected), features);
     }
@@ -250,11 +258,12 @@ final class SavedMapPreview implements WorldMapSource {
         surfaceNeedsGeneration = false;
         allowSurfaceGeneration = true;
     }
-    void refreshSavedSurface(DimensionSpace dimension, int x, int z) {
-        if (closed || pendingSurface != null || surfaceCache(dimension) == null) return;
+    boolean refreshSavedSurface(DimensionSpace dimension, int x, int z) {
+        if (closed || pendingSurface != null || surfaceCache(dimension) == null) return false;
         pendingSurface = new SurfaceRequest(dimension, x, z);
         surfaceNeedsGeneration = false;
         allowSurfaceGeneration = false;
+        return true;
     }
     public boolean saved(){return true;}
     public void pauseSurface(){

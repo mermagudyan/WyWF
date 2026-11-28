@@ -1,5 +1,6 @@
 package com.wywf.client;
 
+import dev.diylib.client.ui.DiyVanillaButton;
 import com.wywf.WYWFClient;
 import com.wywf.core.CandidateReview;
 import com.wywf.core.ParsedQuery;
@@ -51,7 +52,7 @@ final class CandidateVerificationScreen extends Screen {
     }
 
     @Override protected void init() {
-        cancel = addRenderableWidget(MenuButton.builder(ResultTexts.label("cancel"), button -> onClose())
+        cancel = addRenderableWidget(DiyVanillaButton.builder(ResultTexts.label("cancel"), button -> onClose())
                 .bounds(width / 2 - 75, height - 30, 150, 20).build());
         cancel.active = !stopping;
     }

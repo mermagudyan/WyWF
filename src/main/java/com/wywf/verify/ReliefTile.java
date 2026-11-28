@@ -69,7 +69,7 @@ public record ReliefTile(int x, int z, int[] colors, int[] heights, int[] voxels
     public static final int WATER_FACE = 0xFE000000, ENTRANCE_FACE = 0xFD000000;
     public static final int CLIPPED_FACE = 0xFC000000, PLANT_FACE = 0xFB000000, FACE_TYPE = 0xFF000000;
     public static final int ICE_WATER_SHADOW = 0xF2000000;
-    public static final int END_CRYSTAL = 0xF3000000;
+    public static final int END_CRYSTAL = 0xF3000000, END_PORTAL_EYE = 0xF6000000;
     public static final int BERRY_FACE = 0xF4000000, SHAPED_BLOCK = 0xF5000000;
 
     public static boolean plant(int material) {
@@ -77,7 +77,7 @@ public record ReliefTile(int x, int z, int[] colors, int[] heights, int[] voxels
     }
 
     public static boolean shaped(int material) {
-        return material == SHAPED_BLOCK || plant(material);
+        return material == SHAPED_BLOCK || material == END_PORTAL_EYE || plant(material);
     }
 
 

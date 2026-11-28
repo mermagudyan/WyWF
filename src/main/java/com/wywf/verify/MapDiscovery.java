@@ -83,8 +83,8 @@ public final class MapDiscovery {
         if(state.is(Blocks.LAVA))return "wywf:lava_pool";
         return "";
     }
-    static List<MapFeature> features(PreviewWorld.Session session,int px,int pz,Set<String> selected) {
-        if (selected.contains(EndReturnGateways.ID)) return endGateways(session, px, pz);
+    static List<MapFeature> features(PreviewWorld.Session session,int px,int pz,Set<String> selected,Set<Long> savedChunks) {
+        if (selected.contains(EndReturnGateways.ID)) return endGateways(session, px, pz, savedChunks);
         var level=session.server().overworld();
         List<MapFeature> found=new ArrayList<>();
         for(int cz=Math.floorDiv(pz,16);cz<Math.floorDiv(pz,16)+4;cz++)for(int cx=Math.floorDiv(px,16);cx<Math.floorDiv(px,16)+4;cx++){
@@ -110,12 +110,12 @@ public final class MapDiscovery {
         }
         return List.copyOf(found);
     }
-    private static List<MapFeature> endGateways(PreviewWorld.Session session, int x, int z) {
+    private static List<MapFeature> endGateways(PreviewWorld.Session session, int x, int z, Set<Long> savedChunks) {
         var level = session.level(DimensionSpace.END);
         var found = new ArrayList<MapFeature>();
         for (int cz = z >> 4; cz < (z >> 4) + 4; cz++) for (int cx = x >> 4; cx < (x >> 4) + 4; cx++) {
             session.checkpoint();
-            if (EndReturnGateways.mayContain(cx, cz)) {
+            if (EndReturnGateways.mayContain(cx, cz) && !savedChunks.contains(SurfaceCache.key(cx << 4, cz << 4))) {
                 var chunk = (LevelChunk) session.chunk(level, cx, cz, ChunkStatus.FULL);
                 found.addAll(EndReturnGateways.inChunk(chunk));
             }

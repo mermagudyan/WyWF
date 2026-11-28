@@ -43,10 +43,6 @@ final class MapImage implements AutoCloseable {
                     this.width, this.height, this.width, this.height, color);
     }
 
-    void drawCropped(GuiGraphicsExtractor g, int x, int y, int width, int height, float uv) {
-        if (registered && width > 0 && height > 0) g.blit(id, x, y, x + width, y + height, 0, uv, 0, uv);
-    }
-
     void drawRegion(GuiGraphicsExtractor g, int x, int y, int width, int height, float start, float end) {
         if (registered && width > 0 && height > 0) g.blit(id, x, y, x + width, y + height, start, end, start, end);
     }

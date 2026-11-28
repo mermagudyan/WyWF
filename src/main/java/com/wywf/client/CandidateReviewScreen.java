@@ -1,5 +1,6 @@
 package com.wywf.client;
 
+import dev.diylib.client.ui.DiyVanillaButton;
 import com.wywf.WYWFClient;
 import com.wywf.core.*;
 import com.wywf.verify.PreviewWorld;
@@ -101,15 +102,15 @@ public final class CandidateReviewScreen extends Screen {
             card.selected(index == review.selectedIndex(), selectionConfirmed);
             cards.add(addRenderableWidget(card));
         }
-        Button previous = addRenderableWidget(MenuButton.builder(Component.literal("<"), b -> changePage(-1))
+        Button previous = addRenderableWidget(DiyVanillaButton.builder(Component.literal("<"), b -> changePage(-1))
                 .bounds(12, height - 60, 26, 20).build());
         previous.active = page > 0;
-        Button next = addRenderableWidget(MenuButton.builder(Component.literal(">"), b -> changePage(1))
+        Button next = addRenderableWidget(DiyVanillaButton.builder(Component.literal(">"), b -> changePage(1))
                 .bounds(100, height - 60, 26, 20).build());
         next.active = page + 1 < grid.pages(review.candidates().size());
         int remaining = width - 156;
         int mapWidth = Math.min(100, (remaining - 12) / 3);
-        chunksView = addRenderableWidget(MenuButton.builder(MapTexts.label(review.candidates().isEmpty() ? "simplify" : "open"), b ->
+        chunksView = addRenderableWidget(DiyVanillaButton.builder(MapTexts.label(review.candidates().isEmpty() ? "simplify" : "open"), b ->
                 {
                     if (review.candidates().isEmpty())
                         Minecraft.getInstance().setScreenAndShow(
@@ -130,13 +131,13 @@ public final class CandidateReviewScreen extends Screen {
         int searchWidth = remaining - mapWidth - 6;
         boolean offerBatch = placeSearch == null;
         int moreWidth = offerBatch ? (searchWidth - 6) / 2 : searchWidth;
-        addRenderableWidget(MenuButton.builder(ResultTexts.label("more"), b -> {
+        addRenderableWidget(DiyVanillaButton.builder(ResultTexts.label("more"), b -> {
             releaseMaps();
             new SearchScreen(parent, queryText, query, config.extendedLimits())
                     .fresh().forPlace(placeSearch).appendTo(review).withLayers(layerSelection).open();
         }).bounds(searchX, height - 60, moreWidth, 20).build());
         if (offerBatch) {
-            Button verify = addRenderableWidget(MenuButton.builder(ResultTexts.label("verify_all"), b -> {
+            Button verify = addRenderableWidget(DiyVanillaButton.builder(ResultTexts.label("verify_all"), b -> {
                 releaseUnverifiedMap();
                 Minecraft.getInstance().setScreenAndShow(new CandidateVerificationScreen(this, query, review));
             }).bounds(searchX + moreWidth + 6, height - 60, searchWidth - moreWidth - 6, 20).build());
@@ -145,17 +146,17 @@ public final class CandidateReviewScreen extends Screen {
                     .anyMatch(result -> CandidateVerificationScreen.needsVerification(result, query, config, review));
         }
         int actionWidth = (width - 42) / 4;
-        detailsAction = addRenderableWidget(MenuButton.builder(ResultTexts.label("details"), b -> openDetails())
+        detailsAction = addRenderableWidget(DiyVanillaButton.builder(ResultTexts.label("details"), b -> openDetails())
                 .bounds(12, height - 30, actionWidth, 20).build());
-        Button copy = addRenderableWidget(MenuButton.builder(ResultTexts.label("copy_seed"), b -> copySeed())
+        Button copy = addRenderableWidget(DiyVanillaButton.builder(ResultTexts.label("copy_seed"), b -> copySeed())
                 .bounds(18 + actionWidth, height - 30, actionWidth, 20).build());
-        createAction = addRenderableWidget(MenuButton.builder(placeSearch == null
+        createAction = addRenderableWidget(DiyVanillaButton.builder(placeSearch == null
                         ? ResultTexts.label("create")
                         : MapTexts.label("ftp_copy_coords"), b -> createSelected())
                 .bounds(24 + actionWidth * 2, height - 30, actionWidth, 20).build());
         copy.active = !review.candidates().isEmpty() && !creating;
         updatePreviewActions();
-        addRenderableWidget(MenuButton.builder(ResultTexts.label("back"), b -> onClose())
+        addRenderableWidget(DiyVanillaButton.builder(ResultTexts.label("back"), b -> onClose())
                 .bounds(30 + actionWidth * 3, height - 30, actionWidth, 20).build());
     }
 

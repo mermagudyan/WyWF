@@ -1,5 +1,6 @@
 package com.wywf.client;
 
+import dev.diylib.client.ui.DiyVanillaButton;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.wywf.WYWFClient;
 import com.wywf.core.ConfigStore;
@@ -37,6 +38,7 @@ final class LiveMapScreen extends Screen {
     private final int playerX, playerZ;
     private final boolean full;
     private final DimensionSpace dimension;
+    private final java.nio.file.Path gatewayWorld;
     private final BiomeMapCanvas overview;
     private final StructureLayers structures;
     private final FitPreview fit = new FitPreview();
@@ -52,6 +54,8 @@ final class LiveMapScreen extends Screen {
     private int terrain, x, y, mapWidth, mapHeight, footer, ticks;
     private long revision = -1;
     private boolean drag, borders;
+    private final Set<Long> gatewayPages = new LinkedHashSet<>();
+    private CompletableFuture<SavedSurfaceReader.GatewayPage> savedGateways;
     private int gatewayScan, gatewayScanX = Integer.MIN_VALUE, gatewayScanZ = Integer.MIN_VALUE, gatewayScanRadius;
 
     private record MapTab(View view, Component getTabTitle) implements Tab {
@@ -90,6 +94,7 @@ final class LiveMapScreen extends Screen {
             var source = new SearchResult(seed, playerX, playerZ, playerX, playerZ, "", List.of(), List.of(), "");
             structures = new StructureLayers(source);
             var directory = server.getWorldPath(LevelResource.ROOT);
+            gatewayWorld = dimension == DimensionSpace.END ? directory : null;
             structures.worldPreferences(directory);
             var level = server.getLevel(client.level.dimension());
             if (level != null) structures.confirmation(markers -> com.wywf.verify.MapDiscovery.confirmLive(server, level, markers));
@@ -115,6 +120,7 @@ final class LiveMapScreen extends Screen {
         } else {
             structures = null;
             overview = null;
+            gatewayWorld = null;
             saved = CompletableFuture.completedFuture(Optional.empty());
         }
     }
@@ -148,14 +154,14 @@ final class LiveMapScreen extends Screen {
         if (view == View.GENERAL) initGeneral();
         if (view == View.TERRAIN) {
             int w = Math.min(142, width / 3);
-            addRenderableWidget(MenuButton.builder(layerName(), b -> {
+            addRenderableWidget(DiyVanillaButton.builder(layerName(), b -> {
                 terrain = (terrain + 1) % terrainCount();
                 b.setMessage(layerName());
                 invalidate();
             }).bounds(INSET, footer + 9, w, 20).build());
         }
         int doneWidth = Math.min(150, width / 3);
-        addRenderableWidget(MenuButton.builder(
+        addRenderableWidget(DiyVanillaButton.builder(
                 net.minecraft.network.chat.CommonComponents.GUI_DONE, b -> onClose())
                 .bounds((width - doneWidth) / 2, footer + 9, doneWidth, 20).build());
         invalidate();
@@ -167,21 +173,21 @@ final class LiveMapScreen extends Screen {
         int row = footer - 23, count = !full ? 2 : metadata == null ? 3 : 4;
         int w = Math.max(1, Math.min(106, (width - 32) / count));
         int center = (width - w) / 2, step = w + 4;
-        addRenderableWidget(MenuButton.builder(borderLabel(), b -> {
+        addRenderableWidget(DiyVanillaButton.builder(borderLabel(), b -> {
             borders = !borders;
             b.setMessage(borderLabel());
             if (overview != null) overview.borders(borders);
             invalidate();
         }).bounds(center - (count - 1) * step / 2, row, w, 20).build());
-        addRenderableWidget(MenuButton.builder(MapTexts.label("reset"), b -> {
+        addRenderableWidget(DiyVanillaButton.builder(MapTexts.label("reset"), b -> {
             viewport.reset(playerX + .5, playerZ + .5, full ? 2 : .5);
             if (overview != null) overview.dirty();
         }).bounds(center - (count - 3) * step / 2, row, w, 20).build());
         if (!full) return;
-        addRenderableWidget(MenuButton.builder(MapTexts.label("structures_short"), b ->
+        addRenderableWidget(DiyVanillaButton.builder(MapTexts.label("structures_short"), b ->
                 minecraft.setScreenAndShow(new StructureLayersScreen(this, structures)))
                 .bounds(center + (5 - count) * step / 2, row, w, 20).build());
-        if (metadata != null) addRenderableWidget(MenuButton.builder(ResultTexts.label("details"), b ->
+        if (metadata != null) addRenderableWidget(DiyVanillaButton.builder(ResultTexts.label("details"), b ->
                 minecraft.setScreenAndShow(new CandidateDetailsScreen(this, metadata)))
                 .bounds(center + 3 * step / 2, row, w, 20).build());
     }
@@ -240,8 +246,10 @@ final class LiveMapScreen extends Screen {
                 }
             }
         }
-        if (full && dimension == DimensionSpace.END && structures.enabled.contains(EndReturnGateways.ID))
+        if (gatewayWorld != null && structures.enabled.contains(EndReturnGateways.ID)) {
             scanLoadedGateways();
+            scanSavedGateways();
+        }
         if (revision != atlas.revision() || ++ticks % 8 == 0 || drag)
             refreshTiles();
     }
@@ -271,8 +279,41 @@ final class LiveMapScreen extends Screen {
         }
     }
 
+    private void scanSavedGateways() {
+        if (savedGateways != null) {
+            if (!savedGateways.isDone()) return;
+            if (!savedGateways.isCompletedExceptionally()) savedGateways.join().features().forEach(structures::feature);
+            savedGateways = null;
+        }
+        if (ticks % 6 != 0 || drag) return;
+        var window = EndReturnGateways.scanWindow(viewport);
+        double distance = Double.POSITIVE_INFINITY;
+        int pageX = 0, pageZ = 0;
+        for (int z = window.z(); z < window.z() + window.height(); z += 64) {
+            for (int x = window.x(); x < window.x() + window.width(); x += 64) {
+                if (!EndReturnGateways.mayContainPage(x, z) || gatewayPages.contains(SurfaceCache.key(x, z))) continue;
+                double candidate = EndReturnGateways.pageDistance(viewport, x, z);
+                if (candidate < distance) {
+                    distance = candidate;
+                    pageX = x;
+                    pageZ = z;
+                }
+            }
+        }
+        if (!Double.isFinite(distance)) return;
+        if (gatewayPages.size() >= EndReturnGateways.MAX_SCANNED_PAGES) gatewayPages.remove(gatewayPages.iterator().next());
+        gatewayPages.add(SurfaceCache.key(pageX, pageZ));
+        int x = pageX, z = pageZ;
+        savedGateways = com.wywf.core.MapBackground.io(() -> SavedSurfaceReader.endReturnGateways(gatewayWorld, x, z));
+    }
+
     private void refreshTiles() {
         revision = atlas.revision();
+        var layer = layer();
+        if (full && layer != SurfaceColors.Layer.SURFACE && layer != SurfaceColors.Layer.BIOMES) {
+            visible = Map.of();
+            return;
+        }
         visible = atlas.visible(full, ((int)Math.floor(viewport.worldX(0))) & ~15,
                 ((int)Math.floor(viewport.worldZ(0))) & ~15, (int)Math.ceil(viewport.worldX(mapWidth)),
                 (int)Math.ceil(viewport.worldZ(mapHeight)), viewport.x(), viewport.z());
@@ -287,7 +328,7 @@ final class LiveMapScreen extends Screen {
             if (images.containsKey(entry.getKey()))
                 continue;
             var image = new MapImage();
-            image.upload(16, 16, SurfaceColors.raster(entry.getValue(), layer(), borders));
+            image.upload(16, 16, SurfaceColors.raster(entry.getValue(), layer, borders));
             images.put(entry.getKey(), image);
             if (--budget == 0)
                 break;

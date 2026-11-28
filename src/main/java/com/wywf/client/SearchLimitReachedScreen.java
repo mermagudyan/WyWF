@@ -1,5 +1,6 @@
 package com.wywf.client;
 
+import dev.diylib.client.ui.DiyVanillaButton;
 import com.wywf.WYWFClient;
 import com.wywf.core.*;
 import net.minecraft.client.Minecraft;
@@ -41,18 +42,18 @@ public final class SearchLimitReachedScreen extends Screen {
         int bw = 200;
 
         if (!candidates.isEmpty()) {
-            this.addRenderableWidget(MenuButton.builder(
+            this.addRenderableWidget(DiyVanillaButton.builder(
                     Component.literal("Use best candidate (" + candidates.size() + " found)"),
                     b -> useBestCandidate()
             ).bounds(cx - bw / 2, this.height / 2 + 10, bw, 20).build());
         }
 
-        this.addRenderableWidget(MenuButton.builder(
+        this.addRenderableWidget(DiyVanillaButton.builder(
                 Component.literal(config.infiniteSeeds() ? "Search more (double time)" : "Search more (double limit)"),
                 b -> searchMore()
         ).bounds(cx - bw / 2, this.height / 2 + (candidates.isEmpty() ? 10 : 36), bw, 20).build());
 
-        this.addRenderableWidget(MenuButton.builder(
+        this.addRenderableWidget(DiyVanillaButton.builder(
                 Component.literal("Cancel"),
                 b -> onClose()
         ).bounds(cx - bw / 2, this.height / 2 + (candidates.isEmpty() ? 36 : 62), bw, 20).build());

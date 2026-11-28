@@ -1,5 +1,6 @@
 package com.wywf.client;
 
+import dev.diylib.client.ui.DiyVanillaButton;
 import com.wywf.core.*;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -26,7 +27,7 @@ final class SearchQueryEditScreen extends Screen {
         query=addRenderableWidget(new EditBox(font,(width-w)/2,65,w,20,title));
         query.setMaxLength(20000);
         query.setValue(text);
-        addRenderableWidget(MenuButton.builder(MapTexts.label("search_again"),b->{
+        addRenderableWidget(DiyVanillaButton.builder(MapTexts.label("search_again"),b->{
             var value=query.getValue();
             var parsed=new QueryParser(new KeywordDictionary(config.queryLanguage())).parse(value);
             if(parsed.isEmpty())
@@ -34,7 +35,7 @@ final class SearchQueryEditScreen extends Screen {
             creator.getUiState().setSeed(value);
             Minecraft.getInstance().setScreenAndShow(new SearchScreen(creator,value,parsed,config).fresh());
         }).bounds(width/2-153,height-30,150,20).build());
-        addRenderableWidget(MenuButton.builder(ResultTexts.label("back"),b->onClose()).bounds(width/2+3,height-30,150,20).build());
+        addRenderableWidget(DiyVanillaButton.builder(ResultTexts.label("back"),b->onClose()).bounds(width/2+3,height-30,150,20).build());
         setInitialFocus(query);
     }
     @Override public void extractRenderState(GuiGraphicsExtractor g,int x,int y,float delta){

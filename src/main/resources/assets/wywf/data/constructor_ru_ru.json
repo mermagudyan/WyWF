@@ -383,7 +383,7 @@
   "wywf.map.feature_copper_vein": "Большие медные жилы",
   "wywf.map.feature_spawner": "Спаунеры мобов",
   "wywf.map.feature_end_return_gateway": "Порталы на главный остров",
-  "wywf.map.end_return_gateway_help": "Отмечает шлюзы с подтверждённым направлением. В предпросмотре переместите карту к дальним островам.",
+  "wywf.map.end_return_gateway_help": "Отмечает естественные порталы возврата на дальних островах. Чтобы найти их, сдвиньте или отдалите карту.",
   "wywf.map.coverage_overview": "Покрытие условий во всей видимой области",
   "wywf.map.auto_short_on": "Авто ✓",
   "wywf.map.auto_short_off": "Авто ×",

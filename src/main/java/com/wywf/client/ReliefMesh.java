@@ -175,6 +175,7 @@ record ReliefMesh(int side, int[] faces, int minimum, int maximum, float[] sunli
                     if (enclosed >= top - depth) visibleDepth = top - enclosed;
                 }
                 int firstFace = faces.size();
+                boolean visibleWater = false;
                 for (int offset = 0; offset < visibleDepth; offset++) {
                     int y = top - offset;
                     int color = tile.voxel(col, y);
@@ -211,15 +212,21 @@ record ReliefMesh(int side, int[] faces, int minimum, int maximum, float[] sunli
                     if (type == ReliefTile.WATER_FACE) {
                         int blended = waterTints == null ? 0 : waterTints[cell];
                         int tint = blended == 0 ? color : ReliefTile.WATER_FACE | (blended & 0xFFFFFF);
-                        if ((tile.voxel(col, y + 1) & ReliefTile.FACE_TYPE) != ReliefTile.WATER_FACE)
-                            face(faces, cell, y, TOP, tint);
+                        boolean outside = openAir == null || y >= tile.ground()[col];
+                        if ((tile.voxel(col, y + 1) & ReliefTile.FACE_TYPE) != ReliefTile.WATER_FACE) {
+                            visibleWater = outside || openAir.contains(x, y + 1, z);
+                            if (visibleWater) face(faces, cell, y, TOP, tint);
+                        }
                         for (int d = 0; d < 4; d++) {
                             var neighbor = neighbors[d];
                             if (neighbor == null) continue;
                             int c = columns[d];
                             if (neighbor.ground() != null && y < neighbor.ground()[c] && neighbor.colors()[c] != 0) continue;
-                            if (neighbor.voxel(c, y) == 0 && !neighbor.belowSample(c, y))
+                            if (neighbor.voxel(c, y) == 0 && !neighbor.belowSample(c, y)
+                                    && (outside || openAir.contains(x + SIDE_X[d], y, z + SIDE_Z[d]))) {
+                                visibleWater = true;
                                 face(faces, cell, y, SIDE_FACES[d], tint);
+                            }
                         }
                         continue;
                     }
@@ -235,11 +242,10 @@ record ReliefMesh(int side, int[] faces, int minimum, int maximum, float[] sunli
                     if (exposesFace(above)) {
                         if (aboveGround && type != ReliefTile.CLIPPED_FACE && (tile.caveDepth() == 0 || offset > 0))
                             face(faces, cell, y, TOP, color);
-                        else if (type == ReliefTile.CAVE_FLOOR && (above == 0 || ReliefTile.shaped(above & ReliefTile.FACE_TYPE)))
-                            face(faces, cell, y, TOP, 0xEF000000 | (color & 0xFFFFFF));
-                        else if (openAir != null && ((above & ReliefTile.FACE_TYPE) == ReliefTile.WATER_FACE
+                        else if (openAir != null && ((above & ReliefTile.FACE_TYPE) == ReliefTile.WATER_FACE && visibleWater
                                 || openAir.contains(x, y + 1, z)))
-                            face(faces, cell, y, TOP, recessedColor(color, tile.ground()[col] - y));
+                            face(faces, cell, y, TOP, recessedColor(color,
+                                    type == ReliefTile.CAVE_FLOOR ? 15 : tile.ground()[col] - y));
                         else if (tile.trace() != null)
                             ReliefDiagnostics.face(tile, col, y, "top", aboveGround ? "slice-cap" : "below-ground", tile, col);
                     }

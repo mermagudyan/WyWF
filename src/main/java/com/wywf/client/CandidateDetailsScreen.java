@@ -1,5 +1,6 @@
 package com.wywf.client;
 
+import dev.diylib.client.ui.DiyVanillaButton;
 import com.wywf.core.SearchResult;
 import com.wywf.core.ParsedQuery;
 import net.minecraft.client.Minecraft;
@@ -81,22 +82,22 @@ final class CandidateDetailsScreen extends Screen {
         lines = List.copyOf(wrapped);
         visibleRows = Math.max(1, (height - 48 - 86) / 12);
         offset = Math.max(0, Math.min(offset, Math.max(0, lines.size() - visibleRows)));
-        Button up = addRenderableWidget(MenuButton.builder(Component.literal("<"), b -> scroll(-visibleRows))
+        Button up = addRenderableWidget(DiyVanillaButton.builder(Component.literal("<"), b -> scroll(-visibleRows))
                 .bounds(12, height - 60, 30, 20).build());
         up.active = offset > 0;
-        Button down = addRenderableWidget(MenuButton.builder(Component.literal(">"), b -> scroll(visibleRows))
+        Button down = addRenderableWidget(DiyVanillaButton.builder(Component.literal(">"), b -> scroll(visibleRows))
                 .bounds(width - 42, height - 60, 30, 20).build());
         down.active = offset + visibleRows < lines.size();
         int actionWidth = (width - 36) / 3;
-        addRenderableWidget(MenuButton.builder(ResultTexts.label("copy_seed"), b -> {
+        addRenderableWidget(DiyVanillaButton.builder(ResultTexts.label("copy_seed"), b -> {
             Minecraft.getInstance().keyboardHandler.setClipboard(Long.toString(result.seed));
             copiedUntil = System.currentTimeMillis() + 2000;
         }).bounds(12, height - 30, actionWidth, 20).build());
-        addRenderableWidget(MenuButton.builder(ResultTexts.label("copy_center"), b -> {
+        addRenderableWidget(DiyVanillaButton.builder(ResultTexts.label("copy_center"), b -> {
             Minecraft.getInstance().keyboardHandler.setClipboard(result.centerX + " " + result.centerZ);
             copiedUntil = System.currentTimeMillis() + 2000;
         }).bounds(18 + actionWidth, height - 30, actionWidth, 20).build());
-        addRenderableWidget(MenuButton.builder(ResultTexts.label("back"), b -> onClose())
+        addRenderableWidget(DiyVanillaButton.builder(ResultTexts.label("back"), b -> onClose())
                 .bounds(24 + actionWidth * 2, height - 30, actionWidth, 20).build());
     }
 

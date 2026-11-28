@@ -1,5 +1,6 @@
 package com.wywf.client;
 
+import dev.diylib.client.ui.DiyVanillaButton;
 import com.wywf.core.*;
 import com.wywf.verify.LootCatalog;
 import net.minecraft.client.Minecraft;
@@ -77,10 +78,10 @@ final class LootAdviceScreen extends Screen {
             lines.add(net.minecraft.util.FormattedCharSequence.EMPTY);
         }
         int w=(width-30)/2;
-        Button use = addRenderableWidget(MenuButton.builder(MapTexts.label("loot_use_fix"), b -> applyCorrection.accept(corrected))
+        Button use = addRenderableWidget(DiyVanillaButton.builder(MapTexts.label("loot_use_fix"), b -> applyCorrection.accept(corrected))
                 .bounds(12, height - 30, w, 20).build());
         use.setTooltip(Tooltip.create(Component.literal(corrected)));
-        addRenderableWidget(MenuButton.builder(MapTexts.label("loot_edit"),b -> onClose()).bounds(18+w,height-30,w,20).build());
+        addRenderableWidget(DiyVanillaButton.builder(MapTexts.label("loot_edit"),b -> onClose()).bounds(18+w,height-30,w,20).build());
     }
     @Override public boolean mouseScrolled(double x,double y,double h,double v) {
         offset=Math.max(0,Math.min(Math.max(0,lines.size()-(height-105)/12),offset+(v>0?-3:3)));

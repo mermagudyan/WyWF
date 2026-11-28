@@ -383,7 +383,7 @@
   "wywf.map.feature_copper_vein": "Large copper veins",
   "wywf.map.feature_spawner": "Mob spawners",
   "wywf.map.feature_end_return_gateway": "Gateways to the main island",
-  "wywf.map.end_return_gateway_help": "Shows confirmed return destinations. Explore more terrain or move the preview to the outer islands.",
+  "wywf.map.end_return_gateway_help": "Shows naturally generated return gateways on the outer islands. Pan there or zoom out to look for them.",
   "wywf.map.coverage_overview": "Condition coverage over the visible map",
   "wywf.map.auto_short_on": "Auto ✓",
   "wywf.map.auto_short_off": "Auto ×",

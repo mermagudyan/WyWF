@@ -1,5 +1,6 @@
 package com.wywf.client;
 
+import dev.diylib.client.ui.DiyVanillaButton;
 import com.wywf.core.*;
 
 import com.wywf.mixin.CreateWorldScreenInvoker;
@@ -199,14 +200,14 @@ public final class SearchConstructorScreen extends Screen {
         } else if (tab == 1) {
             initPresets(left, top, sideW);
         }        if (tab == 0) {
-        Button undo = MenuButton.builder(label("undo"), b -> {
+        Button undo = DiyVanillaButton.builder(label("undo"), b -> {
             draft.undo();
             rebuildWidgets();
         })
                 .bounds(left, top + 78, sideW / 3 - 2, 20).build();
         undo.active = draft.canUndo();
         addRenderableWidget(undo);
-        Button clear = MenuButton.builder(label("clear"), b -> {
+        Button clear = DiyVanillaButton.builder(label("clear"), b -> {
             draft.clear();
             rebuildWidgets();
         })
@@ -214,10 +215,10 @@ public final class SearchConstructorScreen extends Screen {
         clear.active = !draft.isEmpty();
         addRenderableWidget(clear);
         }
-        addRenderableWidget(MenuButton.builder(MapTexts.label("structures_short"), b ->
+        addRenderableWidget(DiyVanillaButton.builder(MapTexts.label("structures_short"), b ->
                 Minecraft.getInstance().setScreenAndShow(new StructureLayersScreen(this, structureLayers)))
                 .bounds(left + sideW * 2 / 3 + 2, 28, sideW / 3 - 2, 16).build());
-        addRenderableWidget(MenuButton.builder(MapTexts.label("dimension_" + dimension.name().toLowerCase(Locale.ROOT)), b -> {
+        addRenderableWidget(DiyVanillaButton.builder(MapTexts.label("dimension_" + dimension.name().toLowerCase(Locale.ROOT)), b -> {
             dimension = DimensionSpace.values()[(dimension.ordinal() + 1) % 3];
             filter = "";
             rebuildWidgets();
@@ -243,7 +244,7 @@ public final class SearchConstructorScreen extends Screen {
         centerX += (int) panX;
         centerY += (int) panY;
         if (tab == 0) {
-        Button example = MenuButton.builder(MapTexts.label("new_example_short"), b -> { variation++; })
+        Button example = DiyVanillaButton.builder(MapTexts.label("new_example_short"), b -> { variation++; })
                 .bounds(left + sideW * 2 / 3, top + 78, sideW / 3 - 2, 20).build();
         example.setTooltip(Tooltip.create(MapTexts.label("example_help")));
         addRenderableWidget(example);
@@ -254,7 +255,7 @@ public final class SearchConstructorScreen extends Screen {
         for (SearchDraft.Placement placement : draft.placements()) {
             int size = placement.target().category() == KeywordDictionary.Category.BIOME
                     ? BiomeIcons.MAP_SIZE + 4 : 20;
-            Button marker = MenuButton.builder(Component.empty(), b -> details(placement.target()))
+            Button marker = DiyVanillaButton.builder(Component.empty(), b -> details(placement.target()))
                     .bounds(0, 0, size, size).build();
             markers.add(marker);
             markerPlacements.add(placement);
@@ -272,18 +273,18 @@ public final class SearchConstructorScreen extends Screen {
             settings.widgets().forEach(this::addWidget);
         }
         if (targetEditor != null) targetEditor.bounds(width, height);
-        addRenderableWidget(MenuButton.builder(MapTexts.label(borders ? "borders_on" : "borders_off"), b -> {
+        addRenderableWidget(DiyVanillaButton.builder(MapTexts.label(borders ? "borders_on" : "borders_off"), b -> {
             borders = !borders;
             exampleMap.borders(borders);
             b.setMessage(MapTexts.label(borders ? "borders_on" : "borders_off"));
         }).bounds(canvasX,height-91,Math.max(24,(canvasW-8)/3),16).build());
-        addRenderableWidget(MenuButton.builder(MapTexts.label("reset"),b->{
+        addRenderableWidget(DiyVanillaButton.builder(MapTexts.label("reset"),b->{
             panX=panY=0;
             fitNeeded=true;
             rebuildWidgets();
         })
                 .bounds(canvasX+Math.max(24,(canvasW-8)/3)+4,height-91,Math.max(24,(canvasW-8)/3),16).build());
-        addRenderableWidget(MenuButton.builder(MapTexts.label(draft.logic() == QueryLogic.Op.AND ? "all_conditions" : "any_condition"), b -> {
+        addRenderableWidget(DiyVanillaButton.builder(MapTexts.label(draft.logic() == QueryLogic.Op.AND ? "all_conditions" : "any_condition"), b -> {
             draft.logic(draft.logic() == QueryLogic.Op.AND ? QueryLogic.Op.OR : QueryLogic.Op.AND);
             rebuildWidgets();
         }).bounds(canvasX+(Math.max(24,(canvasW-8)/3)+4)*2,height-91,Math.max(24,canvasW-(Math.max(24,(canvasW-8)/3)+4)*2),16).build());
@@ -295,13 +296,13 @@ public final class SearchConstructorScreen extends Screen {
         addRenderableWidget(prompt);
         int actionW = Math.min(140, (width - 32) / 3);
         int actionsX = (width - actionW * 3 - 12) / 2;
-        Button apply = MenuButton.builder(label("apply"), b -> submit(false))
+        Button apply = DiyVanillaButton.builder(label("apply"), b -> submit(false))
                 .bounds(actionsX, height - 29, actionW, 20)
                 .tooltip(Tooltip.create(label("apply_help"))).build();
-        Button find = MenuButton.builder(label("find"), b -> submit(true))
+        Button find = DiyVanillaButton.builder(label("find"), b -> submit(true))
                 .bounds(actionsX + actionW + 6, height - 29, actionW, 20)
                 .tooltip(Tooltip.create(label("find_help"))).build();
-        Button restore = MenuButton.builder(Component.literal("↺"), b -> {
+        Button restore = DiyVanillaButton.builder(Component.literal("↺"), b -> {
             manualQuery = null;
             updateGeneratedPrompt();
         }).bounds(width - 12 - restoreWidth, height - 66, restoreWidth, 20)
@@ -318,7 +319,7 @@ public final class SearchConstructorScreen extends Screen {
         addRenderableWidget(restore);
         addRenderableWidget(apply);
         addRenderableWidget(find);
-        addRenderableWidget(MenuButton.builder(label("back"), b -> onClose())
+        addRenderableWidget(DiyVanillaButton.builder(label("back"), b -> onClose())
                 .bounds(actionsX + (actionW + 6) * 2, height - 29, actionW, 20).build());
     }
 
@@ -329,7 +330,7 @@ public final class SearchConstructorScreen extends Screen {
         presetBottom = Math.max(top + 1, height - 98);
         for (var preset : SearchDraft.Preset.values()) {
             var title = label("preset." + preset.name().toLowerCase(Locale.ROOT));
-            var button = MenuButton.builder(title, ignored -> {
+            var button = DiyVanillaButton.builder(title, ignored -> {
                 draft.preset(preset);
                 manualQuery = null;
                 variation++;
@@ -976,18 +977,18 @@ public final class SearchConstructorScreen extends Screen {
         draft.endMove();
         Runnable keep = () -> unsavedPrompt = null;
         unsavedPrompt = new MenuModal(font, label("unsaved_title"), label("unsaved_body"), editor::canApply, keep,
-                MenuButton.builder(label("unsaved_save"), button -> {
+                DiyVanillaButton.builder(label("unsaved_save"), button -> {
                     if (editor.applyToDraft()) {
                         unsavedPrompt = null;
                         action.run();
                     }
                 }).build(),
-                MenuButton.builder(label("unsaved_discard"), button -> {
+                DiyVanillaButton.builder(label("unsaved_discard"), button -> {
                     unsavedPrompt = null;
                     targetEditor = null;
                     action.run();
                 }).build(),
-                MenuButton.builder(label("unsaved_keep"), button -> keep.run()).build());
+                DiyVanillaButton.builder(label("unsaved_keep"), button -> keep.run()).build());
         unsavedPrompt.bounds(width,height);
     }
     @Override public boolean charTyped(net.minecraft.client.input.CharacterEvent event) {

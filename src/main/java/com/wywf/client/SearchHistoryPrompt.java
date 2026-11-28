@@ -1,5 +1,6 @@
 package com.wywf.client;
 
+import dev.diylib.client.ui.DiyVanillaButton;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenKeyboardEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenMouseEvents;
@@ -43,9 +44,9 @@ public final class SearchHistoryPrompt {
         Runnable dismiss = () -> current = null;
         var modal = new MenuModal(Minecraft.getInstance().font, MapTexts.label("history_title"),
                 MapTexts.label(search.verifiesHistory() ? "history_help" : "history_offline_help"), () -> true, dismiss,
-                MenuButton.builder(MapTexts.label("history_show", count), button -> begin(search, true, beforeSearch)).build(),
-                MenuButton.builder(MapTexts.label("history_new"), button -> begin(search, false, beforeSearch)).build(),
-                MenuButton.builder(ResultTexts.label("back"), button -> dismiss.run()).build());
+                DiyVanillaButton.builder(MapTexts.label("history_show", count), button -> begin(search, true, beforeSearch)).build(),
+                DiyVanillaButton.builder(MapTexts.label("history_new"), button -> begin(search, false, beforeSearch)).build(),
+                DiyVanillaButton.builder(ResultTexts.label("back"), button -> dismiss.run()).build());
         modal.bounds(origin.width, origin.height);
         current = new OpenPrompt(origin, modal);
     }

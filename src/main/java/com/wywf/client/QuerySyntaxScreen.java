@@ -1,5 +1,6 @@
 package com.wywf.client;
 
+import dev.diylib.client.ui.DiyVanillaButton;
 import com.wywf.WYWFClient;
 import com.wywf.core.*;
 import net.minecraft.client.Minecraft;
@@ -28,11 +29,11 @@ public final class QuerySyntaxScreen extends Screen {
     }
     @Override protected void init() {
         if (suggestion != null && WYWFClient.parser().parse(suggestion).error() == null) {
-            addRenderableWidget(MenuButton.builder(MapTexts.label("use_suggestion"), b -> {
+            addRenderableWidget(DiyVanillaButton.builder(MapTexts.label("use_suggestion"), b -> {
                 accept.accept(suggestion);
             }).bounds(width / 2 - 120, height - 58, 240, 20).build());
         }
-        addRenderableWidget(MenuButton.builder(ResultTexts.label("back"), b -> onClose())
+        addRenderableWidget(DiyVanillaButton.builder(ResultTexts.label("back"), b -> onClose())
                 .bounds(width / 2 - 120, height - 30, 240, 20).build());
     }
     @Override public void onClose() { Minecraft.getInstance().setScreenAndShow(parent); }

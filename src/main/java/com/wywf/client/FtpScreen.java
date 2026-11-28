@@ -1,5 +1,6 @@
 package com.wywf.client;
 
+import dev.diylib.client.ui.DiyVanillaButton;
 import com.mojang.blaze3d.platform.InputConstants;
 
 import com.wywf.WYWFClient;
@@ -130,19 +131,19 @@ public final class FtpScreen extends Screen {
         map.bounds(mapX, mapY, Math.max(1, width - mapX - inset), mapBottom - mapY);
         int mapWidth = width - mapX - inset;
         int firstWidth = (mapWidth - 2 * gap) / 3, secondWidth = firstWidth;
-        addRenderableWidget(MenuButton.builder(scopeLabel(), b -> {
+        addRenderableWidget(DiyVanillaButton.builder(scopeLabel(), b -> {
             localArea = !localArea;
             selection = null;
             chooseArea = false;
             b.setMessage(scopeLabel());
         }).bounds(mapX, 43, firstWidth, 20).build()).active = creator != null;
-        var areaButton = addRenderableWidget(MenuButton.builder(MapTexts.label(chooseArea ? "ftp_stop_selecting" : "ftp_select_area"), b -> {
+        var areaButton = addRenderableWidget(DiyVanillaButton.builder(MapTexts.label(chooseArea ? "ftp_stop_selecting" : "ftp_select_area"), b -> {
             chooseArea = !chooseArea;
             if (chooseArea) localArea = true;
             rebuildWidgets();
         }).bounds(mapX + firstWidth + gap, 43, secondWidth, 20).build());
         areaButton.setTooltip(Tooltip.create(MapTexts.label("ftp_area_help")));
-        addRenderableWidget(MenuButton.builder(MapTexts.label("reset"), b -> {
+        addRenderableWidget(DiyVanillaButton.builder(MapTexts.label("reset"), b -> {
             viewport.reset(initialX, initialZ, 4);
             centerX = initialX;
             centerZ = initialZ;
@@ -199,17 +200,17 @@ public final class FtpScreen extends Screen {
 
         int actionWidth = Math.min(150, (width - 36) / 2);
         int left = (width - actionWidth * 2 - 8) / 2, actionY = footer + (height - footer - 20) / 2;
-        find = addRenderableWidget(MenuButton.builder(MapTexts.label(running() ? "ftp_cancel_scan" : "ftp_find"), b -> {
+        find = addRenderableWidget(DiyVanillaButton.builder(MapTexts.label(running() ? "ftp_cancel_scan" : "ftp_find"), b -> {
             if (running()) cancelSurvey(); else start();
         }).bounds(left, actionY, actionWidth, 20).build());
-        addRenderableWidget(MenuButton.builder(ResultTexts.label("back"), b -> onClose())
+        addRenderableWidget(DiyVanillaButton.builder(ResultTexts.label("back"), b -> onClose())
                 .bounds(left + actionWidth + 8, actionY, actionWidth, 20).build());
         int resultY = footer - 28;
-        previous = addRenderableWidget(MenuButton.builder(Component.literal("<"), b -> focus(selected - 1))
+        previous = addRenderableWidget(DiyVanillaButton.builder(Component.literal("<"), b -> focus(selected - 1))
                 .bounds(inset, resultY, 20, 20).build());
-        next = addRenderableWidget(MenuButton.builder(Component.literal(">"), b -> focus(selected + 1))
+        next = addRenderableWidget(DiyVanillaButton.builder(Component.literal(">"), b -> focus(selected + 1))
                 .bounds(inset + 24, resultY, 20, 20).build());
-        copy = addRenderableWidget(MenuButton.builder(MapTexts.label("ftp_copy_coords"), b -> copy())
+        copy = addRenderableWidget(DiyVanillaButton.builder(MapTexts.label("ftp_copy_coords"), b -> copy())
                 .bounds(inset + 50, resultY, panelWidth - 50, 20).build());
         updateButtons();
     }

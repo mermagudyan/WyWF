@@ -1,5 +1,6 @@
 package com.wywf.client;
 
+import dev.diylib.client.ui.DiyVanillaButton;
 import com.wywf.WYWFClient;
 import com.wywf.core.*;
 import com.wywf.search.SeedSearcher;
@@ -145,7 +146,7 @@ public final class SearchScreen extends Screen {
         descriptionLines=font.split(understoodDescription(),width-24);
         descriptionRows=Math.min(descriptionLines.size(),Math.max(1,Math.min(4,(height-160)/font.lineHeight)));
         descriptionOffset=Math.max(0,Math.min(descriptionOffset,descriptionLines.size()-descriptionRows));
-        showReady=addRenderableWidget(MenuButton.builder(MapTexts.label("show_ready"),b->{
+        showReady=addRenderableWidget(DiyVanillaButton.builder(MapTexts.label("show_ready"),b->{
             if(exhausted){
                 cancelSearch();
                 Minecraft.getInstance().setScreenAndShow(new SearchScreen(parentScreen,queryText,parsedQuery,config).fresh().forPlace(placeSearch, placeArea));
@@ -163,15 +164,15 @@ public final class SearchScreen extends Screen {
             showReady.setMessage(MapTexts.label("search_again"));
             showReady.setWidth(150);
         }
-        editQuery=addRenderableWidget(MenuButton.builder(MapTexts.label("edit_query"),b->{
+        editQuery=addRenderableWidget(DiyVanillaButton.builder(MapTexts.label("edit_query"),b->{
             cancelSearch();
             Minecraft.getInstance().setScreenAndShow(placeSearch == null ? new SearchQueryEditScreen(parentScreen,queryText,config) : placeSearch);
         })
                 .bounds(width/2+3,height-55,150,20).build());
                 editQuery.visible=exhausted;
-        exitButton=addRenderableWidget(MenuButton.builder(ResultTexts.label(exhausted?"back":"cancel"), b -> onClose())
+        exitButton=addRenderableWidget(DiyVanillaButton.builder(ResultTexts.label(exhausted?"back":"cancel"), b -> onClose())
                 .bounds(width / 2 - 153, height - 30, 150, 20).build());
-        addRenderableWidget(MenuButton.builder(MapTexts.label("simplify"), b -> {
+        addRenderableWidget(DiyVanillaButton.builder(MapTexts.label("simplify"), b -> {
             cancelSearch();
             Minecraft.getInstance().setScreenAndShow(
                     new SearchAdviceScreen(parentScreen,queryText,parsedQuery,config,diagnostics().snapshot()).forPlace(placeSearch));

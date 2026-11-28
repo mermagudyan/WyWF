@@ -121,7 +121,8 @@ public final class SavedSurfaceReader {
                         p -> chunk.at(p.getX(), p.getY(), p.getZ()),
                         (wx, wz) -> bottom + chunk.heights.get((wz & 15) * 16 + (wx & 15)) - 1,
                         (wx, wz) -> reader.reliefHeight(wx, wz, x, z, chunk),
-                        p -> reader.riverAt(manager, p), p -> reader.waterTint(manager, p), fog));
+                        p -> reader.riverAt(manager, p), p -> reader.waterTint(manager, p),
+                        p -> reader.customBiomeAt(manager, p), fog));
             }
         }
         return result;
@@ -191,14 +192,22 @@ public final class SavedSurfaceReader {
         }).orElse(null);
     }
 
-    public static List<MapFeature> endReturnGateways(Path world, int x, int z) {
+    public record GatewayPage(List<MapFeature> features, java.util.Set<Long> savedChunks, boolean incomplete) {}
+
+    public static GatewayPage endReturnGateways(Path world, int x, int z) {
         var reader = new SavedSurfaceReader(world, DimensionSpace.END, null);
         var features = new ArrayList<MapFeature>();
+        var saved = new java.util.HashSet<Long>();
+        boolean incomplete = false;
         for (int cz = z >> 4; cz < (z >> 4) + 4; cz++) for (int cx = x >> 4; cx < (x >> 4) + 4; cx++) {
             if (!EndReturnGateways.mayContain(cx, cz)) continue;
             try {
                 var chunk = reader.readChunk(cx, cz);
-                if (chunk == null) continue;
+                if (chunk == null) {
+                    incomplete = true;
+                    continue;
+                }
+                saved.add(SurfaceCache.key(cx << 4, cz << 4));
                 for (var entity : chunk.getListOrEmpty("block_entities").compoundStream().toList()) {
                     if (!entity.getStringOr("id", "").equals("minecraft:end_gateway")) continue;
                     var source = new BlockPos(entity.getIntOr("x", 0), entity.getIntOr("y", 0), entity.getIntOr("z", 0));
@@ -206,10 +215,11 @@ public final class SavedSurfaceReader {
                         EndReturnGateways.fromGateway(source, entity).ifPresent(features::add);
                 }
             } catch (IOException | IllegalArgumentException error) {
+                incomplete = true;
                 com.wywf.WYWFClient.LOGGER.debug("Could not read saved End gateways at {}, {}", cx, cz, error);
             }
         }
-        return List.copyOf(features);
+        return new GatewayPage(List.copyOf(features), java.util.Set.copyOf(saved), incomplete);
     }
 
     private CompoundTag readChunk(int x, int z) throws IOException {
@@ -291,6 +301,15 @@ public final class SavedSurfaceReader {
             return manager.getBiome(pos);
         } catch (MissingBiome unavailable) {
             return noiseBiome(pos.getX() >> 2, pos.getY() >> 2, pos.getZ() >> 2);
+        }
+    }
+
+    private boolean customBiomeAt(BiomeManager manager, BlockPos pos) {
+        try {
+            return biomeAt(manager, pos).unwrapKey()
+                    .map(key -> !key.identifier().getNamespace().equals("minecraft")).orElse(false);
+        } catch (MissingBiome unavailable) {
+            return false;
         }
     }
 

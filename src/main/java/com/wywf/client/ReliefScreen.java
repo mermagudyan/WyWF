@@ -1,5 +1,6 @@
 package com.wywf.client;
 
+import dev.diylib.client.ui.DiyVanillaButton;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.wywf.core.DimensionSpace;
 import com.wywf.core.MapBackground;
@@ -21,6 +22,7 @@ import net.minecraft.network.chat.Component;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
@@ -37,7 +39,7 @@ final class ReliefScreen extends Screen {
     private static final int HEADER = 54, CAVE_HEADER = 64, MAP_FOOT = 21;
     private static final int DIMENSION_LIST_HEIGHT = 40;
     private static final long OUTLINE_DURATION = 1_000_000_000L;
-    private static final int MAX_PIXELS = 2_100_000;
+    private static final int MAX_PIXELS = 2_100_000, MOVING_SURFACE_PIXELS = 1_050_000;
     private static final int MAX_EXACT_RADIUS = ReliefRadius.MAX;
     private static final double MIN_PITCH = Math.toRadians(10), MAX_PITCH = Math.PI / 2;
     private final Screen parent;
@@ -48,6 +50,8 @@ final class ReliefScreen extends Screen {
     private final ReliefTargets targets;
     private ReliefTargets.Pin pendingTarget;
     private final ArrayDeque<CameraView> jumpHistory = new ArrayDeque<>();
+    private record PendingOutline(com.wywf.verify.VerifiedAnchor structure, int y) {}
+    private PendingOutline pendingOutline;
     private ReliefRaster.Outline outline, renderedOutline;
     private long outlineStartedAt;
     private MapContextMenu context;
@@ -55,8 +59,10 @@ final class ReliefScreen extends Screen {
     private WorldPoint rotationPivot;
     private final MapImage image = new MapImage();
     private final MapImage outlineImage = new MapImage();
+    private final PortalEye portalEye = new PortalEye();
     private ReliefGpu gpu;
     private boolean gpuImage;
+    private ReliefMesh gpuAttempted;
     private final PageLoads pageLoads = new PageLoads();
     private record Partial(long revision, List<ReliefTile> tiles) {}
     private final java.util.Queue<Partial> partialPages = new java.util.concurrent.ConcurrentLinkedQueue<>();
@@ -65,10 +71,11 @@ final class ReliefScreen extends Screen {
     private CompletableFuture<Frame> frame;
     private CompletableFuture<MeshUpdate> building;
     private MeshUpdate preparedMesh;
-    private record MeshUpdate(ReliefMesh mesh, long nanos, int reusedChunks) {}
+    private record MeshUpdate(ReliefMesh mesh, BitSet coverage, long nanos, int reusedChunks) {}
+    private BitSet meshCoverage;
     private ReliefMesh.Builder meshBuilder;
-    private record Frame(ReliefMesh mesh, float centerY, int width, int height, int[] colors, ReliefRaster.Buffers buffers,
-                         Probe probe, ReliefRaster.Outline outline, long renderNanos, long meshNanos, int reusedChunks,
+    private record Frame(ReliefMesh mesh, BitSet coverage, float centerY, int width, int height, int[] colors, ReliefRaster.Buffers buffers,
+                         Probe probe, ReliefRaster.Outline outline, PortalEye.Pixels eye, long renderNanos, long meshNanos, int reusedChunks,
                          long queuedAt, long workerStartedAt, long viewportRevision) {}
     private record Probe(int width, int height, int x, int z, int span, float y,
                          double yaw, double pitch, double zoom, double panX, double panY, long revision, boolean underRoof) {
@@ -141,7 +148,7 @@ final class ReliefScreen extends Screen {
                 -1, font, index -> switchDimension(destinations.get(index)),
                 list -> {}));
         String mode = caves ? "relief_surface" : dimension == DimensionSpace.OVERWORLD ? "caves" : "relief_slice";
-        if (dimension != DimensionSpace.END) addRenderableWidget(MenuButton.builder(MapTexts.label(mode), b -> {
+        if (dimension != DimensionSpace.END) addRenderableWidget(DiyVanillaButton.builder(MapTexts.label(mode), b -> {
             caves = !caves;
             context = null;
             pendingTarget = null;
@@ -174,9 +181,9 @@ final class ReliefScreen extends Screen {
             addRenderableWidget(slider);
         }
         int w = Math.max(1, Math.min(150, (width - 32) / 2));
-        addRenderableWidget(MenuButton.builder(MapTexts.label("reset"), b -> resetCamera())
+        addRenderableWidget(DiyVanillaButton.builder(MapTexts.label("reset"), b -> resetCamera())
                 .bounds(width / 2 - w - 4, footer + 8, w, 20).build());
-        addRenderableWidget(MenuButton.builder(ResultTexts.label("back"), b -> onClose())
+        addRenderableWidget(DiyVanillaButton.builder(ResultTexts.label("back"), b -> onClose())
                 .bounds(width / 2 + 4, footer + 8, w, 20).build());
         dirty = true;
     }
@@ -196,9 +203,11 @@ final class ReliefScreen extends Screen {
     }
 
     private void resetSlice() {
+        if (outline != null) clearOutline();
         cancelWork();
         meshBuilder = new ReliefMesh.Builder();
         if (gpu != null) gpu.discardMesh();
+        gpuAttempted = null;
         regionRevision++;
         partialPages.clear();
         Integer cut = caves ? caveY : null;
@@ -244,6 +253,7 @@ final class ReliefScreen extends Screen {
         hasRegion = true;
         loadedCut = cut;
         mesh = null;
+        meshCoverage = null;
         dirty = meshDirty = true;
         previousImage = hasImage;
         requestAt = 0;
@@ -444,7 +454,7 @@ final class ReliefScreen extends Screen {
 
     private int mapHeight() { return footer - MAP_FOOT - mapTop; }
 
-    private void easeCamera(long now) {
+    private boolean easeCamera(long now) {
         double weight = -Math.expm1(-(now - cameraUpdatedAt) / 32_000_000.0);
         cameraUpdatedAt = now;
         double turn = Math.IEEEremainder(yaw - renderedYaw, Math.TAU);
@@ -467,22 +477,36 @@ final class ReliefScreen extends Screen {
             panY = zoomPan(panY, zoomAnchorY, renderedZoom, nextZoom);
             renderedZoom = nextZoom;
         }
+        return moving || dragging && probeDragged || panning && panDragged;
+    }
+
+    static double rasterFit(double width, double height, int span, double zoom, int faces, boolean movingSurface) {
+        double area = width * height;
+        double fit = Math.min(1, Math.sqrt(MAX_PIXELS / area));
+        if (movingSurface && span >= 512 && faces >= 1_000_000
+                && Math.min(width, height) * fit * .82 * zoom / span <= 2)
+            return Math.min(fit, Math.sqrt(MOVING_SURFACE_PIXELS / area));
+        return fit;
     }
 
     private void tickFrame() {
-        if (outline != null && outlineOpacity(System.nanoTime() - outlineStartedAt) == 0) clearOutline();
+        if (outline != null && outlineStartedAt != 0 && outlineOpacity(System.nanoTime() - outlineStartedAt) == 0)
+            clearOutline();
         if (frame != null && frame.isDone()) {
             Frame result = frame.isCompletedExceptionally() ? null : frame.join();
             if (result != null && result.probe().revision() == regionRevision
                     && result.viewportRevision() == viewportRevision) {
                 mesh = result.mesh();
+                meshCoverage = result.coverage();
                 centerY = result.centerY();
                 long uploadStart = WyWFDebug.ENABLED ? System.nanoTime() : 0;
                 image.upload(result.width(), result.height(), result.colors());
+                portalEye.upload(result.eye(), result.width(), result.height());
                 renderedOutline = outline == result.outline() ? outline : null;
-                if (renderedOutline != null)
+                if (renderedOutline != null) {
                     outlineImage.upload(result.width(), result.height(), result.buffers().outlinePixels());
-                else outlineImage.close();
+                    startOutlineTimer();
+                } else outlineImage.close();
                 gpuImage = false;
                 if (WyWFDebug.ENABLED && uploadStart - lastRenderLog >= 1_000_000_000L) {
                     lastRenderLog = uploadStart;
@@ -512,7 +536,7 @@ final class ReliefScreen extends Screen {
             moveToLoaded(pendingTarget);
             pendingTarget = null;
         }
-        easeCamera(now);
+        boolean cameraMoving = easeCamera(now);
         boolean stillLoading = pageLoads.loading();
         long rebuildInterval = Math.clamp(lastMeshNanos * 2, 250_000_000L, 1_200_000_000L);
         boolean rebuildBatch = !stillLoading || ready - meshTiles >= 64 && now - meshStartedAt >= rebuildInterval;
@@ -537,19 +561,31 @@ final class ReliefScreen extends Screen {
             building = MapBackground.cpuResult(() -> {
                 long start = System.nanoTime();
                 var rebuilt = builder.build(tiles, side, dimension, cancelled);
-                return new MeshUpdate(rebuilt, System.nanoTime() - start, builder.reusedChunks());
+                var coverage = new BitSet(tiles.length);
+                for (int i = 0; i < tiles.length; i++) if (tiles[i] != null) coverage.set(i);
+                return new MeshUpdate(rebuilt, coverage, System.nanoTime() - start, builder.reusedChunks());
             });
         }
         if (frame != null || mesh == null && preparedMesh == null || mapHeight() <= 0 || width <= 24) return;
         boolean newGeometry = preparedMesh != null;
-        boolean canUseGpu = gpu != null && outline == null && !stillLoading && !meshDirty && building == null;
-        if (!dirty && !newGeometry && !(canUseGpu && gpu.uploading())) return;
+        boolean canUseGpu = gpu != null && !stillLoading && !meshDirty && building == null;
+        var geometry = preparedMesh == null ? mesh : preparedMesh.mesh();
+        var coverage = preparedMesh == null ? meshCoverage : preparedMesh.coverage();
+        if (pendingOutline != null && hasStructureChunks(pendingOutline.structure(), coverage, originX, originZ, chunkSide)) {
+            outline = new ReliefRaster.Outline(pendingOutline.structure(), pendingOutline.y());
+            pendingOutline = null;
+            dirty = true;
+        }
+        int span = chunkSide * 16;
         var window = Minecraft.getInstance().getWindow();
         double factor = window.getWidth() / (double)Math.max(1, width);
         double pixelWidth = (width - 24) * factor, pixelHeight = mapHeight() * factor;
-        double fit = Math.min(1, Math.sqrt(MAX_PIXELS / (pixelWidth * pixelHeight)));
+        double fit = rasterFit(pixelWidth, pixelHeight, span, renderedZoom, geometry.faces().length / 3,
+                cameraMoving && !gpuImage && dimension == DimensionSpace.OVERWORLD && !caves);
         int w = Math.max(1, (int)Math.round(pixelWidth * fit)), h = Math.max(1, (int)Math.round(pixelHeight * fit));
-        var geometry = preparedMesh == null ? mesh : preparedMesh.mesh();
+        dirty |= lastProbe != null && (w != lastProbe.width() || h != lastProbe.height());
+        boolean gpuNeedsFrame = canUseGpu && (geometry != gpuAttempted || gpu.uploading() || gpu.animating());
+        if (!dirty && !newGeometry && !gpuNeedsFrame) return;
         long meshNanos = preparedMesh == null ? 0 : preparedMesh.nanos();
         int reusedChunks = preparedMesh == null ? 0 : preparedMesh.reusedChunks();
         preparedMesh = null;
@@ -559,21 +595,40 @@ final class ReliefScreen extends Screen {
         boolean underRoof = dimension == DimensionSpace.NETHER && caves;
         boolean cameraChanged = dirty;
         dirty = false;
-        int span = chunkSide * 16;
         int x = originX, z = originZ;
         double offsetX = panX, offsetY = panY;
         if (canUseGpu) {
+            gpuAttempted = geometry;
             float center = Float.isNaN(y) ? (geometry.minimum() + geometry.maximum()) * .5f : y;
+            long submitStart = WyWFDebug.ENABLED ? System.nanoTime() : 0;
             try {
-                if (gpu.render(geometry, w, h, background, center, bearing, elevation, magnification, offsetX, offsetY)) {
-                    if (!gpuImage) image.close();
+                if (gpu.render(geometry, w, h, background, center, bearing, elevation, magnification, offsetX, offsetY, underRoof, outline, x, z)) {
+                    if (!gpuImage) {
+                        image.close();
+                        portalEye.close();
+                    }
                     gpuImage = hasImage = true;
                     previousImage = false;
                     mesh = geometry;
+                    meshCoverage = coverage;
+                    if (gpu.hasOutline(outline)) startOutlineTimer();
                     centerY = center;
                     lastProbe = new Probe(w, h, x, z, span, center, bearing, elevation, magnification, offsetX, offsetY,
                             revision, underRoof);
                     idleBuffers = null;
+                    displayedProbeFaces = null;
+                    if (WyWFDebug.ENABLED) {
+                        long submitted = System.nanoTime();
+                        if (submitted - lastRenderLog >= 1_000_000_000L) {
+                            lastRenderLog = submitted;
+                            WYWFClient.LOGGER.info("[Relief GPU] dimension={} backend={} chunks={}/{} faces={} zoom={} pitch={} submitMs={} frameGapMs={}",
+                                    dimension.id, com.mojang.blaze3d.systems.RenderSystem.getDevice().getDeviceInfo().backendName(),
+                                    ready, caveTiles.length, geometry.faces().length / 3, magnification, Math.toDegrees(elevation),
+                                    (submitted - submitStart) / 1_000_000.0,
+                                    lastUploadedAt == 0 ? 0 : (submitted - lastUploadedAt) / 1_000_000.0);
+                        }
+                        lastUploadedAt = submitted;
+                    }
                     return;
                 }
             } catch (RuntimeException error) {
@@ -601,7 +656,7 @@ final class ReliefScreen extends Screen {
             long start = WyWFDebug.ENABLED ? System.nanoTime() : 0;
             int[] pixels = ReliefRaster.draw(geometry, w, h, bearing, elevation, magnification,
                     dimension, underRoof, background, plane, span, x, z, null, offsetX, offsetY, buffers, granted, highlight, cancelled);
-            return new Frame(geometry, center, w, h, pixels, buffers, probe, highlight,
+            return new Frame(geometry, coverage, center, w, h, pixels, buffers, probe, highlight, buffers.eyePixels(w, h),
                     WyWFDebug.ENABLED ? System.nanoTime() - start : 0, meshNanos, reusedChunks, queuedAt, workerStartedAt, viewport);
         });
     }
@@ -616,9 +671,12 @@ final class ReliefScreen extends Screen {
         g.fill(12, mapTop, width - 12, footer - MAP_FOOT, fog);
         boolean loading = pageLoads.loading();
         if (hasImage) {
-            if (gpuImage) gpu.draw(g, 12, mapTop, width - 24, mapHeight());
-            else {
+            if (gpuImage) {
+                int alpha = outlineStartedAt == 0 ? 0 : Math.round(255 * outlineOpacity(System.nanoTime() - outlineStartedAt));
+                gpu.draw(g, 12, mapTop, width - 24, mapHeight(), outline, alpha);
+            } else {
                 image.draw(g, 12, mapTop, width - 24, mapHeight());
+                portalEye.draw(g, 12, mapTop, width - 24, mapHeight(), System.nanoTime());
                 if (outline != null && renderedOutline == outline) {
                     int alpha = Math.round(255 * outlineOpacity(System.nanoTime() - outlineStartedAt));
                     if (alpha > 0)
@@ -720,7 +778,8 @@ final class ReliefScreen extends Screen {
             int color = tile.voxel(col, by), material = color & ReliefTile.FACE_TYPE;
             if (color == 0 || color == ReliefTile.COVERED_WATER || ReliefTile.plant(material)) continue;
             double localY = y - by;
-            if (material == ReliefTile.SHAPED_BLOCK && com.wywf.verify.ReliefShapes.get(color).boxes().stream()
+            if ((material == ReliefTile.SHAPED_BLOCK || material == ReliefTile.END_PORTAL_EYE)
+                    && com.wywf.verify.ReliefShapes.get(color).boxes().stream()
                     .noneMatch(box -> box.contains(x - bx, localY, z - bz))) continue;
             return new WorldPoint(x, y, z);
         }
@@ -832,13 +891,15 @@ final class ReliefScreen extends Screen {
         }
         context = null;
         rotationPivot = null;
-        if (loaded(pin.x(), pin.z()) && mostlyLoaded(pin.structure())) {
+        var structure = pin.structure();
+        if (loaded(pin.x(), pin.z()) && structureFits(structure, originX, originZ, chunkSide)) {
+            pendingTarget = null;
             moveToLoaded(pin);
             return;
         }
         clearOutline();
-        focusX = pin.x();
-        focusZ = pin.z();
+        focusX = structure == null ? pin.x() : (int)(((long)structure.minX() + structure.maxX()) >> 1);
+        focusZ = structure == null ? pin.z() : (int)(((long)structure.minZ() + structure.maxZ()) >> 1);
         pendingTarget = pin;
         panX = panY = 0;
         resetSlice();
@@ -869,40 +930,43 @@ final class ReliefScreen extends Screen {
         if (modeChanged) rebuildWidgets();
     }
 
-    private boolean mostlyLoaded(com.wywf.verify.VerifiedAnchor structure) {
-        if (structure == null) return true;
-        int minX = structure.minX() >> 4, minZ = structure.minZ() >> 4;
-        int maxX = structure.maxX() >> 4, maxZ = structure.maxZ() >> 4;
-        long total = (maxX - minX + 1L) * (maxZ - minZ + 1L);
-        int ready = 0;
-        for (int z = Math.max(minZ, originZ >> 4); z <= Math.min(maxZ, (originZ >> 4) + chunkSide - 1); z++) {
-            for (int x = Math.max(minX, originX >> 4); x <= Math.min(maxX, (originX >> 4) + chunkSide - 1); x++)
-                if (loaded(x << 4, z << 4)) ready++;
-        }
-        return ready >= total * .7;
+    private static boolean structureFits(com.wywf.verify.VerifiedAnchor structure, int originX, int originZ, int side) {
+        return structure == null || structure.minX() >= originX && structure.minZ() >= originZ
+                && structure.maxX() < originX + side * 16 && structure.maxZ() < originZ + side * 16;
     }
 
     private void moveToLoaded(ReliefTargets.Pin pin) {
         int y = pinHeight(pin);
         centerOn(new WorldPoint(pin.x() + .5, y + 1, pin.z() + .5));
         clearOutline();
-        if (pin.structure() != null) {
-            outline = new ReliefRaster.Outline(pin.structure(), y);
-            outlineStartedAt = System.nanoTime();
-        }
+        if (pin.structure() != null) pendingOutline = new PendingOutline(pin.structure(), y);
+    }
+
+    static boolean hasStructureChunks(com.wywf.verify.VerifiedAnchor structure, BitSet coverage,
+                                      int originX, int originZ, int side) {
+        if (coverage == null || !structureFits(structure, originX, originZ, side)) return false;
+        int minX = (structure.minX() >> 4) - (originX >> 4);
+        int maxX = (structure.maxX() >> 4) - (originX >> 4);
+        int minZ = (structure.minZ() >> 4) - (originZ >> 4);
+        int maxZ = (structure.maxZ() >> 4) - (originZ >> 4);
+        for (int z = minZ; z <= maxZ; z++)
+            if (coverage.nextClearBit(z * side + minX) <= z * side + maxX) return false;
+        return true;
     }
 
     private void logProbe(double mouseX, double mouseY) {
         var probe = lastProbe;
         if (probe == null) return;
         double u = (mouseX - 12) / (width - 24), v = (mouseY - mapTop) / mapHeight();
-        if (probe.revision() != regionRevision || displayedProbeFaces == null || mesh == null) {
+        if (probe.revision() != regionRevision || mesh == null || (!gpuImage && displayedProbeFaces == null)) {
             WYWFClient.LOGGER.info("[Relief probe] Waiting for a frame from the current region");
             return;
         }
         int px = Math.clamp((int)(u * probe.width()), 0, probe.width() - 1);
         int py = Math.clamp((int)(v * probe.height()), 0, probe.height() - 1);
-        int face = displayedProbeFaces[py * probe.width() + px];
+        int face = gpuImage ? ReliefRaster.pickFace(mesh, probe.width(), probe.height(), px, py, probe.yaw(),
+                probe.pitch(), probe.zoom(), dimension, probe.underRoof(), fog, probe.y(), probe.span(),
+                probe.panX(), probe.panY()) : displayedProbeFaces[py * probe.width() + px];
         if (face == ReliefRaster.PROBE_EDGE_FOG) {
             WYWFClient.LOGGER.info("[Relief probe] seed={} dimension={} hit=edge-fog reason=map-boundary",
                     source.result().seed, dimension.id);
@@ -1086,7 +1150,13 @@ final class ReliefScreen extends Screen {
         return .86f * (1 - Math.clamp(elapsed / (float)OUTLINE_DURATION, 0, 1));
     }
 
+    private void startOutlineTimer() {
+        if (outlineStartedAt == 0) outlineStartedAt = System.nanoTime();
+    }
+
     private void clearOutline() {
+        pendingOutline = null;
+        outlineStartedAt = 0;
         if (outline == null) return;
         outline = renderedOutline = null;
         outlineImage.close();
@@ -1110,7 +1180,8 @@ final class ReliefScreen extends Screen {
         cancelWork();
         partialPages.clear();
         meshBuilder = null;
-        mesh = null;
+        mesh = gpuAttempted = null;
+        meshCoverage = null;
         caveTiles = null;
         idleBuffers = null;
         lastProbe = null;
@@ -1118,6 +1189,7 @@ final class ReliefScreen extends Screen {
         source.pauseSurface();
         clearOutline();
         image.close();
+        portalEye.close();
         if (gpu != null) {
             gpu.close();
             gpu = null;

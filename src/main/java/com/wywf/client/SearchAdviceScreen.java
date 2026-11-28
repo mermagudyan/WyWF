@@ -1,5 +1,6 @@
 package com.wywf.client;
 
+import dev.diylib.client.ui.DiyVanillaButton;
 import com.wywf.core.*;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -58,27 +59,27 @@ public final class SearchAdviceScreen extends Screen {
                     ? MapTexts.text(choice.before().startsWith("never ") ? "advice_remove_exclusion" : "advice_remove_requirement",
                             ResultTexts.name(choice.target()))
                     : MapTexts.text("advice_" + choice.kind().name().toLowerCase(java.util.Locale.ROOT), ResultTexts.name(choice.target()));
-            Button use = MenuButton.builder(net.minecraft.network.chat.Component.literal(label), b -> start(choice.query()))
+            Button use = DiyVanillaButton.builder(net.minecraft.network.chat.Component.literal(label), b -> start(choice.query()))
                     .bounds(12, contentTop() + (i % count) * 40, width - 24, 20).build();
             use.setTooltip(Tooltip.create(net.minecraft.network.chat.Component.literal(
                     choice.before() + " → " + (choice.after().isEmpty() ? MapTexts.text("removed") : choice.after())
                     + "\n" + choice.query())));
             addRenderableWidget(use);
         }
-        addRenderableWidget(MenuButton.builder(net.minecraft.network.chat.Component.literal("<"), b -> {
+        addRenderableWidget(DiyVanillaButton.builder(net.minecraft.network.chat.Component.literal("<"), b -> {
             page = Math.max(0, page - 1);
             rebuildWidgets();
         })
                 .bounds(12, height - 55, 30, 20).build()).active = page > 0;
-        addRenderableWidget(MenuButton.builder(net.minecraft.network.chat.Component.literal(">"), b -> {
+        addRenderableWidget(DiyVanillaButton.builder(net.minecraft.network.chat.Component.literal(">"), b -> {
             page++;
             rebuildWidgets();
         })
                 .bounds(48, height - 55, 30, 20).build()).active = page + 1 < pages;
         int w = Math.min(180, (width - 30) / 2);
-        addRenderableWidget(MenuButton.builder(MapTexts.label("as_is"), b -> start(original))
+        addRenderableWidget(DiyVanillaButton.builder(MapTexts.label("as_is"), b -> start(original))
                 .bounds(12, height - 29, w, 20).build());
-        addRenderableWidget(MenuButton.builder(ResultTexts.label("back"), b -> onClose())
+        addRenderableWidget(DiyVanillaButton.builder(ResultTexts.label("back"), b -> onClose())
                 .bounds(width - w - 12, height - 29, w, 20).build());
     }
 

@@ -1,5 +1,6 @@
 package com.wywf.client;
 
+import dev.diylib.client.ui.DiyVanillaButton;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.wywf.core.DimensionSpace;
 import com.wywf.verify.*;
@@ -138,14 +139,14 @@ public final class SurfaceMapScreen extends Screen {
         if (tab == View.TERRAIN) initTerrain();
         if (tab == View.SURFACE && dimension != DimensionSpace.NETHER) {
             int w = Math.min(180, width - 24);
-            addRenderableWidget(MenuButton.builder(autoSurfaceLabel(), button -> {
+            addRenderableWidget(DiyVanillaButton.builder(autoSurfaceLabel(), button -> {
                 autoSurface = !autoSurface;
                 button.setMessage(autoSurfaceLabel());
             }).bounds((width - w) / 2, footer - 24, w, 20).build()).active = session.surfaceExpandable();
         }
         if (tab == View.BIOMES && dimension == DimensionSpace.OVERWORLD) {
             int w = Math.min(148, width - 24);
-            addRenderableWidget(MenuButton.builder(biomeViewLabel(), button -> {
+            addRenderableWidget(DiyVanillaButton.builder(biomeViewLabel(), button -> {
                 caveBiomes = !caveBiomes;
                 button.setMessage(biomeViewLabel());
                 overview.dirty();
@@ -153,7 +154,7 @@ public final class SurfaceMapScreen extends Screen {
             }).bounds((width - w) / 2, footer - 24, w, 20).build());
         }
         int backWidth = Math.min(150, width / 3);
-        addRenderableWidget(MenuButton.builder(ResultTexts.label("back"), b -> onClose())
+        addRenderableWidget(DiyVanillaButton.builder(ResultTexts.label("back"), b -> onClose())
                 .bounds((width - backWidth) / 2, footer + 8, backWidth, 20).build());
     }
 
@@ -161,25 +162,25 @@ public final class SurfaceMapScreen extends Screen {
         int row = footer - 24, upperRow = row - 24;
         int w = Math.max(1, Math.min(108, (width - 36) / 4));
         int center = (width - w) / 2, gap = w + 5;
-        addRenderableWidget(MenuButton.builder(borderLabel(), b -> {
+        addRenderableWidget(DiyVanillaButton.builder(borderLabel(), b -> {
             grid = !grid;
             overview.borders(grid);
             b.setMessage(borderLabel());
             dirty = true;
         }).bounds(center - 3 * gap / 2, row, w, 20).build());
-        addRenderableWidget(MenuButton.builder(MapTexts.label("reset"), b -> {
+        addRenderableWidget(DiyVanillaButton.builder(MapTexts.label("reset"), b -> {
             resetMapView();
             overview.dirty();
             dirty = true;
         }).bounds(center - gap / 2, row, w, 20).build());
-        addRenderableWidget(MenuButton.builder(MapTexts.label("structures_short"), b ->
+        addRenderableWidget(DiyVanillaButton.builder(MapTexts.label("structures_short"), b ->
                 minecraft.setScreenAndShow(new StructureLayersScreen(this, structures)))
                 .bounds(center + gap / 2, row, w, 20).build());
-        addRenderableWidget(MenuButton.builder(ResultTexts.label("details"), b ->
+        addRenderableWidget(DiyVanillaButton.builder(ResultTexts.label("details"), b ->
                 minecraft.setScreenAndShow(new CandidateDetailsScreen(this, session)))
                 .bounds(center + 3 * gap / 2, row, w, 20).build()).active = session.saved();
 
-        addRenderableWidget(MenuButton.builder(MapTexts.label("relief_view"), b -> {
+        addRenderableWidget(DiyVanillaButton.builder(MapTexts.label("relief_view"), b -> {
             int x = (int)Math.floor(view.x()), z = (int)Math.floor(view.z());
             var result = session.summary();
             if (dimension == com.wywf.core.DimensionSpace.OVERWORLD && result != null
@@ -189,7 +190,7 @@ public final class SurfaceMapScreen extends Screen {
             }
             minecraft.setScreenAndShow(new ReliefScreen(this, session, dimension, x, z));
         }).bounds(center - gap / 2, upperRow, w, 20).build()).active = session.surfaceExpandable() || session.surface() != null;
-        addRenderableWidget(MenuButton.builder(MapTexts.label("dimension_" + dimension.name().toLowerCase(java.util.Locale.ROOT)), b -> {
+        addRenderableWidget(DiyVanillaButton.builder(MapTexts.label("dimension_" + dimension.name().toLowerCase(java.util.Locale.ROOT)), b -> {
             dimension = com.wywf.core.DimensionSpace.values()[(dimension.ordinal() + 1) % 3];
             overview.dimension(dimension);
             exactTiles.close();
@@ -202,6 +203,10 @@ public final class SurfaceMapScreen extends Screen {
 
     private boolean showExactBiomes() {
         return layer == SurfaceColors.Layer.BIOMES && !caveView() && dimension != DimensionSpace.NETHER;
+    }
+
+    private boolean drawsSurfaceImage() {
+        return layer == SurfaceColors.Layer.HEIGHT || layer == SurfaceColors.Layer.CLIMATE && localContrast;
     }
 
     private boolean showTopBlocks() {
@@ -231,13 +236,13 @@ public final class SurfaceMapScreen extends Screen {
         layer = TERRAIN[terrainIndex];
         int w = Math.min(135, (width - 32) / 2);
         int row = footer - 24;
-        var contrast = MenuButton.builder(contrastLabel(), b -> {
+        var contrast = DiyVanillaButton.builder(contrastLabel(), b -> {
             localContrast = !localContrast;
             b.setMessage(contrastLabel());
             dirty = true;
         }).bounds(width / 2 + 3, row, w, 20).build();
         contrast.visible = layer == SurfaceColors.Layer.CLIMATE && session.surface() != null;
-        addRenderableWidget(MenuButton.builder(terrainLabel(), b -> {
+        addRenderableWidget(DiyVanillaButton.builder(terrainLabel(), b -> {
             terrainIndex = (terrainIndex + 1) % count;
             layer = TERRAIN[terrainIndex];
             dirty = true;
@@ -284,7 +289,7 @@ public final class SurfaceMapScreen extends Screen {
         if (topView || exactBiomes)
             exactTiles.update(session, dimension, view, layer, grid, mapWidth, mapHeight);
         if (exactBiomes && session instanceof SavedMapPreview saved && surfaceCache != null
-                && !saved.cancelled() && !saved.surfaceBusy() && System.currentTimeMillis() - stableSince > 400) {
+                && !saved.cancelled() && System.currentTimeMillis() - stableSince > 400) {
             requestSavedBiomePage(saved, surfaceCache);
         }
         if (topView) {
@@ -310,14 +315,17 @@ public final class SurfaceMapScreen extends Screen {
                 scannedFeaturePages.clear();
             }
             if(!selected.isEmpty()){
-                var window=SurfaceWindow.around(view,256);
+                boolean gateways = selected.contains(EndReturnGateways.ID);
+                var window = gateways ? EndReturnGateways.scanWindow(view) : SurfaceWindow.around(view, 256);
                 int[] next=null;
                 double nearest=Double.POSITIVE_INFINITY;
                 for(int z=window.z();z<window.z()+window.height();z+=64)
                     for(int x=window.x();x<window.x()+window.width();x+=64){
+                    if (gateways && !EndReturnGateways.mayContainPage(x, z)) continue;
                     if(scannedFeaturePages.contains(x+":"+z))
                         continue;
-                    double distance=Math.hypot(x+32-view.x(),z+32-view.z());
+                    double distance = gateways ? EndReturnGateways.pageDistance(view, x, z)
+                            : Math.hypot(x + 32 - view.x(), z + 32 - view.z());
                     if(distance<nearest){
                         next=new int[]{x,z};
                         nearest=distance;
@@ -325,7 +333,7 @@ public final class SurfaceMapScreen extends Screen {
                 }
                 if(next!=null){
                     scannedFeaturePages.add(next[0]+":"+next[1]);
-                    while(scannedFeaturePages.size()>1024)
+                    while (scannedFeaturePages.size() > EndReturnGateways.MAX_SCANNED_PAGES)
                         scannedFeaturePages.remove(scannedFeaturePages.iterator().next());
                     featureWork=session.discoverFeatures(next[0],next[1],selected);}
             }
@@ -352,20 +360,14 @@ public final class SurfaceMapScreen extends Screen {
                 && layer!=SurfaceColors.Layer.SLOPE
                 && s != null
                 && (s != displayed || dirty || summary != session.summary() || step != displayedStep)) {
-            if (step > 1 && layer == SurfaceColors.Layer.BIOMES) {
-                image.upload(s.size() / step, s.size() / step, SurfaceColors.reduceBiomes(s, step));
-            } else {
+            if (drawsSurfaceImage()) {
                 int[] pixels = layer == SurfaceColors.Layer.CLIMATE
                         ? SurfaceColors.climateRaster(s, localContrast) : SurfaceColors.raster(s, layer, grid);
-                if (layer == SurfaceColors.Layer.BIOMES)
-                    image.upload(s.size() * 2, s.size() * 2,
-                            com.wywf.map.TerrainRaster.draw(pixels, s.heights(), s.size(), s.size(), 2, grid));
-                else image.upload(s.size() / step, s.size() / step,
+                image.upload(s.size() / step, s.size() / step,
                         step == 1 ? pixels : SurfaceColors.reduce(pixels, s, step));
+                if (layer == SurfaceColors.Layer.CLIMATE) climateRange = SurfaceColors.climateRange(s);
             }
             displayedStep = step;
-            if (layer == SurfaceColors.Layer.CLIMATE && localContrast)
-                climateRange = SurfaceColors.climateRange(s);
             summary = session.summary();
             displayed = s;
             dirty = false;
@@ -378,10 +380,14 @@ public final class SurfaceMapScreen extends Screen {
         var missing = window.missing(cache, view.x(), view.z(),
                 (x, z) -> !requested.contains(SurfaceCache.key(x, z)));
         if (missing == null) return;
+        if (readsRegions) {
+            if (!saved.refreshSavedSurface(dimension, missing[0], missing[1])) return;
+        } else {
+            if (saved.surfaceBusy()) return;
+            saved.requestSurface(dimension, missing[0], missing[1]);
+        }
         if (requested.size() >= 512) requested.remove(requested.iterator().next());
         requested.add(SurfaceCache.key(missing[0], missing[1]));
-        if (readsRegions) saved.refreshSavedSurface(dimension, missing[0], missing[1]);
-        else saved.requestSurface(dimension, missing[0], missing[1]);
     }
 
     private String centerLabel() {
@@ -557,9 +563,8 @@ public final class SurfaceMapScreen extends Screen {
             int x = left + (int) Math.floor(view.pixelX(s.x())), z = top + (int) Math.floor(view.pixelZ(s.z()));
             int right = left + (int) Math.ceil(view.pixelX(s.x() + s.size()));
             int bottom = top + (int) Math.ceil(view.pixelZ(s.z() + s.size()));
-            if (layer != SurfaceColors.Layer.BIOMES && layer != SurfaceColors.Layer.TEMPERATURE && layer != SurfaceColors.Layer.WATER
-                    && layer!=SurfaceColors.Layer.SLOPE && layer!=SurfaceColors.Layer.MATCH && (layer != SurfaceColors.Layer.CLIMATE || localContrast))
-                {if(layer==SurfaceColors.Layer.SURFACE)exactTiles.draw(g,view,left,top);else image.draw(g, x, z, right - x, bottom - z);}
+            if (layer == SurfaceColors.Layer.SURFACE) exactTiles.draw(g, view, left, top);
+            else if (drawsSurfaceImage()) image.draw(g, x, z, right - x, bottom - z);
             if(grid&&layer==SurfaceColors.Layer.SURFACE&&view.scale()<=1.0/6){
                 for(int wx=(int)Math.floor(view.worldX(0));wx<=view.worldX(mapWidth);wx++){
                     int gx=left+(int)view.pixelX(wx);

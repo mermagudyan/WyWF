@@ -9,10 +9,15 @@ chunks.
 
 ![In-game compatibility table preview](.github/assets/version-compatibility.gif)
 
-WyWF 26.3 requires the standalone 26.3 edition of DIY Lib. Build with a
-sibling `../diy-lib` checkout,
-pass `-PdiyLibDir=<path>` for a custom checkout, or install `dev.diylib:diy-lib:0.1.0`
-with DIY Lib's `publishToMavenLocal` task
+Choose matching releases of WyWF and DIY Lib for Minecraft 26.x.
+
+| Minecraft               | WyWF and DIY Lib | Minimum Fabric Loader |
+|-------------------------|-------------------------| --- |
+| 26.1, 26.1.2, 26.2 26.3 | `26.x` and for 26.3 `26.3`  | 0.19.5 |
+
+Build with the matching sibling checkout (`../diy-lib` or `../diy-lib-26.x`),
+pass `-PdiyLibDir=<path>`, or publish the matching DIY Lib `0.1.0` artifact to
+your local Maven repository with `publishToMavenLocal`.
 
 ## What it does
 
@@ -209,8 +214,8 @@ Copy-paste the seed:
 - **No manual Gradle install needed.** The project ships the Gradle Wrapper
   (`gradlew` / `gradlew.bat`), which downloads the correct Gradle version
   automatically.
-- **Internet access on the first build.** Fabric Loom downloads Minecraft 26.3,
-  Fabric Loader and Fabric API. Later builds can use `--offline` once dependencies are cached.
+- **Internet access on the first build.** Fabric Loom downloads the branch's
+  Minecraft, Fabric Loader and Fabric API build dependencies. Later builds can use `--offline` once dependencies are cached.
 
 ### Commands
 
@@ -230,7 +235,7 @@ Run the wrapper from the project root. On Windows use `gradlew.bat` instead of
 # Same with the full debug log enabled
 ./gradlew runClient -Pdebug
 
-# Enable the DIY Lib console and UI debug screen on Minecraft 26.3
+# Enable the DIY Lib console and UI debug screen
 ./gradlew runClient -Ddiylib.debug=true
 
 # List all available tasks
@@ -246,6 +251,7 @@ dependency, so it works out of the box.
 
 ### Capture the compatibility table
 
+Run these commands from the `26.3` checkout. 
 The test screen opens on the Minecraft panorama and stays open until you leave it.
 Its border uses a ten-second loop.
 
@@ -263,16 +269,16 @@ The built mod jars are written to:
 
 ```
 build/libs/wywf-2.0.0+26.3.jar
+build/libs/wywf-2.0.0+26.x.jar
 ```
 
 (the name is `<archives_base_name>-<mod_version>.jar`, taken from
-`gradle.properties`). Build DIY Lib with its own Gradle wrapper to get
-`diylib-0.1.0.jar` in its `build/libs/` directory.
+`gradle.properties`). Build DIY Lib with its own Gradle wrapper to get `diylib-0.1.0+26.3.jar` or `diylib-0.1.0+26.x.jar` in its `build/libs/` directory.
 
 ### Build all three branches on Windows
 
-Keep the `26.x` and `1.21.x` working trees alongside this checkout in `WyWF_26.x`
-and `WyWF_1.21.x`. Alternate paths can be given with `-Wywf26x` and `-Wywf121x`.
+Run the script from the `26.3` checkout with the `26.x` and `1.21.x` working
+trees alongside it in `WyWF_26.x` and `WyWF_1.21.x`. Use `-Wywf26x` and `-Wywf121x` to supply other paths.
 
 ```powershell
 powershell -NoProfile -File .\build-all\Build-All.ps1
@@ -294,9 +300,10 @@ and `26.x`. Keep version-specific sources and resources in each branch's `src/mc
 
 ## Installation
 
-1. Install Fabric Loader 0.19+ for Minecraft 26.x (tested on 26.2; 26.3
-   uses the same setup) and Fabric API.
-2. Put the WyWF JAR and DIY Lib into your `mods/` folder.
+1. Install Fabric Loader for your Minecraft version using the compatibility table above.
+2. Install Fabric API, WyWF and DIY Lib as separate JARs in `mods/`.
+3. Optionally install Mod Menu to open WyWF's settings and project links.
+   Check the loader requirement of your Mod Menu version separately.
 
 ## Extending the dictionary
 
@@ -315,9 +322,6 @@ WYWFClient.dictionary().rebuildIndex();
 Fast native biome/structure math is based on
 [cubiomes by Cubitect](https://github.com/Cubitect/cubiomes),
 via the active fork by [xpple](https://github.com/xpple/cubiomes).
-The DLL ships **inside the mod** — nothing is ever downloaded at
-runtime. Build sources, the build script and SHA-256 hashes are
-published with each release for verification.
 
 ## License
 

@@ -1,5 +1,6 @@
 package com.wywf.client;
 
+import dev.diylib.client.ui.DiyVanillaButton;
 import com.wywf.core.*;
 import com.wywf.map.StructureLayers;
 import net.minecraft.client.Minecraft;
@@ -55,7 +56,7 @@ final class StructureLayersScreen extends Screen {
         page = Math.min(page, pages - 1);
         for (int i = page * rows; i < Math.min(targets.size(), (page + 1) * rows); i++) {
             var t = targets.get(i);
-            var button = addRenderableWidget(MenuButton.builder(net.minecraft.network.chat.Component.literal((layers.enabled.contains(t.canonical()) ? "✓ " : "□ ")
+            var button = addRenderableWidget(DiyVanillaButton.builder(net.minecraft.network.chat.Component.literal((layers.enabled.contains(t.canonical()) ? "✓ " : "□ ")
                     + ResultTexts.name(t.canonical())), b -> {
                 layers.toggle(t.canonical());
                 rebuildWidgets();
@@ -63,21 +64,21 @@ final class StructureLayersScreen extends Screen {
             if (t.canonical().equals(com.wywf.verify.EndReturnGateways.ID))
                 button.setTooltip(Tooltip.create(MapTexts.label("end_return_gateway_help")));
         }
-        addRenderableWidget(MenuButton.builder(net.minecraft.network.chat.Component.literal("<"), b -> {
+        addRenderableWidget(DiyVanillaButton.builder(net.minecraft.network.chat.Component.literal("<"), b -> {
             page = Math.max(0, page - 1);
             rebuildWidgets();
         })
                 .bounds(x, navY, 32, 20).build()).active = page > 0;
-        addRenderableWidget(MenuButton.builder(net.minecraft.network.chat.Component.literal(">"), b -> {
+        addRenderableWidget(DiyVanillaButton.builder(net.minecraft.network.chat.Component.literal(">"), b -> {
             page++;
             rebuildWidgets();
         })
                 .bounds(x + 278, navY, 32, 20).build()).active = page + 1 < pages;
-        addRenderableWidget(MenuButton.builder(SearchConstructorScreen.label("clear"),b->{
+        addRenderableWidget(DiyVanillaButton.builder(SearchConstructorScreen.label("clear"),b->{
             layers.clearExtra();
             rebuildWidgets();
         }).bounds(x+48,navY,214,20).build());
-        addRenderableWidget(MenuButton.builder(ResultTexts.label("back"), b -> onClose()).bounds(x + 48, height - 31, 214, 20).build());
+        addRenderableWidget(DiyVanillaButton.builder(ResultTexts.label("back"), b -> onClose()).bounds(x + 48, height - 31, 214, 20).build());
     }
     @Override public void extractRenderState(GuiGraphicsExtractor g, int mx, int my, float tick) {
         g.fill(0, 0, width, height, 0xED172126);

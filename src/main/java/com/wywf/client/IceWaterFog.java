@@ -51,6 +51,9 @@ final class IceWaterFog {
         }
     }
 
+    int stride() { return stride; }
+    int[] corners() { return corners; }
+
     boolean maySee(float x, float z, float cameraX, float cameraZ) {
         return (x + 1 >= minX || cameraX < 0) && (x - 1 <= maxX || cameraX > 0)
                 && (z + 1 >= minZ || cameraZ < 0) && (z - 1 <= maxZ || cameraZ > 0);

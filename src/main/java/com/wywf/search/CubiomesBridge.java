@@ -407,6 +407,20 @@ public final class CubiomesBridge {
         return false;
     }
 
+    private static Pointer viabilityGenerator(int dimension, long seed) {
+        boolean nether = dimension == DIM_NETHER;
+        Pointer generator = (nether ? GENERATOR_NETHER : GENERATOR).get();
+        markUsed();
+        if (nether) {
+            long[] cell = NETHER_SEED.get();
+            if (cell[0] != seed) {
+                lib.wywf_applySeed(generator, DIM_NETHER, seed);
+                cell[0] = seed;
+            }
+        }
+        return generator;
+    }
+
     public static boolean isViableStructurePos(int structType, int x, int z) {
         return isViableStructurePos(structType, DIM_OVERWORLD, 0, x, z, 0);
     }
@@ -420,19 +434,7 @@ public final class CubiomesBridge {
     public static boolean isViableStructurePos(int structType, int dim, long seed, int x, int z, int variantFlags) {
         if (lib == null) return false;
         try {
-            Pointer g;
-            if (dim == DIM_NETHER) {
-                g = GENERATOR_NETHER.get();
-                markUsed();
-                long[] cell = NETHER_SEED.get();
-                if (cell[0] != seed) {
-                    lib.wywf_applySeed(g, DIM_NETHER, seed);
-                    cell[0] = seed;
-                }
-            } else {
-                g = GENERATOR.get();
-                markUsed();
-            }
+            Pointer g = viabilityGenerator(dim, seed);
             boolean ok = lib.wywf_isViableStructurePos(structType, g, x, z, variantFlags) != 0;
             if (ok && sulfurVeto(structType, dim, g, x, z)) return false;
             return ok;
@@ -545,19 +547,7 @@ public final class CubiomesBridge {
     public static boolean[] viableMany(int structType, int dim, long seed, int[] xs, int[] zs, int n, int variantFlags) {
         if (lib == null || n <= 0) return null;
         try {
-            Pointer g;
-            if (dim == DIM_NETHER) {
-                g = GENERATOR_NETHER.get();
-                markUsed();
-                long[] cell = NETHER_SEED.get();
-                if (cell[0] != seed) {
-                    lib.wywf_applySeed(g, DIM_NETHER, seed);
-                    cell[0] = seed;
-                }
-            } else {
-                g = GENERATOR.get();
-                markUsed();
-            }
+            Pointer g = viabilityGenerator(dim, seed);
             byte[] out = rawBuffer(n);
             lib.wywf_isViableMany(g, structType, xs, zs, n, variantFlags, out);
             boolean[] res = new boolean[n];

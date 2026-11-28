@@ -4,6 +4,8 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.EmptyBlockGetter;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.EndPortalFrameBlock;
 import net.minecraft.world.level.block.FenceBlock;
 import net.minecraft.world.level.block.FenceGateBlock;
 import net.minecraft.world.level.block.RenderShape;
@@ -41,7 +43,8 @@ public final class ReliefShapes {
         if (geometry == EMPTY) return 0;
         int id = NEXT_ID.incrementAndGet();
         GEOMETRY.put(id, geometry);
-        return ReliefTile.SHAPED_BLOCK | id;
+        boolean eye = swatch.state.is(Blocks.END_PORTAL_FRAME) && swatch.state.getValue(EndPortalFrameBlock.HAS_EYE);
+        return (eye ? ReliefTile.END_PORTAL_EYE : ReliefTile.SHAPED_BLOCK) | id;
     }
 
     public static Geometry get(int value) {
@@ -49,7 +52,8 @@ public final class ReliefShapes {
     }
 
     static int rgb(int value) {
-        return (value & ReliefTile.FACE_TYPE) == ReliefTile.SHAPED_BLOCK ? get(value).color : value;
+        int material = value & ReliefTile.FACE_TYPE;
+        return material == ReliefTile.SHAPED_BLOCK || material == ReliefTile.END_PORTAL_EYE ? get(value).color : value;
     }
 
     private static Geometry geometry(BlockState state, int color) {

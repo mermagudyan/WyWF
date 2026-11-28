@@ -1,5 +1,6 @@
 package com.wywf.client;
 
+import dev.diylib.client.ui.DiyVanillaButton;
 import com.wywf.core.*;
 import com.wywf.verify.*;
 import net.minecraft.client.Minecraft;
@@ -41,22 +42,22 @@ public final class VerificationScreen extends Screen {
 
     @Override protected void init() {
         int w = (width - 42) / 4;
-        map = addRenderableWidget(MenuButton.builder(MapTexts.label("surface"), b ->
+        map = addRenderableWidget(DiyVanillaButton.builder(MapTexts.label("surface"), b ->
                 Minecraft.getInstance().setScreenAndShow(new SurfaceMapScreen(this, session)))
                 .bounds(12, height - 30, w, 20).build());
-        enter = addRenderableWidget(MenuButton.builder(ResultTexts.label("create"), b -> {
+        enter = addRenderableWidget(DiyVanillaButton.builder(ResultTexts.label("create"), b -> {
             try { session.join(); } catch (Exception failure) { error = failure.toString(); }
         }).bounds(18 + w, height - 30, w, 20).build());
-        fallback = addRenderableWidget(MenuButton.builder(MapTexts.label("offline_create"), b -> {
+        fallback = addRenderableWidget(DiyVanillaButton.builder(MapTexts.label("offline_create"), b -> {
             Minecraft.getInstance().setScreenAndShow(new net.minecraft.client.gui.screens.ConfirmScreen(accepted -> {
                 Minecraft.getInstance().setScreenAndShow(this);
                 if (accepted) { offline = true; if (session != null) session.cancel(); }
             }, MapTexts.label("offline_create"), MapTexts.label("offline_warning")));
         }).bounds(24 + w * 2, height - 30, w, 20).build());
-        cancel = addRenderableWidget(MenuButton.builder(MapTexts.label("discard"), b -> {
+        cancel = addRenderableWidget(DiyVanillaButton.builder(MapTexts.label("discard"), b -> {
             if (session != null) session.cancel(); Minecraft.getInstance().setScreenAndShow(parent);
         }).bounds(30 + w * 3, height - 30, w, 20).build());
-        addRenderableWidget(MenuButton.builder(ResultTexts.label("back"), b -> onClose())
+        addRenderableWidget(DiyVanillaButton.builder(ResultTexts.label("back"), b -> onClose())
                 .bounds(width - 102, 7, 90, 20).build());
         updateButtons();
     }

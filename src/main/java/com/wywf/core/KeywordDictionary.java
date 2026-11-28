@@ -228,51 +228,34 @@ public final class KeywordDictionary {
     }
 
     public int matchAt(String text, int start, String[] outCanonical) {
-
-        List<String> keys = sortedKeys;
-        for (String key : keys) {
-            int len = key.length();
-            if (start + len > text.length()) continue;
-            boolean ok = true;
-            for (int i = 0; i < len; i++) {
-                if (text.charAt(start + i) != key.charAt(i)) { ok = false; break; }
-            }
-            if (ok) {
-
-                int next = start + len;
-                if (next < text.length()) {
-                    char c = text.charAt(next);
-                    if (Character.isLetter(c) || c == '-' || c == '_' || c == '.') continue;
-                }
-                if (isSpawnKey(key)) continue;
-                if (isModifierKey(key)) continue;
-                if (isSpawnTriggerKey(key)) continue;
-                outCanonical[0] = synonymToCanonical.get(key);
-                return len;
-            }
-        }
-        return 0;
+        return matchAt(text, start, outCanonical, sortedKeys, false);
     }
 
-    // Block keywords only (used after a spawn trigger)
+    // block keywords are used after a spawn trigger
     public int matchBlockAt(String text, int start, String[] outCanonical) {
-        List<String> keys = blockSortedKeys;
+        return matchAt(text, start, outCanonical, blockSortedKeys, true);
+    }
+
+    private int matchAt(String text, int start, String[] outCanonical, List<String> keys, boolean blocksOnly) {
         for (String key : keys) {
             int len = key.length();
             if (start + len > text.length()) continue;
-            boolean ok = true;
+            boolean matches = true;
             for (int i = 0; i < len; i++) {
-                if (text.charAt(start + i) != key.charAt(i)) { ok = false; break; }
-            }
-            if (ok) {
-                int next = start + len;
-                if (next < text.length()) {
-                    char c = text.charAt(next);
-                    if (Character.isLetter(c) || c == '-' || c == '_' || c == '.') continue;
+                if (text.charAt(start + i) != key.charAt(i)) {
+                    matches = false;
+                    break;
                 }
-                outCanonical[0] = synonymToCanonical.get(key);
-                return len;
             }
+            if (!matches) continue;
+            int next = start + len;
+            if (next < text.length()) {
+                char c = text.charAt(next);
+                if (Character.isLetter(c) || c == '-' || c == '_' || c == '.') continue;
+            }
+            if (!blocksOnly && (isSpawnKey(key) || isModifierKey(key) || isSpawnTriggerKey(key))) continue;
+            outCanonical[0] = synonymToCanonical.get(key);
+            return len;
         }
         return 0;
     }

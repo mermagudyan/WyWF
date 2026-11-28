@@ -3,6 +3,10 @@ package com.wywf.client;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.wywf.core.*;
 import com.wywf.verify.LootCatalog;
+import dev.diylib.animation.RetargetableValue;
+import dev.diylib.api.Scrollbar;
+import dev.diylib.client.ui.DiyTileLayout;
+import dev.diylib.client.ui.DiyUiLayers.Area;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -29,6 +33,7 @@ final class TargetEditor {
     private static final int BACKGROUND = 0xFF202020, EDGE = 0xFF555555, TEXT = 0xFFF4F4F4;
     private static final int[] CARD_COLORS = {0xFF29312D, 0xFF302B28, 0xFF292D35, 0xFF322B31, 0xFF303127, 0xFF283236};
     private static final long ANIMATION = 165_000_000L;
+    private static final long CARD_MOTION = 190_000_000L;
     private static final long REVEAL_ON_LAYOUT = Long.MIN_VALUE;
 
     private enum Section { MODIFIER, TAGS, LOOT, CONTAINER, ITEMS, CARDS }
@@ -60,9 +65,9 @@ final class TargetEditor {
     }
     private record Row(Component label, int offset, int labelColor, AbstractWidget control, int controlX, int controlY) {}
     private record LootChoice(String id, String name, String search) {}
-    private record BranchMotion(StackMotion direction, StackMotion opening) {}
+    private record BranchMotion(RetargetableValue direction, RetargetableValue opening) {}
     private record Card(String label, net.minecraft.world.item.Item icon, EditBox count, MenuRow remove,
-                        StackMotion slide, StackMotion shade) {}
+                        RetargetableValue slide, RetargetableValue shade) {}
 
     private final SearchDraft draft;
     private final SearchDraft.Target target;
@@ -91,6 +96,8 @@ final class TargetEditor {
     private Pane scrollingPane;
     private MenuRow apply;
     private Rect cardBounds;
+    private Pane cardParent;
+    private int cardSide;
     private int hoveredCard = -1, lastCardMouseX = Integer.MIN_VALUE, lastCardMouseY = Integer.MIN_VALUE;
     private int cardScroll;
     private boolean grabbingCardScroll;
@@ -153,6 +160,7 @@ final class TargetEditor {
         panes.clear();
         cards.clear();
         cardBounds = null;
+        cardParent = null;
         direction = anchorX <= screenWidth / 2 ? 1 : -1;
         boolean rootPicker = choice == Section.MODIFIER || choice == Section.TAGS;
         boolean showLoot = lootOpen && lootEnabled && !rootPicker;
@@ -354,11 +362,16 @@ final class TargetEditor {
         int width = popupWidth(items.keySet().stream().map(ResultTexts::name).toList(), 130, 165);
         int contentHeight = items.size() * CARD + (items.size() - 1) * CARD_GAP;
         int height = Math.max(1, Math.min(contentHeight, parent.bounds.h()));
-        int x = sideX(parent.bounds, width, parent.direction);
         var trigger = triggers.get(Section.CARDS);
         int y = itemOpen ? parent.bounds.y() : trigger.getY();
-        cardBounds = new Rect(x, clampY(y, height), width, height);
-        trigger.arrowDirection = x >= parent.bounds.x() ? 1 : -1;
+        var parentArea = new Area(parent.bounds.x(), parent.bounds.y(), parent.bounds.w(), parent.bounds.h());
+        var viewport = new Area(MARGIN, MARGIN, Math.max(1, screenWidth - 2 * MARGIN), Math.max(1, screenHeight - 2 * MARGIN));
+        var attachment = DiyTileLayout.attachSide(parentArea, viewport, width, height, y, parent.direction);
+        var area = attachment.area();
+        cardParent = parent;
+        cardSide = attachment.direction();
+        cardBounds = new Rect(area.x(), area.y(), area.width(), area.height());
+        trigger.arrowDirection = cardSide;
         hoveredCard = -1;
         lastCardMouseX = lastCardMouseY = Integer.MIN_VALUE;
         for (var input : items.values()) {
@@ -378,7 +391,7 @@ final class TargetEditor {
             });
             var key = Identifier.tryParse(item.item());
             var icon = key != null && BuiltInRegistries.ITEM.containsKey(key) ? BuiltInRegistries.ITEM.getValue(key) : null;
-            cards.add(new Card(name, icon, count, remove, new StackMotion(0), new StackMotion(0)));
+            cards.add(new Card(name, icon, count, remove, new RetargetableValue(0, CARD_MOTION), new RetargetableValue(0, CARD_MOTION)));
         }
         cardScroll = Math.clamp(cardScroll, 0, cardScrollLimit());
         layoutCards(anchorX, anchorY);
@@ -401,7 +414,8 @@ final class TargetEditor {
     }
 
     private int cardX(int index) {
-        return cardBounds.x() + (int) Math.round(cards.get(index).slide().value(cardFrame));
+        int start = cardSide < 0 ? cardBounds.right() - cardWidth() : cardBounds.x();
+        return start - cardSide * (int) Math.round(cards.get(index).slide().value(cardFrame));
     }
 
     private int cardTop(int index) {
@@ -409,15 +423,28 @@ final class TargetEditor {
     }
 
     private int cardWidth() {
-        return Math.max(1, cardBounds.w() - cardSlide() - (cardScrollLimit() == 0 ? 0 : 4));
+        return Math.max(1, cardBounds.w() - (cardScrollLimit() == 0 ? 0 : 4));
     }
 
     private boolean cardHit(int index, double x, double y) {
         return new Rect(cardX(index), cardTop(index), cardWidth(), CARD).hits(x, y);
     }
 
+    private boolean cardsAt(double x, double y) {
+        return cardBounds != null && cardBounds.hits(x, y) && !cardParent.visible().hits(x, y);
+    }
+
+    private int cardScrollbarX() {
+        return cardSide < 0 ? cardBounds.x() : cardBounds.right() - 3;
+    }
+
     private boolean cardScrollHit(double x) {
-        return cardScrollLimit() > 0 && x >= cardBounds.right() - 4;
+        if (cardScrollLimit() == 0) return false;
+        return cardSide < 0 ? x < cardBounds.x() + 4 : x >= cardBounds.right() - 4;
+    }
+
+    private int cardThumbHeight(int range) {
+        return Scrollbar.thumbHeight(cardBounds.h(), cardBounds.h() + range, 1);
     }
 
     private void scrollCardsTo(int position) {
@@ -427,7 +454,7 @@ final class TargetEditor {
 
     private void dragCardScroll(double y) {
         int range = cardScrollLimit();
-        int thumb = Math.max(1, cardBounds.h() * cardBounds.h() / (cardBounds.h() + range));
+        int thumb = cardThumbHeight(range);
         double track = Math.max(1, cardBounds.h() - thumb);
         scrollCardsTo((int) Math.round((y - cardBounds.y() - thumb / 2.0) / track * range));
     }
@@ -462,7 +489,7 @@ final class TargetEditor {
     }
 
     private int frontCardAt(double x, double y) {
-        if (!cardBounds.hits(x, y) || cardScrollHit(x)) return -1;
+        if (!cardsAt(x, y) || cardScrollHit(x)) return -1;
         if (hoveredCard >= 0 && cardHit(hoveredCard, x, y)) return hoveredCard;
         for (int i = cards.size() - 1; i >= 0; i--) {
             if (cardHit(i, x, y)) return i;
@@ -532,7 +559,7 @@ final class TargetEditor {
     private void drawBranch(GuiGraphicsExtractor graphics, Section section, int x, int y,
                             int direction, int color) {
         var motion = branchMotions.computeIfAbsent(section,
-                ignored -> new BranchMotion(new StackMotion(direction), new StackMotion(0)));
+                ignored -> new BranchMotion(new RetargetableValue(direction, CARD_MOTION), new RetargetableValue(0, CARD_MOTION)));
         long now = System.nanoTime();
         motion.direction().target(direction, now);
         motion.opening().target(expanded(section) ? 1 : 0, now);
@@ -564,7 +591,7 @@ final class TargetEditor {
     boolean click(MouseButtonEvent event, boolean keyboard) {
         if (event.button() != InputConstants.MOUSE_BUTTON_LEFT) return over(event.x(), event.y());
         layoutCards((int)event.x(), (int)event.y());
-        if (cardBounds != null && cardBounds.hits(event.x(), event.y())) {
+        if (cardsAt(event.x(), event.y())) {
             if (cardScrollHit(event.x())) {
                 grabbingCardScroll = true;
                 setFocus(null);
@@ -624,7 +651,7 @@ final class TargetEditor {
     }
 
     boolean scroll(double x, double y, double amount) {
-        if (cardBounds != null && cardBounds.hits(x, y)) {
+        if (cardsAt(x, y)) {
             if (cardScrollLimit() > 0) {
                 setFocus(null);
                 scrollCardsTo(cardScroll - (int) Math.round(amount * cardSlot()));
@@ -678,29 +705,36 @@ final class TargetEditor {
         long now = System.nanoTime();
         var masks = new Rect[panes.size()];
         for (int i = 0; i < masks.length; i++) masks[i] = panes.get(i).visible(now);
-        boolean overCards = cardBounds != null && cardBounds.hits(mx, my);
+        boolean overCards = cardsAt(mx, my);
         for (int i = 0; i < masks.length; i++) {
-            boolean covered = overCards;
+            var pane = panes.get(i);
+            if (pane == cardParent) drawCards(g, mx, my, tick);
+            boolean covered = overCards && pane != cardParent;
             for (int j = i + 1; !covered && j < masks.length; j++)
                 covered = masks[j].hits(mx, my);
-            panes.get(i).draw(g, masks[i], covered ? -1 : mx, covered ? -1 : my, tick);
+            pane.draw(g, masks[i], covered ? -1 : mx, covered ? -1 : my, tick);
         }
-        if (cardBounds == null) return;
+    }
+
+    private void drawCards(GuiGraphicsExtractor g, int mx, int my, float tick) {
         layoutCards(mx, my);
         int interactive = frontCardAt(mx, my);
-        TargetTileLayer.draw(g, cardBounds.x(), cardBounds.y(), cardBounds.w(), cardBounds.h(), () -> {
+        int slide = cardSlide();
+        int left = Math.max(MARGIN, cardBounds.x() - (cardSide > 0 ? slide : 0));
+        int right = Math.min(screenWidth - MARGIN, cardBounds.right() + (cardSide < 0 ? slide : 0));
+        TargetTileLayer.draw(g, left, cardBounds.y(), right - left, cardBounds.h(), () -> {
             for (int i = 0; i < cards.size(); i++) {
                 if (i != hoveredCard) drawCard(g, i, interactive, mx, my, tick);
             }
             if (hoveredCard >= 0) drawCard(g, hoveredCard, interactive, mx, my, tick);
             int range = cardScrollLimit();
             if (range > 0) {
-                int h = cardBounds.h();
-                int thumb = Math.max(1, h * h / (h + range));
-                int top = cardBounds.y() + (h - thumb) * cardScroll / range;
+                int thumb = cardThumbHeight(range);
+                int top = cardBounds.y() + Scrollbar.thumbOffset(cardBounds.h(), cardBounds.h() + range, 1, cardScroll);
+                int x = cardScrollbarX();
                 g.nextStratum();
-                g.fill(cardBounds.right() - 3, cardBounds.y(), cardBounds.right(), cardBounds.bottom(), 0xFF2F2F2F);
-                g.fill(cardBounds.right() - 3, top, cardBounds.right(), top + thumb, 0xFFAFAFAF);
+                g.fill(x, cardBounds.y(), x + 3, cardBounds.bottom(), 0xFF2F2F2F);
+                g.fill(x, top, x + 3, top + thumb, 0xFFAFAFAF);
             }
         });
     }
@@ -783,6 +817,7 @@ final class TargetEditor {
             title = MenuAccent.heading(trim(label, width - 26));
             closeButton = new MenuRow("×", "", null, onClose);
             closeButton.setWidth(14);
+            closeButton.centerLabel = true;
         }
 
         void removeAction(String label, Runnable action) {
@@ -892,8 +927,8 @@ final class TargetEditor {
             }
         }
 
-        int thumbHeight() { return Math.min(viewportHeight(), Math.max(8, viewportHeight() * viewportHeight() / Math.max(1, total))); }
-        int thumbTop() { return contentTop() + (viewportHeight() - thumbHeight()) * scroll / Math.max(1, maxScroll()); }
+        int thumbHeight() { return Scrollbar.thumbHeight(viewportHeight(), total, 8); }
+        int thumbTop() { return contentTop() + Scrollbar.thumbOffset(viewportHeight(), total, 8, scroll); }
 
         boolean pickScrollbar(double x, double y) {
             if (maxScroll() == 0 || x < bounds.right() - 5 || y < contentTop() || y >= contentBottom()) return false;
@@ -991,6 +1026,7 @@ final class TargetEditor {
         private Runnable action;
         private Boolean switchValue;
         private int footerStyle;
+        private boolean centerLabel;
         private int arrowDirection;
 
         MenuRow(String title, String detail, Section section, Runnable action) {
@@ -1021,7 +1057,8 @@ final class TargetEditor {
                 g.centeredText(font, trim(title, labelWidth), x + width / 2, y + 4, color);
             } else {
                 if (!active && switchValue == null) TargetTileLayer.button(g, x, y, width, getHeight(), false, false, 0xFFB385E5);
-                g.text(font, trim(title, labelWidth), labelX, y + 3, color);
+                if (centerLabel) g.centeredText(font, title, x + width / 2, y + (getHeight() - font.lineHeight) / 2, color);
+                else g.text(font, trim(title, labelWidth), labelX, y + 3, color);
             }
             if (!detail.isEmpty()) g.text(font, trim(detail, labelWidth), labelX, y + font.lineHeight + 4, 0xFFBABABA);
             if (switchValue != null) {
